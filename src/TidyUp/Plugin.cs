@@ -63,6 +63,7 @@ public sealed class Plugin : IDalamudPlugin
 
         config = pi.GetPluginConfig() as Configuration ?? new Configuration();
         void Save() => config.Save(pi);
+        if (config.Migrate()) Save();
 
         db = new ItemDatabase(data, log) { Curated = LoadCurated(pi, log) };
         var scanner = new GameInventoryScanner(inventory, log);

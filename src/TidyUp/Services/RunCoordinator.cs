@@ -162,17 +162,37 @@ public sealed class RunCoordinator : IDisposable
         }
     }
 
+    /// <summary>
+    /// Everything the cache knows about this character that is not live right now: the saddlebag when
+    /// closed, and every retainer's pages. Retainers are separate entries in the cache, recognised by
+    /// their items living in retainer pages that name them as owner.
+    /// </summary>
     private IEnumerable<ScannedItem> OfflineItems(IReadOnlyList<ScannedItem> live, ulong characterId)
     {
         if (!offline.IsAvailable) yield break;
         var liveKinds = new HashSet<(ContainerKind, ulong)>(live.Select(i => (i.Slot.Kind, i.Slot.OwnerId)));
-        foreach (var item in offline.Items(characterId))
+
+        IEnumerable<ScannedItem> Filter(IEnumerable<ScannedItem> items)
         {
-            // Never mix a live container with its cached copy; live always wins.
-            if (item.Slot.Kind.IsAlwaysLoaded()) continue;
-            if (liveKinds.Contains((item.Slot.Kind, item.Slot.OwnerId))) continue;
-            if (item.Slot.Kind == ContainerKind.Saddlebag && GameInventoryScanner.IsSaddlebagLoaded()) continue;
-            yield return item;
+            foreach (var item in items)
+            {
+                // Never mix a live container with its cached copy; live always wins.
+                if (item.Slot.Kind.IsAlwaysLoaded()) continue;
+                if (liveKinds.Contains((item.Slot.Kind, item.Slot.OwnerId))) continue;
+                if (item.Slot.Kind == ContainerKind.Saddlebag && GameInventoryScanner.IsSaddlebagLoaded()) continue;
+                yield return item;
+            }
+        }
+
+        foreach (var item in Filter(offline.Items(characterId))) yield return item;
+
+        foreach (var entry in offline.Characters())
+        {
+            if (entry.CharacterId == characterId) continue;
+            var items = offline.Items(entry.CharacterId);
+            // A retainer's cache entry holds only retainer pages owned by that same id.
+            if (items.Count == 0 || !items.All(i => i.Slot.Kind == ContainerKind.Retainer && i.Slot.OwnerId == entry.CharacterId)) continue;
+            foreach (var item in Filter(items)) yield return item;
         }
     }
 
@@ -186,6 +206,8 @@ public sealed class RunCoordinator : IDisposable
                 if (alt.IsRetainer || alt.CharacterId == ctx.CharacterId) continue;
                 var items = offline.Items(alt.CharacterId);
                 if (items.Count == 0) continue;
+                // Retainer entries are folded into the owner's plan above; only real alts belong here.
+                if (items.All(i => i.Slot.Kind == ContainerKind.Retainer)) continue;
                 var altPlan = planner.Build(items, new PlannerInputs
                 {
                     Context = ctx, Profile = profile, InfoLookup = db.Get,

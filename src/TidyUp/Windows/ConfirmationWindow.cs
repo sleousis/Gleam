@@ -6,6 +6,7 @@ using Dalamud.Interface.Windowing;
 using Dalamud.Plugin.Services;
 using TidyUp.Core.Model;
 using TidyUp.Core.Planning;
+using TidyUp.Core.Rules;
 using TidyUp.Game;
 using TidyUp.Services;
 
@@ -150,8 +151,29 @@ public sealed class ConfirmationWindow : Window
 
     // ---------- top bar: search, filter menu, rescan ----------
 
+    private static readonly IReadOnlyList<(Core.Rules.PresetName, string)> PresetOptions =
+    [
+        (Core.Rules.PresetName.Cautious, "Cautious"), (Core.Rules.PresetName.Balanced, "Balanced"), (Core.Rules.PresetName.Aggressive, "Aggressive"),
+    ];
+
     private void DrawTopBar(RunPlan plan)
     {
+        // Preset first: what this list will do is the most important thing on the screen.
+        var profile = coordinator.EffectiveProfile;
+        var preset = Core.Rules.Presets.Detect(profile.Thresholds);
+        if (Ui.Segmented("##preset", ref preset, PresetOptions))
+        {
+            if (config.Profiles.IsOverridden(plan.CharacterId, nameof(Core.Lists.Profile.Thresholds)))
+                config.Profiles.GetOrCreateOverride(plan.CharacterId, plan.CharacterName).Values.ApplyPreset(preset);
+            else
+                config.Profiles.Account.ApplyPreset(preset);
+            config.Save(PluginServices.PluginInterface);
+            _ = coordinator.RefreshPlanAsync(openWindow: false, coordinator.FocusContainer);
+        }
+        ImGui.SameLine();
+        Ui.TextColored(Ui.Accent, profile.Thresholds.Policy.Describe());
+        Ui.Gap(0.3f);
+
         ImGui.SetNextItemWidth(260 * Ui.Scale);
         Ui.InputText("##search", "Search", ref search, 64);
 

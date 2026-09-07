@@ -7,8 +7,11 @@ public sealed class ExecutionOptions
 {
     public TimeSpan RateLimit { get; init; } = TimeSpan.FromMilliseconds(250);
 
-    /// <summary>Stop the whole run on the first failure. The spec calls this fail-safe; it is not optional in v1.</summary>
-    public bool AbortOnFailure { get; init; } = true;
+    /// <summary>
+    /// A single failed item is skipped and reported; this many failures *in a row* mean something systemic
+    /// is wrong (a dialog we cannot answer, a window that closed) and the run stops.
+    /// </summary>
+    public int MaxConsecutiveFailures { get; init; } = 3;
 }
 
 /// <summary>
@@ -48,6 +51,7 @@ public sealed class ExecutionEngine
             .ToList();
 
         var first = true;
+        var consecutiveFailures = 0;
         foreach (var action in ordered)
         {
             if (ct.IsCancellationRequested)
@@ -102,10 +106,18 @@ public sealed class ExecutionEngine
 
             Emit(report, progress, result);
 
-            if (result.Outcome == ActionOutcome.Failed && options.AbortOnFailure)
+            if (result.Outcome == ActionOutcome.Failed)
             {
-                report.Aborted = true;
-                report.AbortReason = $"{action.ItemName}: {result.Message}";
+                consecutiveFailures++;
+                if (consecutiveFailures >= options.MaxConsecutiveFailures)
+                {
+                    report.Aborted = true;
+                    report.AbortReason = $"{consecutiveFailures} items failed in a row, last: {action.ItemName}: {result.Message}";
+                }
+            }
+            else if (result.Outcome == ActionOutcome.Done)
+            {
+                consecutiveFailures = 0;
             }
             if (result.Outcome == ActionOutcome.Cancelled)
             {

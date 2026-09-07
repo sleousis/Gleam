@@ -95,7 +95,14 @@ public sealed class RunPlanner
 
         foreach (var p in proposals.OrderBy(p => p.Item.Slot.Kind.ExecutionOrder()).ThenBy(p => p.Item.Slot.OwnerId))
         {
-            var proposal = ContainerConstraints.Apply(ApplyActionOverride(p, profile));
+            // Preset policy first (the headline promise), then the user's finer per-rule override, then physics.
+            var policed = ActionPolicyApplier.Apply(ContainerConstraints.Apply(p), profile.Thresholds.Policy);
+            if (policed is null)
+            {
+                plan.Excluded.Add(new ExcludedItem(p.Item, p.Info, ActionPolicyApplier.DropReason(profile.Thresholds.Policy), false));
+                continue;
+            }
+            var proposal = ContainerConstraints.Apply(ApplyActionOverride(policed, profile));
             var section = GetSection(plan, proposal.Item, inputs);
             var row = new PlanRow { Proposal = proposal, ChosenAction = proposal.Action };
             row.Checked = proposal.DefaultChecked && !inputs.SessionSkips.Contains(row.Key);
@@ -113,7 +120,7 @@ public sealed class RunPlanner
         if (!p.Action.IsDestructive()) return p;
         if (!profile.RuleActionOverrides.TryGetValue(p.RuleId, out var preferred)) return p;
         if (preferred == p.Action || !preferred.IsDestructive()) return p;
-        if (!p.Alternatives.Contains(preferred)) return p;
+        if (!p.Alternatives.Contains(preferred) || !ContainerConstraints.AllowsAction(p.Item.Slot.Kind, preferred)) return p;
         var alts = new List<ActionKind> { p.Action };
         alts.AddRange(p.Alternatives.Where(a => a != preferred));
         return p with { Action = preferred, Alternatives = alts };

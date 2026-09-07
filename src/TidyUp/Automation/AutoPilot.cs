@@ -103,24 +103,28 @@ public sealed class AutoPilot
             coordinator.SuppressChatSummary = true;
             tally.Clear();
 
-            if (here.Count > 0) await Step("Cleaning inventory and armoury", () => Execute(here), ct);
+            if (here.Count > 0) await Leg("bags", () => Step("Cleaning inventory and armoury", () => Execute(here), ct), ct);
 
-            if (S.OpenSaddlebag && saddle.Count > 0) await SaddlebagAsync(saddle, ct);
+            if (S.OpenSaddlebag && saddle.Count > 0) await Leg("saddlebag", () => SaddlebagAsync(saddle, ct), ct);
 
             var needsInn = (S.VisitRetainers && retainers.Count > 0) || (S.VisitDresser && dresser.Count > 0);
             if (needsInn)
             {
-                await TravelToInnAsync(ct);
-                if (S.VisitRetainers) await RetainersAsync(retainers, ct);
-                if (S.VisitDresser) await DresserAsync(dresser, ct);
+                var inInn = await Leg("inn", () => TravelToInnAsync(ct), ct);
+                if (inInn)
+                {
+                    if (S.VisitRetainers) await Leg("retainers", () => RetainersAsync(retainers, ct), ct);
+                    if (S.VisitDresser) await Leg("dresser", () => DresserAsync(dresser, ct), ct);
+                }
             }
 
-            if (S.VisitGrandCompany && seals.Count > 0) await GrandCompanyAsync(seals, ct);
-            if (S.SellAtVendor && sells.Count > 0) await VendorAsync(sells, ct);
+            if (S.VisitGrandCompany && seals.Count > 0) await Leg("Grand Company", () => GrandCompanyAsync(seals, ct), ct);
+            if (S.SellAtVendor && sells.Count > 0) await Leg("merchant", () => VendorAsync(sells, ct), ct);
 
             Status = "Done";
             chat.Print($"Tidy Up: hands-free run finished. {tally.Summary()}", "Tidy Up");
             foreach (var line in tally.PendingLines()) chat.Print($"  {line}", "Tidy Up");
+            foreach (var line in tally.LegFailures) chat.PrintError($"  {line}", "Tidy Up");
         }
         catch (OperationCanceledException)
         {
@@ -153,8 +157,9 @@ public sealed class AutoPilot
     {
         public int Done, Skipped, Failed;
         public readonly Dictionary<string, int> Pending = new();
+        public readonly List<string> LegFailures = new();
 
-        public void Clear() { Done = Skipped = Failed = 0; Pending.Clear(); }
+        public void Clear() { Done = Skipped = Failed = 0; Pending.Clear(); LegFailures.Clear(); }
 
         public void Add(RunReport? r)
         {
@@ -169,6 +174,7 @@ public sealed class AutoPilot
             var parts = new List<string> { $"{Done} cleaned" };
             if (Skipped > 0) parts.Add($"{Skipped} skipped because they changed");
             if (Failed > 0) parts.Add($"{Failed} failed");
+            if (LegFailures.Count > 0) parts.Add($"{LegFailures.Count} step{(LegFailures.Count == 1 ? "" : "s")} could not finish");
             var pending = Pending.Values.Sum();
             if (pending > 0) parts.Add($"{pending} still waiting");
             return string.Join(", ", parts) + ".";
@@ -176,6 +182,43 @@ public sealed class AutoPilot
 
         public IEnumerable<string> PendingLines() =>
             Pending.Where(kv => kv.Value > 0).Select(kv => $"{kv.Value} waiting: {(string.IsNullOrEmpty(kv.Key) ? "container not open" : kv.Key)}.");
+    }
+
+    /// <summary>Runs one leg; a failure is recorded and the run moves on to the next leg. Cancellation still stops everything.</summary>
+    private async Task<bool> Leg(string name, Func<Task> body, CancellationToken ct)
+    {
+        try
+        {
+            await body().ConfigureAwait(false);
+            return true;
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (AutoPilotException ex)
+        {
+            tally.LegFailures.Add($"{name}: {ex.Message}");
+            log.Warning("AutoPilot leg '{Leg}' failed: {Message}", name, ex.Message);
+            await RecoverUiAsync(ct).ConfigureAwait(false);
+            return false;
+        }
+        catch (Exception ex)
+        {
+            tally.LegFailures.Add($"{name}: {ex.Message}");
+            log.Error(ex, "AutoPilot leg '{Leg}' crashed", name);
+            await RecoverUiAsync(ct).ConfigureAwait(false);
+            return false;
+        }
+    }
+
+    /// <summary>Closes whatever menu or window a failed leg left open so the next leg starts clean.</summary>
+    private async Task RecoverUiAsync(CancellationToken ct)
+    {
+        nav.Stop();
+        await framework.RunOnFrameworkThread(() =>
+        {
+            foreach (var addon in new[] { "SelectString", "InventoryRetainer", "InventoryRetainerLarge", "RetainerSellList", "RetainerList", "Shop", "GrandCompanySupplyList", "MiragePrismPrismBox", "InventoryBuddy" })
+                GameUi.Close(addon);
+        }).ConfigureAwait(false);
+        await Task.Delay(800, ct).ConfigureAwait(false);
     }
 
     private async Task Execute(IReadOnlyList<QueuedAction> rows)
@@ -231,6 +274,22 @@ public sealed class AutoPilot
             var rows = byRetainer.GetValueOrDefault(id) ?? new List<QueuedAction>();
             if (rows.Count == 0 && !S.PauseForUnseenRows) continue;
 
+            var ok = await Leg($"retainer {name}", () => OneRetainerAsync(index, id, name, rows, ct), ct).ConfigureAwait(false);
+            if (!ok)
+            {
+                // Get back to the list for the next retainer, re-using the bell if the list was lost.
+                if (!await OnFramework(() => GameUi.IsVisible("RetainerList")).ConfigureAwait(false))
+                    await WalkToAndInteractAsync(S.BellObjectName, "RetainerList", ct).ConfigureAwait(false);
+            }
+        }
+
+        await framework.RunOnFrameworkThread(() => GameUi.Close("RetainerList")).ConfigureAwait(false);
+    }
+
+    private async Task OneRetainerAsync(int index, ulong id, string name, List<QueuedAction> rows, CancellationToken ct)
+    {
+        {
+
             await Step($"Opening {name}", async () =>
             {
                 var i = index;
@@ -272,17 +331,31 @@ public sealed class AutoPilot
                 await Task.Delay(500, ct).ConfigureAwait(false);
             }, ct);
         }
-
-        await framework.RunOnFrameworkThread(() => GameUi.Close("RetainerList")).ConfigureAwait(false);
     }
 
     private async Task DresserAsync(List<QueuedAction> rows, CancellationToken ct)
     {
-        if (rows.Count == 0 && !S.PauseForUnseenRows) return;
+        // The dresser is never cached, so its rows only exist if it was open during the scan. With no
+        // accepted rows, open it anyway and leave the review showing what it holds: one click to clean.
+        var showOnly = rows.Count == 0 && !S.PauseForUnseenRows;
         await WalkToAndInteractAsync(S.DresserObjectName, "MiragePrismPrismBox", ct).ConfigureAwait(false);
         await WaitUntil(GameInventoryScanner.IsDresserLoaded, StepTimeout, "the dresser to load", ct).ConfigureAwait(false);
         await Task.Delay(800, ct).ConfigureAwait(false);
         if (rows.Count > 0) await Step("Cleaning the glamour dresser", () => Execute(rows), ct);
+        if (showOnly)
+        {
+            await coordinator.RefreshPlanAsync(openWindow: false, focus: ContainerKind.GlamourDresser).ConfigureAwait(false);
+            if (coordinator.CurrentPlan?.AllRows.Any(r => r.IsExecutable) == true)
+            {
+                coordinator.RaiseOpenWindow();
+                chat.Print("Tidy Up: the dresser is open and its proposals are in the review. Clean them with one click, or close it.", "Tidy Up");
+            }
+            else
+            {
+                await framework.RunOnFrameworkThread(() => GameUi.Close("MiragePrismPrismBox")).ConfigureAwait(false);
+            }
+            return;
+        }
         await PauseForUnseen(ContainerKind.GlamourDresser, ct).ConfigureAwait(false);
         await framework.RunOnFrameworkThread(() => GameUi.Close("MiragePrismPrismBox")).ConfigureAwait(false);
     }

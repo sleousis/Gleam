@@ -74,8 +74,11 @@ public sealed class AutomationSettings
     public int TravelTimeoutSeconds { get; set; } = 120;
     public int StepTimeoutSeconds { get; set; } = 20;
 
-    /// <summary>When a container reveals rows that were not in the accepted plan, pause and ask rather than act.</summary>
-    public bool PauseForUnseenRows { get; set; } = true;
+    /// <summary>
+    /// When a container reveals rows that were not in the accepted plan, pause and ask. Off by default:
+    /// unseen rows are simply left for the next review, and the run keeps going.
+    /// </summary>
+    public bool PauseForUnseenRows { get; set; } = false;
 
     // ---- Grand Company leg (Expert Delivery) ----
 
@@ -109,7 +112,7 @@ public sealed class AutomationSettings
 
 public sealed class Configuration : IPluginConfiguration
 {
-    public int Version { get; set; } = 1;
+    public int Version { get; set; } = 2;
 
     public ProfileStore Profiles { get; set; } = new();
     public ItemList ProtectList { get; set; } = new();
@@ -130,6 +133,22 @@ public sealed class Configuration : IPluginConfiguration
     public Dictionary<ulong, List<uint>> LastKnownPlateItems { get; set; } = new();
 
     public event Action? Saved;
+
+    /// <summary>Brings a config written by an older build up to current defaults where the old default was a mistake.</summary>
+    public bool Migrate()
+    {
+        var changed = false;
+        if (Version < 2)
+        {
+            // v1 hid retainer rows behind a collapsed header and paused the pilot at every container.
+            Profiles.Account.RetainerSectionsCollapsed = false;
+            foreach (var o in Profiles.Overrides) o.Values.RetainerSectionsCollapsed = false;
+            Automation.PauseForUnseenRows = false;
+            Version = 2;
+            changed = true;
+        }
+        return changed;
+    }
 
     public void Save(Dalamud.Plugin.IDalamudPluginInterface pi)
     {

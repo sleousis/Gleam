@@ -24,7 +24,7 @@ public sealed class Profile
     public bool StackMergeBeforeScan { get; set; } = true;
     public bool ShowDtrEntry { get; set; } = true;
     public int FullnessNudgePercent { get; set; } = 90;
-    public bool RetainerSectionsCollapsed { get; set; } = true;
+    public bool RetainerSectionsCollapsed { get; set; } = false;
 
     /// <summary>Per-rule action override: rule id → preferred action. Empty means the rule's own ranking.</summary>
     public Dictionary<string, ActionKind> RuleActionOverrides { get; set; } = new();

@@ -18,7 +18,7 @@ internal static class TestData
     {
         [1] = ItemInfo.Test(1, "Allagan Bronze Piece", vendor: 28, marketable: false),
         [2] = ItemInfo.Test(2, "Rarefied Ash Lumber", vendor: 0, marketable: false, untradable: true, category: "Miscellany"),
-        [3] = ItemInfo.Test(3, "Grade 6 Dark Matter", vendor: 45, marketable: false, category: "Medicine", ilvl: 90, levelEquip: 50),
+        [3] = ItemInfo.Test(3, "Grade 6 Dark Matter", vendor: 45, marketable: false, untradable: true, category: "Medicine", ilvl: 90, levelEquip: 50),
         [4] = ItemInfo.Test(4, "Aetherial Cotton Doublet", vendor: 100, marketable: false, equipment: true, levelEquip: 20, ilvl: 20, rarity: 2, cjc: CjcAll, category: "Body"),
         [5] = ItemInfo.Test(5, "Ironworks Cap of Casting", vendor: 500, marketable: false, equipment: true, levelEquip: 50, ilvl: 130, rarity: 3, cjc: CjcBlm, category: "Head"),
         [6] = ItemInfo.Test(6, "Woolen Coat", vendor: 200, marketable: true, equipment: true, levelEquip: 34, ilvl: 34, rarity: 1, cjc: CjcAll, category: "Body"),
