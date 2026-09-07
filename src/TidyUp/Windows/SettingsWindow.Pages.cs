@@ -236,6 +236,8 @@ public sealed partial class SettingsWindow
         v = a.VisitRetainers; if (ImGui.Checkbox("Visit each retainer at the bell", ref v)) { a.VisitRetainers = v; dirty = true; }
         v = a.SellAtRetainer; if (ImGui.Checkbox("Sell vendor rows to the first retainer", ref v)) { a.SellAtRetainer = v; dirty = true; }
         v = a.VisitDresser; if (ImGui.Checkbox("Visit the glamour dresser", ref v)) { a.VisitDresser = v; dirty = true; }
+        v = a.VisitGrandCompany; if (ImGui.Checkbox("Visit your Grand Company for Expert Delivery", ref v)) { a.VisitGrandCompany = v; dirty = true; }
+        Ui.Tooltip("Teleports to your GC's city, reaches the HQ, and talks to the personnel officer.");
         v = a.PauseForUnseenRows; if (ImGui.Checkbox("Pause and ask when a container shows items not in the plan", ref v)) { a.PauseForUnseenRows = v; dirty = true; }
         Ui.Tooltip("Strongly recommended. Off means only items you already accepted are touched; new ones are simply skipped.");
 
@@ -246,7 +248,21 @@ public sealed partial class SettingsWindow
         s = a.EntrustMenuText; ImGui.SetNextItemWidth(w); if (Ui.InputText("Retainer menu: inventory", "", ref s, 64)) { a.EntrustMenuText = s; dirty = true; }
         s = a.SellMenuText; ImGui.SetNextItemWidth(w); if (Ui.InputText("Retainer menu: sell", "", ref s, 64)) { a.SellMenuText = s; dirty = true; }
         s = a.QuitMenuText; ImGui.SetNextItemWidth(w); if (Ui.InputText("Retainer menu: quit", "", ref s, 64)) { a.QuitMenuText = s; dirty = true; }
+        s = a.PersonnelOfficerName; ImGui.SetNextItemWidth(w); if (Ui.InputText("GC personnel officer", "", ref s, 64)) { a.PersonnelOfficerName = s; dirty = true; }
+        s = a.GcSupplyMenuText; ImGui.SetNextItemWidth(w); if (Ui.InputText("Officer menu: supply missions", "", ref s, 64)) { a.GcSupplyMenuText = s; dirty = true; }
         Ui.Hint("Menu texts are matched as substrings, case-insensitive.");
+
+        Ui.Section("Grand Company route");
+        foreach (var (id, label) in new (byte, string)[] { (1, "Maelstrom"), (2, "Twin Adder"), (3, "Immortal Flames") })
+        {
+            var city = a.GcCityAetheryte.GetValueOrDefault(id, string.Empty);
+            var shard = a.GcAethernetShard.GetValueOrDefault(id, string.Empty);
+            ImGui.SetNextItemWidth(w); if (Ui.InputText($"{label}: aetheryte", "", ref city, 64)) { a.GcCityAetheryte[id] = city; dirty = true; }
+            ImGui.SameLine();
+            ImGui.SetNextItemWidth(w); if (Ui.InputText($"shard##{id}", "aethernet shard (optional)", ref shard, 64)) { a.GcAethernetShard[id] = shard; dirty = true; }
+        }
+        var tab = a.ExpertDeliveryTabCallback; ImGui.SetNextItemWidth(w); if (Ui.InputText("Expert Delivery tab callback", "", ref tab, 32)) { a.ExpertDeliveryTabCallback = tab; dirty = true; }
+        Ui.Tooltip("Comma-separated ints fired on the supply window to switch to the Expert Delivery tab.");
 
         Ui.Section("Timing");
         var t = a.TravelTimeoutSeconds; ImGui.SetNextItemWidth(100 * Ui.Scale); if (Ui.InputInt("Travel timeout (s)", ref t, 10)) { a.TravelTimeoutSeconds = Math.Clamp(t, 30, 600); dirty = true; }

@@ -324,7 +324,7 @@ public sealed class RunCoordinator : IDisposable
             PendingActions.AddRange(report.Pending);
             Status = report.Summary();
 
-            if (config.ChatSummaryAfterRun)
+            if (config.ChatSummaryAfterRun && !SuppressChatSummary)
             {
                 chat.Print($"Tidy Up: {report.Summary()}.", "Tidy Up");
                 foreach (var (reason, count) in report.PendingByReason())
@@ -355,6 +355,9 @@ public sealed class RunCoordinator : IDisposable
     /// <summary>A closed container just opened: re-evaluate it live and show its own confirmation.</summary>
     /// <summary>True while the hands-free pilot owns the flow; container-open triggers stay quiet then.</summary>
     public Func<bool> IsPilotRunning { get; set; } = () => false;
+
+    /// <summary>The pilot reports once at the end; per-queue chat lines would only confuse.</summary>
+    public bool SuppressChatSummary { get; set; }
 
     public async Task OnContainerOpenedAsync(ContainerKind kind)
     {

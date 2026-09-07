@@ -95,7 +95,7 @@ public sealed class RunPlanner
 
         foreach (var p in proposals.OrderBy(p => p.Item.Slot.Kind.ExecutionOrder()).ThenBy(p => p.Item.Slot.OwnerId))
         {
-            var proposal = ApplyActionOverride(p, profile);
+            var proposal = ContainerConstraints.Apply(ApplyActionOverride(p, profile));
             var section = GetSection(plan, proposal.Item, inputs);
             var row = new PlanRow { Proposal = proposal, ChosenAction = proposal.Action };
             row.Checked = proposal.DefaultChecked && !inputs.SessionSkips.Contains(row.Key);

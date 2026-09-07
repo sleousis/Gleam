@@ -146,6 +146,26 @@ public class PlannerTests
     }
 
     [Fact]
+    public void Items_outside_the_players_bags_can_only_be_discarded()
+    {
+        // Same vendor-priced junk: sell in the inventory, discard-only in a retainer or the saddlebag.
+        var items = new[] { ScannedItem.Simple(Inv(0), 1, 5), ScannedItem.Simple(Ret(0), 1, 5), ScannedItem.Simple(Saddle(0), 1, 5) };
+        var plan = new RunPlanner().Build(items, Inputs());
+        var rows = plan.AllRows.ToDictionary(r => r.Item.Slot.Kind);
+
+        Assert.Equal(ActionKind.VendorSell, rows[ContainerKind.Inventory].ChosenAction);
+        Assert.Equal(ActionKind.Discard, rows[ContainerKind.Retainer].ChosenAction);
+        Assert.Empty(rows[ContainerKind.Retainer].Proposal.Alternatives);
+        Assert.Contains("withdraw", rows[ContainerKind.Retainer].Proposal.Reason);
+        Assert.Equal(ActionKind.Discard, rows[ContainerKind.Saddlebag].ChosenAction);
+
+        // The always-discard list follows the same physics.
+        var always = new ItemList(); always.Add(15);
+        var forced = new RunPlanner().Build([ScannedItem.Simple(Ret(0), 15, 1)], Inputs(always: always));
+        Assert.Equal(ActionKind.Discard, Assert.Single(forced.AllRows).ChosenAction);
+    }
+
+    [Fact]
     public void A_fantasia_on_the_always_discard_list_is_still_never_proposed()
     {
         var always = new ItemList(); always.Add(16);

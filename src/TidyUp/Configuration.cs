@@ -70,6 +70,35 @@ public sealed class AutomationSettings
 
     /// <summary>When a container reveals rows that were not in the accepted plan, pause and ask rather than act.</summary>
     public bool PauseForUnseenRows { get; set; } = true;
+
+    // ---- Grand Company leg (Expert Delivery) ----
+
+    public bool VisitGrandCompany { get; set; } = true;
+
+    /// <summary>Client-language name of the NPC that opens supply missions.</summary>
+    public string PersonnelOfficerName { get; set; } = "Personnel Officer";
+
+    /// <summary>Substring of the officer's menu entry that opens supply and provisioning missions.</summary>
+    public string GcSupplyMenuText { get; set; } = "supply";
+
+    /// <summary>Grand Company id (1 Maelstrom, 2 Twin Adder, 3 Immortal Flames) → Lifestream teleport target for the HQ city.</summary>
+    public Dictionary<byte, string> GcCityAetheryte { get; set; } = new()
+    {
+        [1] = "Limsa Lominsa Lower Decks",
+        [2] = "New Gridania",
+        [3] = "Ul'dah - Steps of Nald",
+    };
+
+    /// <summary>Grand Company id → aethernet shard next to the HQ, or empty to walk from the aetheryte.</summary>
+    public Dictionary<byte, string> GcAethernetShard { get; set; } = new()
+    {
+        [1] = "The Aftcastle",
+        [2] = string.Empty,
+        [3] = string.Empty,
+    };
+
+    /// <summary>Callback values that switch the supply window to the Expert Delivery tab.</summary>
+    public string ExpertDeliveryTabCallback { get; set; } = "0,2";
 }
 
 public sealed class Configuration : IPluginConfiguration

@@ -58,8 +58,8 @@ public sealed class GameActions : IGameActions
     public bool IsActionAvailable(ActionKind action) => action switch
     {
         ActionKind.Discard => true,
-        ActionKind.VendorSell => AddonDriver.IsAddonVisible("Shop") || AddonDriver.IsAddonVisible("RetainerSellList")
-                                 || AddonDriver.IsAddonVisible("InventoryRetainer") || AddonDriver.IsAddonVisible("InventoryRetainerLarge"),
+        // A retainer's *inventory* window offers no Sell entry; only a vendor shop or the retainer's sell list does.
+        ActionKind.VendorSell => AddonDriver.IsAddonVisible("Shop") || AddonDriver.IsAddonVisible("RetainerSellList"),
         ActionKind.ExpertDelivery => AddonDriver.IsAddonVisible("GrandCompanySupplyList"),
         ActionKind.Desynth => true,
         _ => false,
