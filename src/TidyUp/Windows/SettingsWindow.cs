@@ -29,7 +29,6 @@ public sealed partial class SettingsWindow : StyledWindow
     private readonly ListEditor protectEditor;
     private readonly ListEditor alwaysEditor;
 
-    private bool editingCharacter;
     private bool dirty;
     private string importPath = string.Empty;
     private string importResult = string.Empty;
@@ -63,25 +62,8 @@ public sealed partial class SettingsWindow : StyledWindow
 
     private void MarkDirty() => dirty = true;
 
-    /// <summary>The profile the controls edit right now.</summary>
-    private Profile Editing => editingCharacter
-        ? config.Profiles.GetOrCreateOverride(player.ContentId, player.CharacterName).Values
-        : config.Profiles.Account;
-
-    /// <summary>In character mode, draws the override toggle for a setting and returns whether its control is live.</summary>
-    private bool Override(string prop)
-    {
-        if (!editingCharacter) return true;
-        var on = config.Profiles.IsOverridden(player.ContentId, prop);
-        if (ImGui.Checkbox($"##ov{prop}", ref on))
-        {
-            config.Profiles.SetOverridden(player.ContentId, player.CharacterName, prop, on);
-            dirty = true;
-        }
-        Ui.Tooltip(on ? "Overridden for this character. Untick to follow the account." : "Following the account. Tick to override for this character.");
-        ImGui.SameLine();
-        return on;
-    }
+    /// <summary>The profile the controls edit.</summary>
+    private Profile Editing => config.Profiles.Account;
 
     public override void Draw()
     {
@@ -94,7 +76,7 @@ public sealed partial class SettingsWindow : StyledWindow
                 Ui.Gap(0.6f);
                 DrawEssentials();
                 Ui.Gap(0.5f);
-                if (ImGui.CollapsingHeader("Advanced", ImGuiTreeNodeFlags.None)) DrawAdvancedFold();
+                if (ImGui.CollapsingHeader("More", ImGuiTreeNodeFlags.None)) DrawAdvancedFold();
             }
         }
 
@@ -115,13 +97,8 @@ public sealed partial class SettingsWindow : StyledWindow
         {
             Ui.TextColored(Ui.Muted, "WHAT TO DO WITH JUNK");
             ImGui.Spacing();
-            var live = Override(nameof(Profile.Thresholds));
-            using (ImRaii.Disabled(!live))
-            {
-                var preset = Presets.Detect(p.Thresholds);
-                if (Ui.Segmented("##preset", ref preset, PresetOptions)) { p.ApplyPreset(preset); dirty = true; }
-                if (preset == PresetName.Custom) { ImGui.SameLine(); Ui.Hint("custom"); }
-            }
+            var preset = Presets.Detect(p.Thresholds);
+            if (Ui.Segmented("##preset", ref preset, PresetOptions)) { p.ApplyPreset(preset); dirty = true; }
             Ui.TextColored(Ui.Accent, p.Thresholds.Policy.Describe());
             Ui.Hint("You always see the full list and can change any row before anything happens.");
         }
@@ -130,17 +107,13 @@ public sealed partial class SettingsWindow : StyledWindow
         {
             Ui.TextColored(Ui.Muted, "WHERE TO LOOK");
             ImGui.Spacing();
-            var en = Override(nameof(Profile.ContainerEnabled));
-            using (ImRaii.Disabled(!en))
+            var kinds = Enum.GetValues<ContainerKind>();
+            for (var i = 0; i < kinds.Length; i++)
             {
-                var kinds = Enum.GetValues<ContainerKind>();
-                for (var i = 0; i < kinds.Length; i++)
-                {
-                    var kind = kinds[i];
-                    var on = p.IsContainerEnabled(kind);
-                    if (ImGui.Checkbox($"{kind.DisplayName()}##en{kind}", ref on)) { p.ContainerEnabled[kind] = on; dirty = true; }
-                    if (i < kinds.Length - 1 && i != 2) ImGui.SameLine();
-                }
+                var kind = kinds[i];
+                var on = p.IsContainerEnabled(kind);
+                if (ImGui.Checkbox($"{kind.DisplayName()}##en{kind}", ref on)) { p.ContainerEnabled[kind] = on; dirty = true; }
+                if (i < kinds.Length - 1 && i != 2) ImGui.SameLine();
             }
         }
 
@@ -167,14 +140,15 @@ public sealed partial class SettingsWindow : StyledWindow
     private void DrawAdvancedFold()
     {
         Ui.Gap(0.5f);
-        DrawScopeSwitch();
-
-        Fold("Rules", DrawRules);
-        Fold("Hands-free", DrawAutomation);
+        Fold("What counts as junk", DrawRules);
+        Fold("Hands-free route", DrawAutomation);
         Fold("Retainers", DrawContainers);
         Fold("Notifications", DrawNotifications);
-        Fold("Integrations", DrawIntegrations);
-        Fold("Pace and troubleshooting", DrawAdvanced);
+        Fold("Prices and other characters", DrawIntegrations);
+
+        Ui.Gap(0.5f);
+        if (Ui.LinkButton("Troubleshooting")) openDebug();
+        Ui.Tooltip("Only needed if a step keeps failing after a game update.");
     }
 
     private static void Fold(string title, Action body)
@@ -182,23 +156,8 @@ public sealed partial class SettingsWindow : StyledWindow
         using var id = ImRaii.PushId(title);
         if (!ImGui.CollapsingHeader(title, ImGuiTreeNodeFlags.None)) return;
         using var indent = ImRaii.PushIndent(12f, true, true);
+        Ui.Gap(0.3f);
         body();
-        Ui.Gap(0.5f);
-    }
-
-    private void DrawScopeSwitch()
-    {
-        var name = player.IsLoaded ? player.CharacterName : "not logged in";
-        var scope = editingCharacter ? 1 : 0;
-        Ui.Hint("Editing");
-        ImGui.SameLine();
-        using (ImRaii.Disabled(!player.IsLoaded))
-        {
-            if (Ui.Segmented("##scope", ref scope, [(0, "Account"), (1, name)])) editingCharacter = scope == 1;
-        }
-        Ui.Tooltip(editingCharacter
-            ? "Editing this character only. Tick the box beside a setting to override it; unticked settings follow the account."
-            : "Editing the defaults every character uses.");
         Ui.Gap(0.5f);
     }
 }
