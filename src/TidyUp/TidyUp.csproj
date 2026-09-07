@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project Sdk="Dalamud.NET.Sdk/15.0.0">
+  <PropertyGroup>
+    <Version>0.1.0.0</Version>
+    <Author>Savvas Leousis</Author>
+    <Name>Tidy Up</Name>
+    <Punchline>Propose junk across every container, accept once, let it discard, sell, turn in, or desynth.</Punchline>
+    <Description>Tidy Up scans your inventory, armoury chest, chocobo saddlebag, retainers and glamour dresser, proposes what to get rid of using eight tunable rules, and shows every item with icon and quantity in one confirmation window. Accept once and it discards, vendors, turns in for seals or desynths the lot, retrieving materia first. Protect list, always-discard list, presets, per-character overrides, and an append-only history of everything it destroyed.</Description>
+    <RepoUrl>https://github.com/savvasleousis/TidyUp</RepoUrl>
+    <Tags>inventory;cleanup;discard;retainer;glamour;qol</Tags>
+    <RootNamespace>TidyUp</RootNamespace>
+    <AssemblyName>TidyUp</AssemblyName>
+    <LangVersion>14.0</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\TidyUp.Core\TidyUp.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="Data\curated.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Visible>true</Visible>
+    </Content>
+  </ItemGroup>
+</Project>
