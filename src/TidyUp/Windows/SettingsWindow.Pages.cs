@@ -55,8 +55,8 @@ public sealed partial class SettingsWindow
 
         ImGui.SameLine();
         Ui.RightAlign(150 * Ui.Scale);
-        var options = new List<string> { "rule decides", ActionKind.Discard.Label(), ActionKind.VendorSell.Label(), ActionKind.ExpertDelivery.Label(), ActionKind.Desynth.Label() };
-        var kinds = new[] { ActionKind.None, ActionKind.Discard, ActionKind.VendorSell, ActionKind.ExpertDelivery, ActionKind.Desynth };
+        var options = new List<string> { "rule decides", ActionKind.Discard.Label(), ActionKind.VendorSell.Label(), ActionKind.MarketList.Label(), ActionKind.ExpertDelivery.Label(), ActionKind.Desynth.Label() };
+        var kinds = new[] { ActionKind.None, ActionKind.Discard, ActionKind.VendorSell, ActionKind.MarketList, ActionKind.ExpertDelivery, ActionKind.Desynth };
         var idx = p.RuleActionOverrides.TryGetValue(ruleId, out var a) ? Array.IndexOf(kinds, a) : 0;
         if (idx < 0) idx = 0;
         ImGui.SetNextItemWidth(140 * Ui.Scale);
@@ -76,7 +76,7 @@ public sealed partial class SettingsWindow
     {
         var p = Editing;
         var live = Override(nameof(Profile.Thresholds));
-        Ui.Hint($"Preset: {Presets.Detect(p.Thresholds)}. Any change here makes it custom.");
+        Ui.Hint($"Preset: {Presets.Detect(p.Thresholds).Label()}. Any change here makes it custom.");
         using var dis = ImRaii.Disabled(!live);
         var t = p.Thresholds;
         var c = false;

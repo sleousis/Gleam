@@ -41,7 +41,7 @@ public sealed partial class SettingsWindow : StyledWindow
 
     private static readonly IReadOnlyList<(PresetName, string)> PresetOptions =
     [
-        (PresetName.Balanced, "Balanced"), (PresetName.Aggressive, "Aggressive"),
+        (PresetName.MarketBoard, PresetName.MarketBoard.Label()), (PresetName.Vendor, PresetName.Vendor.Label()), (PresetName.DiscardAll, PresetName.DiscardAll.Label()),
     ];
 
     public SettingsWindow(Configuration config, IPlayerState player, ItemDatabase db, IconCache icons, AllaganToolsSource allagan, RunCoordinator coordinator, Action openDebug)

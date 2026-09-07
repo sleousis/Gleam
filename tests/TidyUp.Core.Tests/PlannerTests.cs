@@ -152,13 +152,13 @@ public class PlannerTests
         // item 1: tradeable, vendor 28 · item 2: untradeable, 0g (hard-blocked) · item 3: untradeable medicine, vendor 45 · item 4: tradeable gear, vendor 100
         var items = new[] { ScannedItem.Simple(Inv(0), 1, 5), ScannedItem.Simple(Inv(1), 3, 9), ScannedItem.Simple(Arm(0), 4, 1) };
 
-        var balanced = new RunPlanner().Build(items, Inputs(profile: MakeProfile(PresetName.Balanced)));
+        var balanced = new RunPlanner().Build(items, Inputs(profile: MakeProfile(PresetName.Vendor)));
         Assert.Equal(ActionKind.VendorSell, balanced.AllRows.Single(r => r.Item.ItemId == 1).ChosenAction);
         Assert.Equal(ActionKind.Discard, balanced.AllRows.Single(r => r.Item.ItemId == 3).ChosenAction);
         Assert.Equal(ActionKind.VendorSell, balanced.AllRows.Single(r => r.Item.ItemId == 4).ChosenAction);
         Assert.Contains(ActionKind.ExpertDelivery, balanced.AllRows.Single(r => r.Item.ItemId == 4).Proposal.Alternatives);
 
-        var aggressive = new RunPlanner().Build(items, Inputs(profile: MakeProfile(PresetName.Aggressive)));
+        var aggressive = new RunPlanner().Build(items, Inputs(profile: MakeProfile(PresetName.DiscardAll)));
         Assert.Equal(3, aggressive.AllRows.Count());
         Assert.All(aggressive.AllRows, r => Assert.Equal(ActionKind.Discard, r.ChosenAction));
     }
@@ -181,6 +181,42 @@ public class PlannerTests
         var always = new ItemList(); always.Add(15);
         var forced = new RunPlanner().Build([ScannedItem.Simple(Ret(0), 15, 1)], Inputs(always: always));
         Assert.Equal(ActionKind.Discard, Assert.Single(forced.AllRows).ChosenAction);
+    }
+
+    [Fact]
+    public void Marketboard_preset_lists_priced_marketables_vendors_the_rest_and_discards_untradeables()
+    {
+        // item 12: marketable potion with a market price · item 6: marketable gear, no price known · item 3: untradeable, vendor 45
+        var items = new[] { ScannedItem.Simple(Inv(0), 12, 3), ScannedItem.Simple(Ret(0), 12, 2), ScannedItem.Simple(Arm(0), 6, 1), ScannedItem.Simple(Inv(1), 3, 9) };
+        var market = new Dictionary<uint, MarketPrice> { [12] = new(12, 400, 900, DateTimeOffset.UtcNow) };
+        var ctx = Context(maxGearsetIlvl: 100, market: market);
+
+        var plan = new RunPlanner().Build(items, new PlannerInputs
+        {
+            Context = ctx, Profile = MakeProfile(PresetName.MarketBoard), InfoLookup = Lookup, ProtectList = new ItemList(),
+            AlwaysDiscardList = new ItemList(), SessionSkips = new HashSet<string>(), IsAvailable = (k, _) => k.IsAlwaysLoaded(),
+            RetainerNames = new Dictionary<ulong, string>(), IncludeUnproposed = true,
+        });
+
+        var bagPotion = plan.AllRows.Single(r => r.Item.ItemId == 12 && r.Item.Slot.Kind == ContainerKind.Inventory);
+        Assert.Equal(ActionKind.MarketList, bagPotion.ChosenAction);
+        Assert.Equal(400, bagPotion.Proposal.MarketUnitPrice);
+        Assert.Equal(1200, bagPotion.Proposal.ValueGil);
+
+        // A retainer can list what sits in its own inventory.
+        Assert.Equal(ActionKind.MarketList, plan.AllRows.Single(r => r.Item.Slot.Kind == ContainerKind.Retainer).ChosenAction);
+
+        // Armoury gear cannot be listed from where it is, and has no price anyway: vendor it.
+        Assert.Equal(ActionKind.VendorSell, plan.AllRows.Single(r => r.Item.ItemId == 6).ChosenAction);
+
+        Assert.Equal(ActionKind.Discard, plan.AllRows.Single(r => r.Item.ItemId == 3).ChosenAction);
+
+        var s = plan.Summarize();
+        Assert.Equal(0, s.MarketRows); // nothing ticked yet
+        foreach (var r in plan.AllRows) r.Checked = true;
+        s = plan.Summarize();
+        Assert.Equal(2, s.MarketRows);
+        Assert.Equal(2000, s.MarketGil);
     }
 
     [Fact]
@@ -214,7 +250,7 @@ public class PlannerTests
         // Hand-picked rows follow the preset: Aggressive means discard everywhere.
         var aggressive = new RunPlanner().Build(items, new PlannerInputs
         {
-            Context = inputs.Context, Profile = MakeProfile(PresetName.Aggressive), InfoLookup = inputs.InfoLookup, ProtectList = inputs.ProtectList,
+            Context = inputs.Context, Profile = MakeProfile(PresetName.DiscardAll), InfoLookup = inputs.InfoLookup, ProtectList = inputs.ProtectList,
             AlwaysDiscardList = inputs.AlwaysDiscardList, IsAvailable = inputs.IsAvailable, RetainerNames = inputs.RetainerNames, IncludeUnproposed = true,
         });
         Assert.All(aggressive.AllRows, r => Assert.Equal(ActionKind.Discard, r.ChosenAction));

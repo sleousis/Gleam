@@ -122,6 +122,20 @@ public sealed unsafe class AddonDriver : IDisposable
     }
 
     /// <summary>Letters and digits only, lower-cased: immune to soft hyphens, payload bytes, and punctuation.</summary>
+    /// <summary>Closes a named addon if it is up. Cosmetic; never throws.</summary>
+    public static void CloseAddon(string name)
+    {
+        try
+        {
+            var addon = GetAddon(name);
+            if (addon != null && addon->IsVisible) addon->Close(true);
+        }
+        catch
+        {
+            // closing is best-effort
+        }
+    }
+
     public static string Normalize(string s)
     {
         var sb = new System.Text.StringBuilder(s.Length);

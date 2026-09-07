@@ -2,6 +2,7 @@ using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Game.Inventory.InventoryEventArgTypes;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game;
+using FFXIVClientStructs.FFXIV.Client.UI;
 using FFXIVClientStructs.FFXIV.Client.UI.Agent;
 using FFXIVClientStructs.FFXIV.Component.GUI;
 using TidyUp.Core.Execution;
@@ -65,6 +66,7 @@ public sealed class GameActions : IGameActions
         ActionKind.VendorSell => AddonDriver.IsAddonVisible("Shop"),
         ActionKind.ExpertDelivery => AddonDriver.IsAddonVisible("GrandCompanySupplyList"),
         ActionKind.Desynth => true,
+        ActionKind.MarketList => AddonDriver.IsAddonVisible("RetainerSellList"),
         _ => false,
     };
 
@@ -72,8 +74,51 @@ public sealed class GameActions : IGameActions
     {
         ActionKind.VendorSell => "talk to a merchant NPC",
         ActionKind.ExpertDelivery => "open Expert Delivery at a Grand Company personnel officer",
+        ActionKind.MarketList => "open a retainer's market sell list (Sell items on the market)",
         _ => string.Empty,
     };
+
+    public const int MarketSlotsPerRetainer = 20;
+
+    public int FreeMarketSlots() => Native.FreeMarketSlots();
+
+    // ---------- market board ----------
+
+    public async Task<bool> MarketListAsync(SlotRef slot, uint itemId, long unitPrice, int quantity, CancellationToken ct)
+    {
+        LastFailure = null;
+        if (unitPrice <= 0) { LastFailure = "no market price known"; return false; }
+        if (!AddonDriver.IsAddonVisible("RetainerSellList")) { LastFailure = "the retainer's sell list is not open"; return false; }
+
+        var removed = WaitForEvent<InventoryItemRemovedArgs>(
+            e => (uint)e.Item.ContainerType == slot.ContainerId && e.Item.InventorySlot == (uint)slot.Slot, ct);
+        var changed = WaitForEvent<InventoryItemChangedArgs>(
+            e => (uint)e.Item.ContainerType == slot.ContainerId && e.Item.InventorySlot == (uint)slot.Slot && e.Item.IsEmpty, ct);
+
+        var opened = await context.InvokeAsync(slot, config.Callbacks.PutUpForSaleLabel, ct).ConfigureAwait(false);
+        if (!opened) { LastFailure = context.LastFailure; return false; }
+
+        var deadline = DateTime.UtcNow + Timeout;
+        while (!AddonDriver.IsAddonVisible("RetainerSell"))
+        {
+            if (DateTime.UtcNow > deadline) { LastFailure = "the RetainerSell window did not appear"; return false; }
+            await Task.Delay(50, ct).ConfigureAwait(false);
+        }
+        await Task.Delay(200, ct).ConfigureAwait(false);
+
+        var price = (int)Math.Clamp(unitPrice, 1, 999_999_999);
+        var filled = await framework.RunOnFrameworkThread(() => Native.FillRetainerSell(price, quantity, config.Callbacks.RetainerSellConfirm)).ConfigureAwait(false);
+        if (!filled) { LastFailure = "could not fill price and quantity into the RetainerSell window"; await framework.RunOnFrameworkThread(() => AddonDriver.CloseAddon("RetainerSell")).ConfigureAwait(false); return false; }
+
+        var first = await Task.WhenAny(removed, changed).ConfigureAwait(false);
+        var gone = first == removed ? removed.Result is not null : changed.Result is not null;
+        if (!gone) gone = first == removed ? await changed.ConfigureAwait(false) is not null : await removed.ConfigureAwait(false) is not null;
+        if (gone) return true;
+
+        LastFailure = "the listing was confirmed but the item stayed in its slot";
+        await framework.RunOnFrameworkThread(() => AddonDriver.CloseAddon("RetainerSell")).ConfigureAwait(false);
+        return false;
+    }
 
     // ---------- discard ----------
 
@@ -346,6 +391,28 @@ public sealed class GameActions : IGameActions
     /// <summary>All pointer code, framework thread only.</summary>
     private static unsafe class Native
     {
+        public static int FreeMarketSlots()
+        {
+            var rm = RetainerManager.Instance();
+            if (rm == null) return 0;
+            var r = rm->GetActiveRetainer();
+            if (r == null || r->RetainerId == 0) return 0;
+            return Math.Max(0, MarketSlotsPerRetainer - r->MarketItemCount);
+        }
+
+        /// <summary>Types the price and quantity into the RetainerSell window and presses its confirm callback.</summary>
+        public static bool FillRetainerSell(int price, int quantity, int confirmCallback)
+        {
+            var unit = AddonDriver.GetAddon("RetainerSell");
+            if (unit == null || !unit->IsVisible) return false;
+            var addon = (AddonRetainerSell*)unit;
+            if (addon->Quantity != null) addon->Quantity->SetValue(quantity);
+            if (addon->AskingPrice != null) addon->AskingPrice->SetValue(price);
+            var values = stackalloc AtkValue[1];
+            values[0].SetInt(confirmCallback);
+            return unit->FireCallback(1, values, true);
+        }
+
         public static bool Discard(SlotRef slot)
         {
             var item = InventoryContextDriver.SlotPointer(slot);

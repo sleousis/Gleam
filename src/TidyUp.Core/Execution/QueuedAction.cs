@@ -13,7 +13,8 @@ public sealed record QueuedAction(
     bool RetrieveMateriaFirst,
     string ItemName,
     long ValueGil,
-    string RuleId)
+    string RuleId,
+    long UnitPrice = 0)
 {
     public static QueuedAction FromRow(PlanRow row) => new(
         row.Item.Slot,
@@ -24,7 +25,8 @@ public sealed record QueuedAction(
         row.Item.HasMateria,
         row.Info.Name,
         row.Proposal.ValueGil,
-        row.Proposal.RuleId);
+        row.Proposal.RuleId,
+        row.ChosenAction == ActionKind.MarketList ? row.Proposal.MarketUnitPrice : 0);
 
     public ContainerKind Kind => Slot.Kind;
 }

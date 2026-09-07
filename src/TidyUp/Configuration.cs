@@ -30,6 +30,12 @@ public sealed class CallbackSettings
     /// <summary>Retainer inventory context entry that moves an item back to the player's bags.</summary>
     public string RetrieveFromRetainerLabel { get; set; } = "Retrieve from Retainer";
 
+    /// <summary>Context entry that opens the RetainerSell window while a retainer's sell list is up.</summary>
+    public string PutUpForSaleLabel { get; set; } = "Put Up for Sale";
+
+    /// <summary>RetainerSell callback value that confirms the listing (verify in spike).</summary>
+    public int RetainerSellConfirm { get; set; } = 0;
+
     /// <summary>How long to wait for the game to confirm one action before treating it as failed.</summary>
     public int ActionTimeoutMs { get; set; } = 8000;
 
@@ -89,6 +95,12 @@ public sealed class AutomationSettings
     /// <summary>Substrings matched against the retainer menu entries.</summary>
     public string EntrustMenuText { get; set; } = "Entrust";
     public string QuitMenuText { get; set; } = "Quit";
+
+    /// <summary>Retainer menu entry that opens the sell list for the player's own bags.</summary>
+    public string SellFromBagsMenuText { get; set; } = "your inventory";
+
+    /// <summary>Retainer menu entry that opens the sell list for the retainer's inventory.</summary>
+    public string SellFromRetainerMenuText { get; set; } = "retainer's inventory";
 
     /// <summary>English MainCommand name that opens the saddlebag.</summary>
     public string SaddlebagCommandName { get; set; } = "Chocobo Saddlebag";
@@ -179,9 +191,9 @@ public sealed class Configuration : IPluginConfiguration
         if (Version < 4)
         {
             // The Cautious preset is gone; anyone on it lands on Balanced.
-            if (Profiles.Account.Thresholds.Policy == Core.Rules.ActionPolicy.SellOnly) Profiles.Account.ApplyPreset(Core.Rules.PresetName.Balanced);
+            if (Profiles.Account.Thresholds.Policy == Core.Rules.ActionPolicy.SellOnly) Profiles.Account.ApplyPreset(Core.Rules.PresetName.Vendor);
             foreach (var o in Profiles.Overrides)
-                if (o.Values.Thresholds.Policy == Core.Rules.ActionPolicy.SellOnly) o.Values.ApplyPreset(Core.Rules.PresetName.Balanced);
+                if (o.Values.Thresholds.Policy == Core.Rules.ActionPolicy.SellOnly) o.Values.ApplyPreset(Core.Rules.PresetName.Vendor);
             Version = 4;
             changed = true;
         }

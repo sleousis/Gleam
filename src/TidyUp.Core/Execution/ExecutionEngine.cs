@@ -224,9 +224,18 @@ public sealed class ExecutionEngine
             }
         }
 
+        if (action.Action == ActionKind.MarketList)
+        {
+            if (action.UnitPrice <= 0)
+                return new ActionResult(action, ActionOutcome.Pending, "no market price is known for it; rescan with market prices on");
+            if (game.FreeMarketSlots() <= 0)
+                return new ActionResult(action, ActionOutcome.Pending, "this retainer's market slots are full; another retainer can take it");
+        }
+
         var success = action.Action switch
         {
             ActionKind.Discard => await game.DiscardAsync(target, action.ItemId, ct).ConfigureAwait(false),
+            ActionKind.MarketList => await game.MarketListAsync(target, action.ItemId, action.UnitPrice, action.Quantity, ct).ConfigureAwait(false),
             ActionKind.VendorSell => await game.VendorSellAsync(target, action.ItemId, ct).ConfigureAwait(false),
             ActionKind.ExpertDelivery => await game.ExpertDeliveryAsync(target, action.ItemId, ct).ConfigureAwait(false),
             ActionKind.Desynth => await game.DesynthAsync(target, action.ItemId, ct).ConfigureAwait(false),

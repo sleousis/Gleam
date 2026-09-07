@@ -142,10 +142,16 @@ public sealed class RunPlanner
             });
         }
 
-        foreach (var p in proposals.OrderBy(p => p.Item.Slot.Kind.ExecutionOrder()).ThenBy(p => p.Item.Slot.OwnerId))
+        foreach (var raw in proposals.OrderBy(p => p.Item.Slot.Kind.ExecutionOrder()).ThenBy(p => p.Item.Slot.OwnerId))
         {
+            // Every row carries the lowest market price for its quality so the window can show it and the
+            // market-board policy can price listings.
+            var p = raw;
+            if (p.Info.IsMarketable && ctx.MarketPrices.TryGetValue(p.Info.ItemId, out var mp))
+                p = p with { MarketUnitPrice = mp.MinFor(p.Item.IsHq) };
+
             // Preset policy first (the headline promise), then the user's finer per-rule override, then physics.
-            // Hand-picked rows follow the preset too (Aggressive means discard everywhere), but are never dropped:
+            // Hand-picked rows follow the preset too (Discard all means discard everywhere), but are never dropped:
             // the user asked to see them.
             var constrained = ContainerConstraints.Apply(p);
             var policed = ActionPolicyApplier.Apply(constrained, profile.Thresholds.Policy);

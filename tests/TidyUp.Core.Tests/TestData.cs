@@ -79,7 +79,7 @@ internal static class TestData
     public static ScannedItem WithMateria(ScannedItem item, params ushort[] materia) =>
         item with { Materia = materia };
 
-    public static Profile MakeProfile(PresetName preset = PresetName.Balanced)
+    public static Profile MakeProfile(PresetName preset = PresetName.Vendor)
     {
         var p = new Profile();
         p.ApplyPreset(preset);

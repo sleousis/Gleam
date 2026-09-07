@@ -27,6 +27,7 @@ internal static class Ui
     public static readonly Vector4 Warn = new(0.95f, 0.68f, 0.33f, 1f);
     public static readonly Vector4 Info = new(0.47f, 0.68f, 0.93f, 1f);
     public static readonly Vector4 Muted = new(0.62f, 0.66f, 0.72f, 1f);
+    public static readonly Vector4 Market = new(0.45f, 0.80f, 0.78f, 1f);
     public static readonly Vector4 OnAccent = new(0.10f, 0.09f, 0.06f, 1f);
 
     public static float Scale => ImGuiHelpers.GlobalScale;
@@ -543,6 +544,7 @@ internal static class Ui
         ActionKind.VendorSell => Ok,
         ActionKind.ExpertDelivery => Info,
         ActionKind.Desynth => Warn,
+        ActionKind.MarketList => Market,
         _ => Muted,
     };
 
