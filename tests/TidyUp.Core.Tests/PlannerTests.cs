@@ -131,8 +131,8 @@ public class PlannerTests
     [Fact]
     public void Summary_reports_slots_freed_gil_destroyed_and_recovered()
     {
-        var always = new ItemList(); always.Add(2); // 0g vendor → discard
-        var items = new[] { ScannedItem.Simple(Inv(0), 1, 10), ScannedItem.Simple(Inv(1), 2, 1), ScannedItem.Simple(Arm(0), 4, 1) };
+        var always = new ItemList(); always.Add(15); // 5g vendor, marketable → user row, sell
+        var items = new[] { ScannedItem.Simple(Inv(0), 1, 10), ScannedItem.Simple(Inv(1), 15, 1), ScannedItem.Simple(Arm(0), 4, 1) };
         var plan = new RunPlanner().Build(items, Inputs(always: always));
         var s = plan.Summarize();
 
@@ -140,9 +140,20 @@ public class PlannerTests
         Assert.Equal(3, s.CheckedRows);
         Assert.Equal(2, s.SlotsFreedByContainer[ContainerKind.Inventory]);
         Assert.Equal(1, s.SlotsFreedByContainer[ContainerKind.Armoury]);
-        Assert.Equal(280, s.GilRecovered);
+        Assert.Equal(285, s.GilRecovered);
         Assert.Equal(0, s.GilDestroyed);
         Assert.Equal(1, s.SealsRows);
+    }
+
+    [Fact]
+    public void A_fantasia_on_the_always_discard_list_is_still_never_proposed()
+    {
+        var always = new ItemList(); always.Add(16);
+        var plan = new RunPlanner().Build([ScannedItem.Simple(Inv(0), 16, 1)], Inputs(always: always));
+        Assert.Empty(plan.AllRows);
+        var ex = Assert.Single(plan.Excluded);
+        Assert.True(ex.IsHardBlock);
+        Assert.Contains("cannot be bought back", ex.Reason);
     }
 
     [Fact]

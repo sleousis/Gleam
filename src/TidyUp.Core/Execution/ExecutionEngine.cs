@@ -64,14 +64,14 @@ public sealed class ExecutionEngine
 
             if (!game.IsContainerAvailable(action.Kind, action.Slot.OwnerId))
             {
-                report.Pending.Add(action);
+                Park(report, action, action.Kind.RequirementText());
                 Emit(report, progress, new ActionResult(action, ActionOutcome.Pending, $"Needs: {action.Kind.RequirementText()}"));
                 continue;
             }
 
             if (action.Action != ActionKind.Discard && !game.IsActionAvailable(action.Action))
             {
-                report.Pending.Add(action);
+                Park(report, action, game.ActionRequirement(action.Action));
                 Emit(report, progress, new ActionResult(action, ActionOutcome.Pending, $"Needs: {game.ActionRequirement(action.Action)}"));
                 continue;
             }
@@ -98,7 +98,7 @@ public sealed class ExecutionEngine
 
             // A pre-condition discovered mid-action (no free slot, etc.) parks the item rather than failing the run.
             if (result.Outcome == ActionOutcome.Pending)
-                report.Pending.Add(action);
+                Park(report, action, result.Message);
 
             Emit(report, progress, result);
 
@@ -161,6 +161,12 @@ public sealed class ExecutionEngine
         return success
             ? new ActionResult(action, ActionOutcome.Done, action.Action.Label())
             : new ActionResult(action, ActionOutcome.Failed, $"{action.Action.Label()} did not complete");
+    }
+
+    private static void Park(RunReport report, QueuedAction action, string reason)
+    {
+        report.Pending.Add(action);
+        report.PendingReasons[action] = reason;
     }
 
     private static void Emit(RunReport report, IProgress<ActionResult>? progress, ActionResult result)

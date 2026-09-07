@@ -8,7 +8,7 @@ public sealed class VendorOnlyJunkRule : IRule
     public const string RuleId = "vendor-only-junk";
     public string Id => RuleId;
     public string Name => "Vendor-only junk";
-    public string Description => "Items that cannot be sold on the market and are only worth vendoring, or have no use at all.";
+    public string Description => "Items that cannot be sold on the market and are only worth vendoring.";
     public IReadOnlySet<ContainerKind> Containers => RuleContainers.Storage;
 
     public Proposal? Evaluate(ScannedItem item, ItemInfo info, ItemContext ctx, Thresholds t)
@@ -17,38 +17,22 @@ public sealed class VendorOnlyJunkRule : IRule
         if (info.IsConsumable || info.IsMaterial) return null; // those have their own rules
         if (item.IsCollectable) return null;
 
-        if (info.VendorPrice > 0)
-        {
-            if (info.VendorPrice > t.VendorOnlyMaxUnitPrice) return null;
-            var value = (long)info.VendorPrice * item.Quantity;
-            return new Proposal
-            {
-                Item = item, Info = info,
-                Action = ActionKind.VendorSell,
-                Alternatives = [ActionKind.Discard],
-                Confidence = Confidence.High,
-                RuleId = Id,
-                Reason = $"Vendor-only junk · {info.VendorPrice:N0}g each",
-                ValueGil = value,
-                ValueLabel = Gil.Label(value),
-            };
-        }
+        // Only things the game itself prices as vendor trash. Untradeable items with no vendor value are
+        // hard-blocked upstream: that shape includes Fantasia and every voucher or token in the game.
+        if (info.VendorPrice == 0 || info.VendorPrice > t.VendorOnlyMaxUnitPrice) return null;
 
-        // Worth nothing anywhere and not used by any recipe: dead weight.
-        if (info.IsUntradable && ctx.RecipesUsing(info.ItemId).Count == 0)
+        var value = (long)info.VendorPrice * item.Quantity;
+        return new Proposal
         {
-            return new Proposal
-            {
-                Item = item, Info = info,
-                Action = ActionKind.Discard,
-                Confidence = Confidence.Medium,
-                RuleId = Id,
-                Reason = "Untradeable, unsellable, used in no recipe",
-                ValueGil = 0,
-            };
-        }
-
-        return null;
+            Item = item, Info = info,
+            Action = ActionKind.VendorSell,
+            Alternatives = [ActionKind.Discard],
+            Confidence = Confidence.High,
+            RuleId = Id,
+            Reason = $"Vendor-only junk · {info.VendorPrice:N0}g each",
+            ValueGil = value,
+            ValueLabel = Gil.Label(value),
+        };
     }
 }
 

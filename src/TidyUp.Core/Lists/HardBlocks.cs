@@ -12,6 +12,8 @@ public enum HardBlockReason
     InGlamourPlate,
     NeverProposedCategory,
     Currency,
+    /// <summary>Untradeable, no vendor value, not equipment: Fantasia, tokens, vouchers. Cannot be bought back with gil.</summary>
+    IrreplaceableUntradeable,
 }
 
 public static class HardBlocks
@@ -21,6 +23,12 @@ public static class HardBlocks
         if (info.IsIndisposable) return HardBlockReason.Indisposable;
         if (info.IsUnique && info.IsUntradable) return HardBlockReason.UniqueUntradeable;
         if (info.IsNeverProposed) return HardBlockReason.NeverProposedCategory;
+
+        // A Fantasia is untradeable, sells for nothing, and is used by no recipe: it looks exactly like junk
+        // to every heuristic. Anything in that shape can only be destroyed by being on the curated seasonal
+        // list, which is a deliberate human decision rather than a rule's guess.
+        if (!info.IsEquipment && info.IsUntradable && info.VendorPrice == 0 && !ctx.SeasonalItemIds.Contains(info.ItemId))
+            return HardBlockReason.IrreplaceableUntradeable;
 
         // Gearsets reference armoury/inventory gear by item id; dresser copies are a separate physical item.
         if (item.Slot.Kind != ContainerKind.GlamourDresser && info.IsEquipment && ctx.GearsetItemIds.Contains(info.ItemId))
@@ -41,6 +49,7 @@ public static class HardBlocks
         HardBlockReason.InGlamourPlate => "Referenced by a glamour plate",
         HardBlockReason.NeverProposedCategory => "Category Tidy Up never touches",
         HardBlockReason.Currency => "Currency",
+        HardBlockReason.IrreplaceableUntradeable => "Untradeable with no vendor value: cannot be bought back",
         _ => string.Empty,
     };
 }

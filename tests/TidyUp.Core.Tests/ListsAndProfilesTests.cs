@@ -23,6 +23,18 @@ public class ListsAndProfilesTests
     }
 
     [Fact]
+    public void HardBlocks_refuse_untradeable_items_with_no_vendor_value_unless_curated_seasonal()
+    {
+        // Phial of Fantasia: untradeable, 0g, not equipment. Looks like junk to every heuristic; must never be proposable.
+        Assert.Equal(HardBlockReason.IrreplaceableUntradeable, HardBlocks.Check(ScannedItem.Simple(Inv(0), 16, 1), Items[16], Context()));
+        Assert.Equal(HardBlockReason.IrreplaceableUntradeable, HardBlocks.Check(ScannedItem.Simple(Inv(0), 2, 1), Items[2], Context()));
+        // A curated seasonal entry is a deliberate human decision and is allowed through to its rule.
+        Assert.Equal(HardBlockReason.None, HardBlocks.Check(ScannedItem.Simple(Inv(0), 8, 1), Items[8], Context(seasonal: [8u])));
+        // Untradeable gear with no vendor value is equipment and stays eligible (gearset/plate checks still apply).
+        Assert.Equal(HardBlockReason.None, HardBlocks.Check(ScannedItem.Simple(SlotRef.Dresser(0), 5, 1), Items[5], Context()));
+    }
+
+    [Fact]
     public void ItemList_matches_by_character_scope_and_hq_flag()
     {
         var list = new ItemList();

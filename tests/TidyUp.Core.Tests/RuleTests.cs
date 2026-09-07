@@ -30,12 +30,11 @@ public class RuleTests
     }
 
     [Fact]
-    public void VendorOnlyJunk_discards_untradeable_worthless_items_with_no_recipe_use()
+    public void VendorOnlyJunk_never_proposes_untradeable_items_with_no_vendor_value()
     {
-        var p = new VendorOnlyJunkRule().Evaluate(ScannedItem.Simple(Inv(0), 2, 3), Items[2], Context(), t);
-        Assert.NotNull(p);
-        Assert.Equal(ActionKind.Discard, p!.Action);
-        Assert.Equal(Confidence.Medium, p.Confidence);
+        // A Fantasia has exactly this shape. Only the game's own vendor price makes something junk.
+        Assert.Null(new VendorOnlyJunkRule().Evaluate(ScannedItem.Simple(Inv(0), 2, 3), Items[2], Context(), t));
+        Assert.Null(new VendorOnlyJunkRule().Evaluate(ScannedItem.Simple(Inv(0), 16, 1), Items[16], Context(), t));
     }
 
     [Fact]

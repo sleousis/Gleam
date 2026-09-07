@@ -31,6 +31,7 @@ internal static class TestData
         [13] = ItemInfo.Test(13, "Dragoon Gear Never Played", vendor: 100, marketable: false, equipment: true, levelEquip: 30, ilvl: 30, rarity: 2, cjc: CjcNeverPlayed, category: "Legs"),
         [14] = ItemInfo.Test(14, "Retired Tome Coat", vendor: 300, marketable: false, equipment: true, levelEquip: 60, ilvl: 270, rarity: 3, cjc: CjcAll, category: "Body"),
         [15] = ItemInfo.Test(15, "Stackable Widget", vendor: 5, marketable: true, stack: 99),
+        [16] = ItemInfo.Test(16, "Phial of Fantasia", vendor: 0, marketable: false, untradable: true, category: "Miscellany", stack: 1),
     };
 
     public static ItemInfo? Lookup(uint id) => Items.GetValueOrDefault(id);

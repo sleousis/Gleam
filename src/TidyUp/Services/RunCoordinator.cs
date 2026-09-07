@@ -317,8 +317,8 @@ public sealed class RunCoordinator : IDisposable
             if (config.ChatSummaryAfterRun)
             {
                 chat.Print($"Tidy Up: {report.Summary()}.", "Tidy Up");
-                foreach (var (kind, count) in report.PendingByContainer)
-                    chat.Print($"  {count} waiting: {kind.RequirementText()}.", "Tidy Up");
+                foreach (var (reason, count) in report.PendingByReason())
+                    chat.Print($"  {count} waiting: {(string.IsNullOrEmpty(reason) ? "container not open" : reason)}.", "Tidy Up");
             }
             if (report.Aborted && report.Failed > 0)
                 chat.PrintError($"Tidy Up stopped: {report.AbortReason}. Nothing after that item was touched.", "Tidy Up");
