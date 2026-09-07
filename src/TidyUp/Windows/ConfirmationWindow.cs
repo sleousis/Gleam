@@ -380,7 +380,7 @@ public sealed class ConfirmationWindow : StyledWindow
         ImGui.TableSetupColumn("##chk", ImGuiTableColumnFlags.WidthFixed, 24 * Ui.Scale, 0);
         ImGui.TableSetupColumn("##icon", ImGuiTableColumnFlags.WidthFixed, 30 * Ui.Scale, 0);
         ImGui.TableSetupColumn("##item", ImGuiTableColumnFlags.WidthStretch, 5f, 0);
-        ImGui.TableSetupColumn("##action", ImGuiTableColumnFlags.WidthFixed, 150 * Ui.Scale, 0);
+        ImGui.TableSetupColumn("##action", ImGuiTableColumnFlags.WidthFixed, 128 * Ui.Scale, 0);
         ImGui.TableSetupColumn("##why", ImGuiTableColumnFlags.WidthStretch, 5f, 0);
 
         foreach (var row in rows)
