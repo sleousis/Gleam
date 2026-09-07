@@ -402,7 +402,7 @@ public sealed class AutoPilot
     /// <summary>Selling needs a real merchant: find the named NPC nearby, open its shop, sell from the bags.</summary>
     private async Task VendorAsync(List<QueuedAction> sells, CancellationToken ct)
     {
-        var npc = await OnFramework(() => FindNearest(S.VendorNpcName)).ConfigureAwait(false);
+        var npc = await OnFramework(FindVendor).ConfigureAwait(false);
         if (npc is null && S.TravelToInn && !string.IsNullOrWhiteSpace(S.VendorAetheryte))
         {
             await Step($"Teleporting to {S.VendorAetheryte} for a merchant", async () =>
@@ -410,20 +410,24 @@ public sealed class AutoPilot
                 var before = clientState.TerritoryType;
                 if (!travel.Execute(S.VendorAetheryte)) throw new AutoPilotException("Lifestream refused the teleport");
                 await Task.Delay(1500, ct).ConfigureAwait(false);
-                await WaitUntil(() => !travel.IsBusy && !condition[ConditionFlag.BetweenAreas] && !condition[ConditionFlag.BetweenAreas51] && (clientState.TerritoryType != before || FindNearest(S.VendorNpcName) is not null),
+                await WaitUntil(() => !travel.IsBusy && !condition[ConditionFlag.BetweenAreas] && !condition[ConditionFlag.BetweenAreas51] && clientState.TerritoryType != before,
                     TimeSpan.FromSeconds(S.TravelTimeoutSeconds), S.VendorAetheryte, ct).ConfigureAwait(false);
-                await Task.Delay(2000, ct).ConfigureAwait(false);
+                // NPCs stream in after the zone does; wait until the town has actually populated.
+                await WaitUntil(() => objects.Count(o => o.ObjectKind == Dalamud.Game.ClientState.Objects.Enums.ObjectKind.EventNpc) >= 5,
+                    TimeSpan.FromSeconds(20), "the town to load", ct).ConfigureAwait(false);
+                await Task.Delay(1500, ct).ConfigureAwait(false);
             }, ct);
-            npc = await OnFramework(() => FindNearest(S.VendorNpcName)).ConfigureAwait(false);
+            npc = await OnFramework(FindVendor).ConfigureAwait(false);
         }
         if (npc is null)
         {
             var nearby = await OnFramework(NearbyObjectNames).ConfigureAwait(false);
-            var reason = $"no '{S.VendorNpcName}' near {S.VendorAetheryte}; nearby: {string.Join(", ", nearby.Take(6))}";
+            var reason = $"no merchant found near {S.VendorAetheryte}; nearby: {string.Join(", ", nearby.Take(6))}";
             tally.Pending[reason] = tally.Pending.GetValueOrDefault(reason) + sells.Count;
             return;
         }
-        await WalkToAndInteractAsync(S.VendorNpcName, "Shop", ct, orMenu: true).ConfigureAwait(false);
+        var vendorName = npc.Name.TextValue;
+        await WalkToAndInteractAsync(vendorName, "Shop", ct, orMenu: true).ConfigureAwait(false);
         if (!await OnFramework(() => GameUi.IsVisible("Shop")).ConfigureAwait(false))
         {
             await Step("Opening the shop", async () =>
@@ -576,12 +580,31 @@ public sealed class AutoPilot
             .FirstOrDefault();
     }
 
-    /// <summary>Names of interactable objects within 30y, for the verification window when a lookup fails.</summary>
+    /// <summary>
+    /// Nearest NPC that runs a gil shop, by game data rather than by name. A configured name still wins
+    /// when such an NPC is present, for players who prefer a particular merchant.
+    /// </summary>
+    private IGameObject? FindVendor()
+    {
+        if (!string.IsNullOrWhiteSpace(S.VendorNpcName))
+        {
+            var named = FindNearest(S.VendorNpcName);
+            if (named is not null) return named;
+        }
+        var me = objects.LocalPlayer?.Position ?? Vector3.Zero;
+        return objects
+            .Where(o => o.Address != 0 && o.ObjectKind == Dalamud.Game.ClientState.Objects.Enums.ObjectKind.EventNpc && o.IsTargetable && db.IsVendorNpc(o.DataId))
+            .OrderBy(o => Vector3.Distance(o.Position, me))
+            .FirstOrDefault();
+    }
+
+    /// <summary>Names of interactable objects nearby, NPCs first, for the failure message when a lookup fails.</summary>
     public IReadOnlyList<string> NearbyObjectNames()
     {
         var me = objects.LocalPlayer?.Position ?? Vector3.Zero;
         return objects
-            .Where(o => o.Address != 0 && o.ObjectKind is not Dalamud.Game.ClientState.Objects.Enums.ObjectKind.Pc && Vector3.Distance(o.Position, me) < 30)
+            .Where(o => o.Address != 0 && o.ObjectKind is Dalamud.Game.ClientState.Objects.Enums.ObjectKind.EventNpc or Dalamud.Game.ClientState.Objects.Enums.ObjectKind.EventObj && Vector3.Distance(o.Position, me) < 100)
+            .OrderBy(o => Vector3.Distance(o.Position, me))
             .Select(o => $"{o.Name.TextValue} ({o.ObjectKind}, {Vector3.Distance(o.Position, me):0.0}y)")
             .Where(s => !s.StartsWith(" ("))
             .Distinct()

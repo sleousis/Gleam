@@ -243,6 +243,31 @@ public sealed class ItemDatabase
         return null;
     }
 
+    private readonly ConcurrentDictionary<uint, bool> vendorNpcCache = new();
+
+    /// <summary>
+    /// True when the NPC's event data references a GilShop. Every gil shop buys items, so this finds a
+    /// merchant in any language without knowing its name. GilShop row ids live in the 0x40000 block.
+    /// </summary>
+    public bool IsVendorNpc(uint enpcBaseId)
+    {
+        if (enpcBaseId == 0) return false;
+        return vendorNpcCache.GetOrAdd(enpcBaseId, id =>
+        {
+            try
+            {
+                if (!data.GetExcelSheet<ENpcBase>()!.TryGetRow(id, out var npc)) return false;
+                foreach (var d in npc.ENpcData)
+                    if (d.RowId is >= 0x40000 and < 0x50000) return true;
+            }
+            catch
+            {
+                // unreadable row: not a vendor we can trust
+            }
+            return false;
+        });
+    }
+
     /// <summary>MainCommand row id for an English command name (e.g. "Chocobo Saddlebag"), or null.</summary>
     public uint? MainCommandIdForEnglishName(string englishName)
     {

@@ -192,7 +192,8 @@ public sealed partial class SettingsWindow
         var s = a.BellObjectName; ImGui.SetNextItemWidth(w); if (Ui.InputText("Summoning bell", "", ref s, 64)) { a.BellObjectName = s; dirty = true; }
         s = a.DresserObjectName; ImGui.SetNextItemWidth(w); if (Ui.InputText("Glamour dresser", "", ref s, 64)) { a.DresserObjectName = s; dirty = true; }
         s = a.EntrustMenuText; ImGui.SetNextItemWidth(w); if (Ui.InputText("Retainer menu: inventory", "", ref s, 64)) { a.EntrustMenuText = s; dirty = true; }
-        s = a.VendorNpcName; ImGui.SetNextItemWidth(w); if (Ui.InputText("Merchant NPC", "", ref s, 64)) { a.VendorNpcName = s; dirty = true; }
+        s = a.VendorNpcName; ImGui.SetNextItemWidth(w); if (Ui.InputText("Merchant NPC (optional)", "any gil shop", ref s, 64)) { a.VendorNpcName = s; dirty = true; }
+        Ui.Tooltip("Leave empty to use the nearest NPC that runs a gil shop; merchants are detected from game data, not by name.");
         s = a.VendorMenuText; ImGui.SetNextItemWidth(w); if (Ui.InputText("Merchant menu: open shop", "", ref s, 64)) { a.VendorMenuText = s; dirty = true; }
         s = a.VendorAetheryte; ImGui.SetNextItemWidth(w); if (Ui.InputText("Merchant: teleport to", "", ref s, 64)) { a.VendorAetheryte = s; dirty = true; }
         Ui.Tooltip("Lifestream destination with a merchant right by the aetheryte. Used only when no merchant is within reach.");
