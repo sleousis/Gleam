@@ -34,6 +34,7 @@ public sealed class RunCoordinator : IDisposable
     private readonly Action save;
 
     private CancellationTokenSource? runCts;
+    private readonly SemaphoreSlim scanGate = new(1, 1);
 
     public RunPlan? CurrentPlan { get; private set; }
     public bool IsRunning { get; private set; }
@@ -102,6 +103,8 @@ public sealed class RunCoordinator : IDisposable
     public async Task RefreshPlanAsync(bool openWindow, ContainerKind? focus = null)
     {
         if (IsRunning || !player.IsLoaded) return;
+        // Two overlapping scans would both run the stack-merge pass and race each other's moves.
+        if (!await scanGate.WaitAsync(0).ConfigureAwait(false)) return;
         Status = "Scanning…";
         FocusContainer = focus;
         try
@@ -152,6 +155,10 @@ public sealed class RunCoordinator : IDisposable
             log.Error(ex, "Scan failed");
             Status = $"Scan failed: {ex.Message}";
             chat.PrintError($"Tidy Up scan failed: {ex.Message}", "Tidy Up");
+        }
+        finally
+        {
+            scanGate.Release();
         }
     }
 
