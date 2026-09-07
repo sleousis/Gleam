@@ -52,6 +52,13 @@ public sealed class MarketPricePostProcessor : IProposalPostProcessor
             }
         }
 
+        // A marketable item whose price could not be fetched is not "worthless"; say so and start unchecked.
+        if (ctx.MarketLookupAttempted && p.Info.IsMarketable && !ctx.MarketPrices.ContainsKey(p.Info.ItemId)
+            && !p.Warnings.Contains("Market price unavailable"))
+        {
+            p = p with { Warnings = [.. p.Warnings, "Market price unavailable"] };
+        }
+
         if (p.Action == ActionKind.Discard && vendorTotal > 0)
         {
             return p with

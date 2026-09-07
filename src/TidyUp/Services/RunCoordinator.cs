@@ -178,6 +178,7 @@ public sealed class RunCoordinator : IDisposable
             {
                 // Never mix a live container with its cached copy; live always wins.
                 if (item.Slot.Kind.IsAlwaysLoaded()) continue;
+                if (item.Slot.Kind == ContainerKind.Retainer && item.Slot.OwnerId == 0) continue;
                 if (liveKinds.Contains((item.Slot.Kind, item.Slot.OwnerId))) continue;
                 if (item.Slot.Kind == ContainerKind.Saddlebag && GameInventoryScanner.IsSaddlebagLoaded()) continue;
                 yield return item;
@@ -232,10 +233,17 @@ public sealed class RunCoordinator : IDisposable
         if (string.IsNullOrEmpty(world)) return ctx;
         var ids = items.Select(i => i.ItemId).Distinct().Where(id => db.Get(id)?.IsMarketable == true).ToList();
         if (ids.Count == 0) return ctx;
+        IReadOnlyDictionary<uint, MarketPrice> prices = new Dictionary<uint, MarketPrice>();
         try
         {
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(12));
-            var prices = await market.GetPricesAsync(ids, world, cts.Token).ConfigureAwait(false);
+            prices = await market.GetPricesAsync(ids, world, cts.Token).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            log.Debug(ex, "Market prices unavailable; rows will say so");
+        }
+        {
             return new ItemContext
             {
                 CharacterId = ctx.CharacterId, CharacterName = ctx.CharacterName,
@@ -244,12 +252,8 @@ public sealed class RunCoordinator : IDisposable
                 MaxGearsetItemLevel = ctx.MaxGearsetItemLevel, RecipesUsing = ctx.RecipesUsing,
                 SeasonalItemIds = ctx.SeasonalItemIds, RetiredCurrencyGearIds = ctx.RetiredCurrencyGearIds,
                 MarketPrices = prices,
+                MarketLookupAttempted = true,
             };
-        }
-        catch (Exception ex)
-        {
-            log.Debug(ex, "Market prices unavailable; continuing without them");
-            return ctx;
         }
     }
 

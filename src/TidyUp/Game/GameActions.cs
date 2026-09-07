@@ -204,9 +204,13 @@ public sealed class GameActions : IGameActions
             : await changed.ConfigureAwait(false) is not null;
         if (confirmedByEvent) return true;
 
-        // Events can lag the server round-trip; the slot itself is the ground truth.
-        var after = await framework.RunOnFrameworkThread(() => scanner.ReadSlot(slot)).ConfigureAwait(false);
-        if (after is null || after.ItemId != expectedItemId) return true;
+        // Events can lag the server round-trip; the slot itself is the ground truth. Check twice, two seconds apart.
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            var after = await framework.RunOnFrameworkThread(() => scanner.ReadSlot(slot)).ConfigureAwait(false);
+            if (after is null || after.ItemId != expectedItemId) return true;
+            await Task.Delay(2000, ct).ConfigureAwait(false);
+        }
         LastFailure = "Dialog answered but the slot still holds the item";
         return false;
     }

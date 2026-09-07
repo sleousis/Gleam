@@ -70,6 +70,16 @@ public class IntegrationParsingTests
     }
 
     [Fact]
+    public void Allagan_record_uses_the_cache_entry_id_when_the_record_names_no_retainer()
+    {
+        var rec = new ulong[25];
+        rec[0] = GameContainerIds.RetainerPage1; rec[1] = 3; rec[2] = 1; rec[3] = 1; rec[23] = 0;
+        Assert.Equal(0xBEEFu, AllaganItemRecord.Parse(rec, "", 0xBEEF)!.Slot.OwnerId);
+        rec[23] = 0xCAFE;
+        Assert.Equal(0xCAFEu, AllaganItemRecord.Parse(rec, "", 0xBEEF)!.Slot.OwnerId);
+    }
+
+    [Fact]
     public void Allagan_record_rejects_unknown_containers_and_short_arrays()
     {
         var rec = new ulong[25]; rec[0] = 2000; rec[2] = 1; rec[3] = 1; // Currency container

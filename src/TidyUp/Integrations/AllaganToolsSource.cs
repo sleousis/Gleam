@@ -82,7 +82,7 @@ public sealed class AllaganToolsSource : IOfflineInventorySource
             foreach (var rec in characterItems.InvokeFunc(characterOrRetainerId))
             {
                 var ownerName = rec.Length > 23 && retainers.TryGetValue(rec[23], out var n) ? n : string.Empty;
-                var item = AllaganItemRecord.Parse(rec, ownerName);
+                var item = AllaganItemRecord.Parse(rec, ownerName, characterOrRetainerId);
                 if (item is not null) list.Add(item);
             }
             return list;

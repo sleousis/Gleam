@@ -124,7 +124,7 @@ public sealed unsafe class GameInventoryScanner
     public static bool IsRetainerOpen(ulong retainerId)
     {
         var (id, _) = ActiveRetainer();
-        return id != 0 && (retainerId == 0 || id == retainerId);
+        return id != 0 && retainerId != 0 && id == retainerId;
     }
 
     public static IReadOnlyDictionary<ulong, string> KnownRetainers()

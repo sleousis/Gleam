@@ -593,7 +593,7 @@ public sealed class AutoPilot
     {
         if (!GameUi.IsVisible("RetainerList")) return false;
         var rm = FFXIVClientStructs.FFXIV.Client.Game.RetainerManager.Instance();
-        return rm != null && rm->IsReady && rm->GetRetainerCount() > 0;
+        return rm != null && rm->GetRetainerCount() > 0;
     }
 
     private static unsafe List<(ulong Id, string Name)> RetainerOrder()
