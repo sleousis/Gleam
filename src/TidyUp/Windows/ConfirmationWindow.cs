@@ -1,6 +1,7 @@
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Game.ClientState.GamePad;
+using Dalamud.Interface;
 using Dalamud.Interface.Utility.Raii;
 using Dalamud.Interface.Windowing;
 using Dalamud.Plugin.Services;
@@ -16,7 +17,7 @@ namespace TidyUp.Windows;
 /// The contract window. One search box, one list, one button. Filters and sorting live behind a
 /// single menu so the default view is nothing but the items and why they were picked.
 /// </summary>
-public sealed class ConfirmationWindow : Window
+public sealed class ConfirmationWindow : StyledWindow
 {
     private readonly RunCoordinator coordinator;
     private readonly IconCache icons;
@@ -103,8 +104,8 @@ public sealed class ConfirmationWindow : Window
                 if (coordinator.FocusContainer is null && plan.Alts.Count > 0) DrawAlts(plan);
                 if (!drewAny)
                 {
-                    Ui.Gap(3);
-                    DrawCentered(plan.AllRows.Any() ? "Nothing matches your search." : "Nothing to clean. Everything looks tidy.");
+                    if (plan.AllRows.Any()) Ui.EmptyState(icons.Logo, "Nothing matches your filters.", "Clear a chip or the search box to see more.");
+                    else Ui.EmptyState(icons.Logo, "Nothing to clean.", "Everything looks tidy.");
                 }
                 DrawExcludedNote(plan);
             }
@@ -135,21 +136,7 @@ public sealed class ConfirmationWindow : Window
 
         Ui.Gap(0.3f);
         var color = report.Failed > 0 ? Ui.Warn : Ui.Ok;
-        using (ImRaii.PushColor(ImGuiCol.ChildBg, color * new Vector4(1, 1, 1, 0.10f)))
-        using (var c = ImRaii.Child("##banner", new Vector2(0, ImGui.GetFrameHeight() + 6 * Ui.Scale), false, ImGuiWindowFlags.None))
-        {
-            if (c)
-            {
-                ImGui.SetCursorPos(new Vector2(Ui.Space, 3 * Ui.Scale));
-                ImGui.AlignTextToFramePadding();
-                Ui.TextColored(color, "Last run:");
-                ImGui.SameLine();
-                Ui.Text(string.Join(" · ", parts));
-                ImGui.SameLine();
-                Ui.RightAlign(60 * Ui.Scale);
-                if (Ui.LinkButton("Dismiss")) bannerDismissed = true;
-            }
-        }
+        if (Ui.Banner(color, "Last run", string.Join(" · ", parts))) bannerDismissed = true;
     }
 
     // ---------- top bar: search, filter menu, rescan ----------
@@ -161,45 +148,48 @@ public sealed class ConfirmationWindow : Window
 
     private void DrawTopBar(RunPlan plan)
     {
-        // Preset first: what this list will do is the most important thing on the screen.
+        // Header: who we are and how much is on the table; the preset sits on the same row because what
+        // this list will do is the most important thing on the screen.
         var profile = coordinator.EffectiveProfile;
         var preset = Core.Rules.Presets.Detect(profile.Thresholds);
-        if (Ui.Segmented("##preset", ref preset, PresetOptions))
+        var checkedCount = plan.AllRows.Count(r => r.Checked && r.IsExecutable);
+        var total = plan.AllRows.Count(r => r.IsExecutable);
+        var containers = plan.Sections.Count(s => s.Rows.Count > 0);
+        var subtitle = coordinator.FocusContainer is { } fc
+            ? $"{fc.DisplayName()} · {checkedCount} of {total} selected"
+            : $"{total} item{(total == 1 ? "" : "s")} in {containers} container{(containers == 1 ? "" : "s")} · {checkedCount} selected";
+        Ui.Header(icons.Logo, "Tidy Up", subtitle, Ui.SegmentedWidth(PresetOptions), () =>
         {
-            if (config.Profiles.IsOverridden(plan.CharacterId, nameof(Core.Lists.Profile.Thresholds)))
-                config.Profiles.GetOrCreateOverride(plan.CharacterId, plan.CharacterName).Values.ApplyPreset(preset);
-            else
-                config.Profiles.Account.ApplyPreset(preset);
-            config.Save(PluginServices.PluginInterface);
-            _ = coordinator.RefreshPlanAsync(openWindow: false, coordinator.FocusContainer);
-        }
-        ImGui.SameLine();
-        Ui.TextColored(Ui.Accent, profile.Thresholds.Policy.Describe());
+            if (Ui.Segmented("##preset", ref preset, PresetOptions))
+            {
+                if (config.Profiles.IsOverridden(plan.CharacterId, nameof(Core.Lists.Profile.Thresholds)))
+                    config.Profiles.GetOrCreateOverride(plan.CharacterId, plan.CharacterName).Values.ApplyPreset(preset);
+                else
+                    config.Profiles.Account.ApplyPreset(preset);
+                config.Save(PluginServices.PluginInterface);
+                _ = coordinator.RefreshPlanAsync(openWindow: false, coordinator.FocusContainer);
+            }
+            Ui.Tooltip("Aggressive discards everything proposed. Balanced discards untradeable and sells tradeable. Cautious only sells tradeable.");
+        });
+        Ui.TextColored(Ui.Accent * new Vector4(1, 1, 1, 0.9f), profile.Thresholds.Policy.Describe());
 
-        Ui.Gap(0.3f);
+        Ui.Gap(0.4f);
 
         DrawContainerChips(plan);
         DrawTypeChips(plan);
 
-        ImGui.SetNextItemWidth(260 * Ui.Scale);
-        Ui.InputText("##search", "Search", ref search, 64);
+        Ui.SearchBox("##search", ref search, 260 * Ui.Scale);
 
         ImGui.SameLine();
         var filtersActive = filterContainer is not null || filterRule is not null || filterAction is not null || filterTags.Count > 0 || filterTradeable is not null || sortMode != 0;
-        if (Ui.Button(filtersActive ? "Filter •" : "Filter")) ImGui.OpenPopup("##filters", ImGuiPopupFlags.None);
+        if (Ui.IconButton(FontAwesomeIcon.Filter, filtersActive ? "Filter •" : "Filter")) ImGui.OpenPopup("##filters", ImGuiPopupFlags.None);
         DrawFilterMenu();
 
         ImGui.SameLine();
-        if (Ui.LinkButton("Rescan")) _ = coordinator.RefreshPlanAsync(openWindow: false, coordinator.FocusContainer);
+        if (Ui.IconButton(FontAwesomeIcon.Sync, "Rescan")) _ = coordinator.RefreshPlanAsync(openWindow: false, coordinator.FocusContainer);
 
-        var checkedCount = plan.AllRows.Count(r => r.Checked && r.IsExecutable);
-        var total = plan.AllRows.Count(r => r.IsExecutable);
-        var label = coordinator.FocusContainer is { } fc ? $"{fc.DisplayName()} · {checkedCount} of {total} selected" : $"{checkedCount} of {total} selected";
-        var w = ImGui.CalcTextSize(label, false, 0).X + 130 * Ui.Scale;
         ImGui.SameLine();
-        Ui.RightAlign(w);
-        Ui.Hint(label);
-        ImGui.SameLine();
+        Ui.RightAlign(90 * Ui.Scale);
         // All means all of what is on screen: with a type, container or search filter on, it ticks just
         // those rows. The soft cap still asks for a second click on a big run.
         var narrowed = filterContainer is not null || filterRule is not null || filterAction is not null || filterTags.Count > 0 || filterTradeable is not null || !string.IsNullOrWhiteSpace(search);
@@ -237,7 +227,7 @@ public sealed class ConfirmationWindow : Window
         {
             var active = filterContainer == kind;
             var label = checkedCount > 0 ? $"{kind.DisplayName()} {checkedCount}/{rows}" : $"{kind.DisplayName()} {rows}";
-            if (Chip(label, active)) filterContainer = active ? null : kind;
+            if (Ui.Chip(label, active)) filterContainer = active ? null : kind;
             Ui.Tooltip(active ? "Showing only this container. Click to show all." : $"Show only the {kind.DisplayName().ToLowerInvariant()}.");
             ImGui.SameLine();
         }
@@ -265,7 +255,7 @@ public sealed class ConfirmationWindow : Window
         {
             var active = filterTags.Contains(tag);
             var label = checkedCount > 0 ? $"{tag.Label()} {checkedCount}/{count}" : $"{tag.Label()} {count}";
-            if (Chip(label, active))
+            if (Ui.Chip(label, active))
             {
                 if (!filterTags.Remove(tag)) filterTags.Add(tag);
             }
@@ -278,23 +268,16 @@ public sealed class ConfirmationWindow : Window
         {
             ImGui.TextDisabled("|");
             ImGui.SameLine();
-            if (Chip($"Tradeable {tradeable}", filterTradeable == true)) filterTradeable = filterTradeable == true ? null : true;
+            if (Ui.Chip($"Tradeable {tradeable}", filterTradeable == true)) filterTradeable = filterTradeable == true ? null : true;
             Ui.Tooltip("Only items that can be sold or traded.");
             ImGui.SameLine();
-            if (Chip($"Untradeable {untradeable}", filterTradeable == false)) filterTradeable = filterTradeable == false ? null : false;
+            if (Ui.Chip($"Untradeable {untradeable}", filterTradeable == false)) filterTradeable = filterTradeable == false ? null : false;
             Ui.Tooltip("Only items that cannot be sold or traded. Discarding is the only way out for these.");
             ImGui.SameLine();
         }
         if ((filterTags.Count > 0 || filterTradeable is not null) && Ui.LinkButton("Clear")) { filterTags.Clear(); filterTradeable = null; }
         ImGui.NewLine();
         Ui.Gap(0.2f);
-    }
-
-    private static bool Chip(string label, bool active)
-    {
-        using var bg = ImRaii.PushColor(ImGuiCol.Button, active ? ImGui.GetColorU32(Ui.Accent * new Vector4(1, 1, 1, 0.75f)) : ImGui.GetColorU32(ImGuiCol.FrameBg), true);
-        using var fg = ImRaii.PushColor(ImGuiCol.Text, active ? ImGui.GetColorU32(new Vector4(0.08f, 0.08f, 0.08f, 1f)) : ImGui.GetColorU32(ImGuiCol.Text), true);
-        return ImGui.SmallButton(label);
     }
 
     private void DrawFilterMenu()
@@ -370,16 +353,27 @@ public sealed class ConfirmationWindow : Window
         if (!sectionOpen.TryGetValue(key, out var open)) open = defaultOpen;
 
         ImGui.SetNextItemOpen(open, ImGuiCond.Always);
-        var expanded = ImGui.CollapsingHeader($"{section.Title}  ·  {rows.Count}###{key}", ImGuiTreeNodeFlags.None);
+        var checkedHere = rows.Count(r => r.Checked);
+        var x0 = ImGui.GetCursorPosX();
+        bool expanded;
+        using (ImRaii.PushStyle(ImGuiStyleVar.FramePadding, new Vector2(10 * Ui.Scale, 6 * Ui.Scale)))
+            expanded = ImGui.CollapsingHeader($"{section.Title}###{key}", ImGuiTreeNodeFlags.None);
         sectionOpen[key] = expanded;
+        var pillDrop = 5 * Ui.Scale; // pills are shorter than the padded header; centre them on it
+
+        ImGui.SameLine();
+        ImGui.SetCursorPosX(x0 + ImGui.CalcTextSize(section.Title, false, 0).X + 40 * Ui.Scale);
+        ImGui.SetCursorPosY(ImGui.GetCursorPosY() + pillDrop);
+        Ui.Pill(checkedHere > 0 ? $"{checkedHere} / {rows.Count}" : $"{rows.Count}", checkedHere > 0 ? Ui.AccentSoft : Ui.Muted);
 
         // Status chip on the same line, right-aligned.
         var chip = section.IsAvailableNow ? "ready" : $"needs: {section.Requirement}";
         if (!section.IsAvailableNow && section.Kind == ContainerKind.GlamourDresser) chip += $" · {section.FreeSlotsNeeded} free bag slots";
         ImGui.SameLine();
-        Ui.RightAlign(ImGui.CalcTextSize(chip, false, 0).X + 24 * Ui.Scale);
-        Ui.Pill(chip, section.IsAvailableNow ? Ui.Ok : Ui.Warn);
-        if (!expanded) return;
+        Ui.RightAlign(ImGui.CalcTextSize(chip, false, 0).X + 46 * Ui.Scale);
+        ImGui.SetCursorPosY(ImGui.GetCursorPosY() + pillDrop);
+        Ui.Pill(chip, section.IsAvailableNow ? Ui.Ok : Ui.Warn, section.IsAvailableNow ? FontAwesomeIcon.Check : FontAwesomeIcon.MapMarkerAlt);
+        if (!expanded) { Ui.Gap(0.2f); return; }
 
         using var table = ImRaii.Table($"##t{key}", 5, ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingFixedFit | ImGuiTableFlags.NoSavedSettings | ImGuiTableFlags.PadOuterX);
         if (!table) return;
@@ -417,8 +411,7 @@ public sealed class ConfirmationWindow : Window
         }
 
         ImGui.TableNextColumn();
-        var tex = icons.Get(row.Info.IconId, row.Item.IsHq);
-        if (!tex.IsNull) ImGui.Image(tex, new Vector2(26 * Ui.Scale, 26 * Ui.Scale));
+        Ui.ImageRounded(icons.Get(row.Info.IconId, row.Item.IsHq), new Vector2(26 * Ui.Scale, 26 * Ui.Scale), 4 * Ui.Scale);
 
         ImGui.TableNextColumn();
         ImGui.AlignTextToFramePadding();
@@ -439,7 +432,10 @@ public sealed class ConfirmationWindow : Window
         ImGui.AlignTextToFramePadding();
         if (row.Proposal.Warnings.Count > 0)
         {
-            Ui.TextColored(Ui.Warn, row.Proposal.Warnings[0]);
+            var severe = row.Proposal.RuleId == "manual" && row.Proposal.Warnings.Count > 1 && row.Proposal.Warnings[1] == "Not proposed by any rule";
+            Ui.Icon(FontAwesomeIcon.ExclamationTriangle, severe ? Ui.Danger : Ui.Warn);
+            ImGui.SameLine(0, 5 * Ui.Scale);
+            Ui.TextColored(severe ? Ui.Danger : Ui.Warn, row.Proposal.Warnings[0]);
             if (ImGui.IsItemHovered() && row.Proposal.Warnings.Count > 1) ImGui.SetTooltip(string.Join("\n", row.Proposal.Warnings));
         }
         else if (row.Proposal.RuleId == "manual")
@@ -553,7 +549,8 @@ public sealed class ConfirmationWindow : Window
 
     private void DrawFooter(RunPlan plan)
     {
-        ImGui.Separator();
+        Ui.Rule();
+        Ui.Gap(0.3f);
         var summary = plan.Summarize();
         var t = coordinator.EffectiveProfile.Thresholds;
         var rowsForCap = coordinator.FocusContainer is { } f ? plan.Sections.Where(s => s.Kind == f).SelectMany(s => s.Rows) : plan.AllRows;
@@ -607,16 +604,13 @@ public sealed class ConfirmationWindow : Window
 
     private void DrawPilotRunning()
     {
-        Ui.Gap(2);
-        DrawCentered("Hands-free run");
+        Ui.EmptyState(icons.Logo, "Hands-free run", Pilot!.Status);
         Ui.Gap(0.5f);
-        DrawCentered(Pilot!.Status, muted: true);
         if (coordinator.IsRunning)
         {
             var frac = coordinator.RunTotal == 0 ? 0f : (float)coordinator.RunDone / coordinator.RunTotal;
             ImGui.SetCursorPosX(ImGui.GetWindowWidth() * 0.2f);
-            using (ImRaii.PushColor(ImGuiCol.PlotHistogram, Ui.Accent))
-                ImGui.ProgressBar(frac, new Vector2(ImGui.GetWindowWidth() * 0.6f, 0), $"{coordinator.RunDone} / {coordinator.RunTotal}");
+            Ui.Progress(frac, ImGui.GetWindowWidth() * 0.6f, $"{coordinator.RunDone} / {coordinator.RunTotal}");
         }
         Ui.Gap();
         ImGui.SetCursorPosX((ImGui.GetWindowWidth() - 120 * Ui.Scale) / 2);
@@ -626,12 +620,11 @@ public sealed class ConfirmationWindow : Window
 
     private void DrawRunning()
     {
-        Ui.Gap(2);
-        DrawCentered("Cleaning…");
+        Ui.EmptyState(icons.Logo, "Cleaning…");
+        Ui.Gap(0.5f);
         var frac = coordinator.RunTotal == 0 ? 0f : (float)coordinator.RunDone / coordinator.RunTotal;
         ImGui.SetCursorPosX(ImGui.GetWindowWidth() * 0.2f);
-        using (ImRaii.PushColor(ImGuiCol.PlotHistogram, Ui.Accent))
-            ImGui.ProgressBar(frac, new Vector2(ImGui.GetWindowWidth() * 0.6f, 0), $"{coordinator.RunDone} / {coordinator.RunTotal}");
+        Ui.Progress(frac, ImGui.GetWindowWidth() * 0.6f, $"{coordinator.RunDone} / {coordinator.RunTotal}");
         if (coordinator.LastProgress is { } p) DrawCentered($"{p.Action.ItemName} × {p.Action.Quantity} · {p.Message}", muted: true);
         Ui.Gap();
         ImGui.SetCursorPosX((ImGui.GetWindowWidth() - 120 * Ui.Scale) / 2);
@@ -639,12 +632,7 @@ public sealed class ConfirmationWindow : Window
         DrawCentered("Stopping finishes the current item and leaves the rest untouched.", muted: true);
     }
 
-    private static void DrawCentered(string text, bool muted = false)
-    {
-        var w = ImGui.CalcTextSize(text, false, 0).X;
-        ImGui.SetCursorPosX(Math.Max(0, (ImGui.GetWindowWidth() - w) / 2));
-        if (muted) Ui.Hint(text); else Ui.Text(text);
-    }
+    private static void DrawCentered(string text, bool muted = false) => Ui.Centered(text, muted);
 
     // ---------- keyboard & gamepad ----------
 

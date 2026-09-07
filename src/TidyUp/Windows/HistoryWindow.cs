@@ -10,7 +10,7 @@ using TidyUp.Services;
 namespace TidyUp.Windows;
 
 /// <summary>Everything Tidy Up ever destroyed, sold, turned in or desynthed, with how to get it back.</summary>
-public sealed class HistoryWindow : Window
+public sealed class HistoryWindow : StyledWindow
 {
     private readonly IRunLog runLog;
     private readonly ItemDatabase db;
@@ -43,10 +43,11 @@ public sealed class HistoryWindow : Window
 
     public override void Draw()
     {
-        ImGui.SetNextItemWidth(260 * Ui.Scale);
-        Ui.InputText("##hs", "Search", ref search, 64);
+        Ui.Header(icons.Logo, "History", $"{entries.Count} action{(entries.Count == 1 ? "" : "s")} on record");
+        Ui.Gap(0.4f);
+        Ui.SearchBox("##hs", ref search, 260 * Ui.Scale);
         ImGui.SameLine();
-        if (Ui.LinkButton("Reload")) Reload();
+        if (Ui.IconButton(Dalamud.Interface.FontAwesomeIcon.Sync, "Reload")) Reload();
 
         var rows = entries.Where(e => string.IsNullOrWhiteSpace(search)
             || e.ItemName.Contains(search, StringComparison.OrdinalIgnoreCase)

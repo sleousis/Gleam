@@ -17,7 +17,7 @@ namespace TidyUp.Windows;
 /// on or off, and the two lists. Everything else is a knob most people never touch and lives behind
 /// one "Advanced" fold at the bottom.
 /// </summary>
-public sealed partial class SettingsWindow : Window
+public sealed partial class SettingsWindow : StyledWindow
 {
     private readonly Configuration config;
     private readonly IPlayerState player;
@@ -89,9 +89,11 @@ public sealed partial class SettingsWindow : Window
         {
             if (body)
             {
+                var version = typeof(SettingsWindow).Assembly.GetName().Version?.ToString(3) ?? "dev";
+                Ui.Header(icons.Logo, "Tidy Up", $"v{version} · by Raiden Shinryu");
+                Ui.Gap(0.6f);
                 DrawEssentials();
-                Ui.Gap(1.5f);
-                ImGui.Separator();
+                Ui.Gap(0.5f);
                 if (ImGui.CollapsingHeader("Advanced", ImGuiTreeNodeFlags.None)) DrawAdvancedFold();
             }
         }
@@ -109,43 +111,55 @@ public sealed partial class SettingsWindow : Window
     {
         var p = Editing;
 
-        Ui.Section("What to do with junk");
-        var live = Override(nameof(Profile.Thresholds));
-        using (ImRaii.Disabled(!live))
+        using (Ui.Card("junk"))
         {
-            var preset = Presets.Detect(p.Thresholds);
-            if (Ui.Segmented("##preset", ref preset, PresetOptions)) { p.ApplyPreset(preset); dirty = true; }
-            if (preset == PresetName.Custom) { ImGui.SameLine(); Ui.Hint("custom"); }
-        }
-        Ui.TextColored(Ui.Accent, p.Thresholds.Policy.Describe());
-        Ui.Hint("You always see the full list and can change any row before anything happens.");
-
-        Ui.Section("Where to look");
-        var en = Override(nameof(Profile.ContainerEnabled));
-        using (ImRaii.Disabled(!en))
-        {
-            var kinds = Enum.GetValues<ContainerKind>();
-            for (var i = 0; i < kinds.Length; i++)
+            Ui.TextColored(Ui.Muted, "WHAT TO DO WITH JUNK");
+            ImGui.Spacing();
+            var live = Override(nameof(Profile.Thresholds));
+            using (ImRaii.Disabled(!live))
             {
-                var kind = kinds[i];
-                var on = p.IsContainerEnabled(kind);
-                if (ImGui.Checkbox($"{kind.DisplayName()}##en{kind}", ref on)) { p.ContainerEnabled[kind] = on; dirty = true; }
-                if (i < kinds.Length - 1 && i != 2) ImGui.SameLine();
+                var preset = Presets.Detect(p.Thresholds);
+                if (Ui.Segmented("##preset", ref preset, PresetOptions)) { p.ApplyPreset(preset); dirty = true; }
+                if (preset == PresetName.Custom) { ImGui.SameLine(); Ui.Hint("custom"); }
+            }
+            Ui.TextColored(Ui.Accent, p.Thresholds.Policy.Describe());
+            Ui.Hint("You always see the full list and can change any row before anything happens.");
+        }
+
+        using (Ui.Card("where"))
+        {
+            Ui.TextColored(Ui.Muted, "WHERE TO LOOK");
+            ImGui.Spacing();
+            var en = Override(nameof(Profile.ContainerEnabled));
+            using (ImRaii.Disabled(!en))
+            {
+                var kinds = Enum.GetValues<ContainerKind>();
+                for (var i = 0; i < kinds.Length; i++)
+                {
+                    var kind = kinds[i];
+                    var on = p.IsContainerEnabled(kind);
+                    if (ImGui.Checkbox($"{kind.DisplayName()}##en{kind}", ref on)) { p.ContainerEnabled[kind] = on; dirty = true; }
+                    if (i < kinds.Length - 1 && i != 2) ImGui.SameLine();
+                }
             }
         }
 
-        Ui.Section("Hands-free");
-        var a = config.Automation;
-        var auto = a.Enabled;
-        if (ImGui.Checkbox("Do the walking for me", ref auto)) { a.Enabled = auto; dirty = true; }
-        ImGui.SameLine();
-        if (Nav is null || !Nav.IsInstalled) Ui.Pill("needs vnavmesh", Ui.Warn); else Ui.Pill("vnavmesh", Ui.Ok);
-        ImGui.SameLine();
-        if (Travel is null || !Travel.IsInstalled) Ui.Pill("needs Lifestream", Ui.Warn); else Ui.Pill("Lifestream", Ui.Ok);
-        Ui.Hint("Opens the saddlebag, travels to an inn, visits every retainer and the dresser, then your Grand Company and a merchant. This is gameplay automation and is against the game's terms.");
+        using (Ui.Card("auto"))
+        {
+            Ui.TextColored(Ui.Muted, "HANDS-FREE");
+            ImGui.Spacing();
+            var a = config.Automation;
+            var auto = a.Enabled;
+            if (ImGui.Checkbox("Do the walking for me", ref auto)) { a.Enabled = auto; dirty = true; }
+            ImGui.SameLine();
+            if (Nav is null || !Nav.IsInstalled) Ui.Pill("needs vnavmesh", Ui.Warn); else Ui.Pill("vnavmesh", Ui.Ok, Dalamud.Interface.FontAwesomeIcon.Check);
+            ImGui.SameLine();
+            if (Travel is null || !Travel.IsInstalled) Ui.Pill("needs Lifestream", Ui.Warn); else Ui.Pill("Lifestream", Ui.Ok, Dalamud.Interface.FontAwesomeIcon.Check);
+            Ui.HintWrapped("Opens the saddlebag, travels to an inn, visits every retainer and the dresser, then your Grand Company and a merchant. This is gameplay automation and is against the game's terms.");
+        }
 
-        protectEditor.Draw();
-        alwaysEditor.Draw();
+        using (Ui.Card("protect")) protectEditor.Draw();
+        using (Ui.Card("always")) alwaysEditor.Draw();
     }
 
     // ---------- everything else, folded ----------
