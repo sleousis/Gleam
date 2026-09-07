@@ -33,9 +33,23 @@ public sealed class CallbackSettings
     public int RateLimitMs { get; set; } = 250;
 }
 
+/// <summary>What the pilot does with rows it only discovers once a container is open (never-cached retainers, the dresser).</summary>
+public enum UnseenRowsMode
+{
+    /// <summary>Leave them for the next review.</summary>
+    Skip,
+    /// <summary>Open the review and wait for the user.</summary>
+    Ask,
+    /// <summary>Apply the same rules and clean what they would have checked by default.</summary>
+    Clean,
+}
+
 /// <summary>Everything the hands-free mode needs. Off by default; it moves the character and drives NPC menus.</summary>
 public sealed class AutomationSettings
 {
+    /// <summary>Rows discovered only once a container opens. Clean means the run is truly hands-free.</summary>
+    public UnseenRowsMode UnseenRows { get; set; } = UnseenRowsMode.Clean;
+
     public bool Enabled { get; set; } = false;
 
     /// <summary>Travel to an inn with Lifestream when retainers, sells, or the dresser are involved.</summary>
@@ -53,6 +67,9 @@ public sealed class AutomationSettings
 
     /// <summary>If the vendor shows a menu first, the entry that opens the shop window.</summary>
     public string VendorMenuText { get; set; } = "Purchase";
+
+    /// <summary>Lifestream destination with a merchant right by the aetheryte, used when none is within reach.</summary>
+    public string VendorAetheryte { get; set; } = "Limsa Lominsa Lower Decks";
     public bool VisitDresser { get; set; } = true;
     public bool OpenSaddlebag { get; set; } = true;
 
@@ -74,11 +91,6 @@ public sealed class AutomationSettings
     public int TravelTimeoutSeconds { get; set; } = 120;
     public int StepTimeoutSeconds { get; set; } = 20;
 
-    /// <summary>
-    /// When a container reveals rows that were not in the accepted plan, pause and ask. Off by default:
-    /// unseen rows are simply left for the next review, and the run keeps going.
-    /// </summary>
-    public bool PauseForUnseenRows { get; set; } = false;
 
     // ---- Grand Company leg (Expert Delivery) ----
 
@@ -143,7 +155,6 @@ public sealed class Configuration : IPluginConfiguration
             // v1 hid retainer rows behind a collapsed header and paused the pilot at every container.
             Profiles.Account.RetainerSectionsCollapsed = false;
             foreach (var o in Profiles.Overrides) o.Values.RetainerSectionsCollapsed = false;
-            Automation.PauseForUnseenRows = false;
             Version = 2;
             changed = true;
         }
