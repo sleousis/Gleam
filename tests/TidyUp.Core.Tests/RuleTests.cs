@@ -45,6 +45,20 @@ public class RuleTests
     }
 
     [Fact]
+    public void VendorOnlyJunk_leaves_usable_items_alone_even_with_a_vendor_price()
+    {
+        // 97 Priority Aetheryte Passes are 9,700g of "junk" to a price check and free teleports to a player.
+        Assert.Null(new VendorOnlyJunkRule().Evaluate(ScannedItem.Simple(Inv(0), 17, 97), Items[17], Context(), t));
+    }
+
+    [Fact]
+    public void OutleveledConsumables_ignores_medicine_with_no_level_requirement()
+    {
+        Assert.Null(new OutleveledConsumablesRule().Evaluate(ScannedItem.Simple(Inv(0), 18, 26), Items[18], Context(maxGearsetIlvl: 700), t));
+        Assert.NotNull(new OutleveledConsumablesRule().Evaluate(ScannedItem.Simple(Inv(0), 19, 5), Items[19], Context(maxGearsetIlvl: 700), t));
+    }
+
+    [Fact]
     public void VendorOnlyJunk_never_touches_marketable_or_equipment()
     {
         Assert.Null(new VendorOnlyJunkRule().Evaluate(ScannedItem.Simple(Inv(0), 15, 1), Items[15], Context(), t));

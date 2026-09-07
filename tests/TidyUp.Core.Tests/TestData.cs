@@ -18,7 +18,7 @@ internal static class TestData
     {
         [1] = ItemInfo.Test(1, "Allagan Bronze Piece", vendor: 28, marketable: false),
         [2] = ItemInfo.Test(2, "Rarefied Ash Lumber", vendor: 0, marketable: false, untradable: true, category: "Miscellany"),
-        [3] = ItemInfo.Test(3, "Grade 6 Dark Matter", vendor: 45, marketable: false, category: "Medicine", ilvl: 90),
+        [3] = ItemInfo.Test(3, "Grade 6 Dark Matter", vendor: 45, marketable: false, category: "Medicine", ilvl: 90, levelEquip: 50),
         [4] = ItemInfo.Test(4, "Aetherial Cotton Doublet", vendor: 100, marketable: false, equipment: true, levelEquip: 20, ilvl: 20, rarity: 2, cjc: CjcAll, category: "Body"),
         [5] = ItemInfo.Test(5, "Ironworks Cap of Casting", vendor: 500, marketable: false, equipment: true, levelEquip: 50, ilvl: 130, rarity: 3, cjc: CjcBlm, category: "Head"),
         [6] = ItemInfo.Test(6, "Woolen Coat", vendor: 200, marketable: true, equipment: true, levelEquip: 34, ilvl: 34, rarity: 1, cjc: CjcAll, category: "Body"),
@@ -27,11 +27,14 @@ internal static class TestData
         [9] = ItemInfo.Test(9, "Eternity Ring", vendor: 0, marketable: false, untradable: true, unique: true, category: "Ring", equipment: true, cjc: CjcAll),
         [10] = ItemInfo.Test(10, "Company Seal Voucher", vendor: 0, marketable: false, indisposable: true),
         [11] = ItemInfo.Test(11, "Gil", vendor: 0, marketable: false, category: "Currency"),
-        [12] = ItemInfo.Test(12, "Expensive Potion", vendor: 50, marketable: true, category: "Medicine", ilvl: 50),
+        [12] = ItemInfo.Test(12, "Expensive Potion", vendor: 50, marketable: true, category: "Medicine", ilvl: 50, levelEquip: 30),
         [13] = ItemInfo.Test(13, "Dragoon Gear Never Played", vendor: 100, marketable: false, equipment: true, levelEquip: 30, ilvl: 30, rarity: 2, cjc: CjcNeverPlayed, category: "Legs"),
         [14] = ItemInfo.Test(14, "Retired Tome Coat", vendor: 300, marketable: false, equipment: true, levelEquip: 60, ilvl: 270, rarity: 3, cjc: CjcAll, category: "Body"),
         [15] = ItemInfo.Test(15, "Stackable Widget", vendor: 5, marketable: true, stack: 99),
         [16] = ItemInfo.Test(16, "Phial of Fantasia", vendor: 0, marketable: false, untradable: true, category: "Miscellany", stack: 1),
+        [17] = ItemInfo.Test(17, "Priority Aetheryte Pass", vendor: 100, marketable: false, untradable: true, category: "Miscellany", usable: true),
+        [18] = ItemInfo.Test(18, "Cordial", vendor: 30, marketable: true, category: "Medicine", levelEquip: 1, ilvl: 1),
+        [19] = ItemInfo.Test(19, "Grade 2 Tincture", vendor: 30, marketable: true, category: "Medicine", levelEquip: 70, ilvl: 300),
     };
 
     public static ItemInfo? Lookup(uint id) => Items.GetValueOrDefault(id);

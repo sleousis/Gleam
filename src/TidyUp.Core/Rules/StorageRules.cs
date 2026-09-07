@@ -16,6 +16,8 @@ public sealed class VendorOnlyJunkRule : IRule
         if (info.IsMarketable || info.IsEquipment || info.IsUnique || info.IsNeverProposed) return null;
         if (info.IsConsumable || info.IsMaterial) return null; // those have their own rules
         if (item.IsCollectable) return null;
+        // Anything with a use action is a tool, not junk: aetheryte passes, squadron manuals, tokens you redeem.
+        if (info.IsUsable) return null;
 
         // Only things the game itself prices as vendor trash. Untradeable items with no vendor value are
         // hard-blocked upstream: that shape includes Fantasia and every voucher or token in the game.
@@ -48,6 +50,8 @@ public sealed class OutleveledConsumablesRule : IRule
     public Proposal? Evaluate(ScannedItem item, ItemInfo info, ItemContext ctx, Thresholds t)
     {
         if (!info.IsConsumable || ctx.MaxGearsetItemLevel <= 0) return null;
+        // Medicine without a level requirement (Cordials, Phoenix Downs, Echo Drops) never goes out of date.
+        if (info.UiCategory.Equals("Medicine", StringComparison.OrdinalIgnoreCase) && info.LevelEquip <= 1) return null;
         var gap = ctx.MaxGearsetItemLevel - info.ItemLevel;
         if (gap < t.ConsumableItemLevelGap) return null;
 
