@@ -240,7 +240,7 @@ public sealed class AutoPilot
                     await framework.RunOnFrameworkThread(() => GameUi.RetainerListSelect(S.RetainerListSelect, i)).ConfigureAwait(false);
                     try
                     {
-                        await WaitUntil(() => GameUi.IsVisible("SelectString"), TimeSpan.FromSeconds(6), $"{name}'s menu", ct).ConfigureAwait(false);
+                        await WaitUntil(() => GameUi.SelectStringReady(), TimeSpan.FromSeconds(6), $"{name}'s menu", ct).ConfigureAwait(false);
                         return;
                     }
                     catch (AutoPilotException) when (attempt < 2)
@@ -263,7 +263,7 @@ public sealed class AutoPilot
                 if (rows.Count > 0) await Step($"Cleaning {name}", () => Execute(rows), ct);
                 await PauseForUnseen(ContainerKind.Retainer, ct).ConfigureAwait(false);
                 await framework.RunOnFrameworkThread(() => { GameUi.Close("InventoryRetainer"); GameUi.Close("InventoryRetainerLarge"); }).ConfigureAwait(false);
-                await WaitUntil(() => GameUi.IsVisible("SelectString"), StepTimeout, $"{name}'s menu", ct).ConfigureAwait(false);
+                await WaitUntil(() => GameUi.SelectStringReady(), StepTimeout, $"{name}'s menu", ct).ConfigureAwait(false);
             }
 
             if (wantSell)
@@ -276,14 +276,14 @@ public sealed class AutoPilot
                     await Execute(sells).ConfigureAwait(false);
                     sellsDone = true;
                     await framework.RunOnFrameworkThread(() => GameUi.Close("RetainerSellList")).ConfigureAwait(false);
-                    await WaitUntil(() => GameUi.IsVisible("SelectString"), StepTimeout, $"{name}'s menu", ct).ConfigureAwait(false);
+                    await WaitUntil(() => GameUi.SelectStringReady(), StepTimeout, $"{name}'s menu", ct).ConfigureAwait(false);
                 }, ct);
             }
 
             await Step($"Leaving {name}", async () =>
             {
                 await ChooseMenu(S.QuitMenuText, ct).ConfigureAwait(false);
-                await WaitUntil(() => GameUi.IsVisible("RetainerList") && !GameUi.IsVisible("SelectString"), StepTimeout, "the retainer list", ct).ConfigureAwait(false);
+                await WaitUntil(() => GameUi.IsVisible("RetainerList") && !GameUi.SelectStringReady(), StepTimeout, "the retainer list", ct).ConfigureAwait(false);
                 await Task.Delay(500, ct).ConfigureAwait(false);
             }, ct);
         }
@@ -489,12 +489,18 @@ public sealed class AutoPilot
 
     private async Task ChooseMenu(string text, CancellationToken ct)
     {
+        IReadOnlyList<string> entries = Array.Empty<string>();
+        for (var attempt = 0; attempt < 8; attempt++)
+        {
+            entries = await framework.RunOnFrameworkThread(GameUi.SelectStringEntries).ConfigureAwait(false);
+            if (entries.Count > 0) break;
+            await Task.Delay(400, ct).ConfigureAwait(false);
+        }
         var chosen = await framework.RunOnFrameworkThread(() => GameUi.SelectStringChoose(text)).ConfigureAwait(false);
         if (chosen < 0)
-        {
-            var entries = await framework.RunOnFrameworkThread(GameUi.SelectStringEntries).ConfigureAwait(false);
-            throw new AutoPilotException($"No menu entry containing '{text}'. Offered: {string.Join(" | ", entries)}");
-        }
+            throw new AutoPilotException(entries.Count == 0
+                ? $"The menu never filled with entries, so '{text}' could not be chosen"
+                : $"No menu entry containing '{text}'. Offered: {string.Join(" | ", entries)}");
         await Task.Delay(400, ct).ConfigureAwait(false);
     }
 
