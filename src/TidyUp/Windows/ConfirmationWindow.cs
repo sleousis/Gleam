@@ -429,31 +429,45 @@ public sealed class ConfirmationWindow : StyledWindow
         if (ImGui.IsItemHovered()) DrawRowTooltip(row);
         DrawRowContextMenu(row);
         ImGui.SameLine();
-        var meta = $"× {row.Item.Quantity}";
-        if (row.Item.IsDyed) meta += $"  ·  {db.StainName(row.Item.Stain0)}";
-        if (row.Item.HasMateria) meta += $"  ·  {row.Item.MateriaCount} materia";
-        Ui.Hint(meta);
+        Ui.Hint($"× {row.Item.Quantity}");
 
         ImGui.TableNextColumn();
         DrawActionPicker(row);
 
         ImGui.TableNextColumn();
-        ImGui.AlignTextToFramePadding();
+        DrawAttributePills(row);
+    }
+
+    /// <summary>What the item *is*, as small pills. The why (rule, warnings) lives in the name tooltip.</summary>
+    private void DrawAttributePills(PlanRow row)
+    {
+        var info = row.Info;
+        var item = row.Item;
+        var pills = new List<(string Text, Vector4 Color)>();
+        if (info.IsUntradable) pills.Add(("untradeable", Ui.Warn)); else pills.Add(("tradeable", Ui.Muted));
+        if (info.IsMarketable) pills.Add(("marketable", Ui.Ok));
+        if (info.IsUnique) pills.Add(("unique", Ui.Danger));
+        if (info.IsIndisposable) pills.Add(("cannot discard", Ui.Danger));
+        if (info.IsUsable) pills.Add(("usable", Ui.Info));
+        if (item.IsHq) pills.Add(("HQ", Ui.AccentSoft));
+        if (item.HasMateria) pills.Add(($"{item.MateriaCount} materia", Ui.Accent));
+        if (item.IsDyed) pills.Add((db.StainName(item.Stain0), Ui.Muted));
+
+        ImGui.SetCursorPosY(ImGui.GetCursorPosY() + 3 * Ui.Scale);
+        using var sp = ImRaii.PushStyle(ImGuiStyleVar.ItemSpacing, new Vector2(4 * Ui.Scale, 0));
         if (row.Proposal.Warnings.Count > 0)
         {
-            var severe = row.Proposal.RuleId == "manual" && row.Proposal.Warnings.Count > 1 && row.Proposal.Warnings[1] == "Not proposed by any rule";
+            var severe = row.Proposal.Warnings[0].Contains("never be reacquired", StringComparison.Ordinal) || row.Proposal.Warnings[0].Contains("cannot be bought back", StringComparison.Ordinal);
+            ImGui.SetCursorPosY(ImGui.GetCursorPosY() + 1 * Ui.Scale);
             Ui.Icon(FontAwesomeIcon.ExclamationTriangle, severe ? Ui.Danger : Ui.Warn);
-            ImGui.SameLine(0, 5 * Ui.Scale);
-            Ui.TextColored(severe ? Ui.Danger : Ui.Warn, row.Proposal.Warnings[0]);
-            if (ImGui.IsItemHovered() && row.Proposal.Warnings.Count > 1) ImGui.SetTooltip(string.Join("\n", row.Proposal.Warnings));
+            if (ImGui.IsItemHovered()) ImGui.SetTooltip(string.Join("\n", row.Proposal.Warnings));
+            ImGui.SameLine(0, 6 * Ui.Scale);
+            ImGui.SetCursorPosY(ImGui.GetCursorPosY() - 1 * Ui.Scale);
         }
-        else if (row.Proposal.RuleId == "manual")
+        for (var i = 0; i < pills.Count; i++)
         {
-            Ui.TextColored(Ui.Muted * new Vector4(1, 1, 1, 0.6f), row.Proposal.Reason);
-        }
-        else
-        {
-            Ui.Hint(row.Proposal.Reason);
+            Ui.Pill(pills[i].Text, pills[i].Color);
+            if (i < pills.Count - 1) ImGui.SameLine();
         }
     }
 
