@@ -176,6 +176,15 @@ public sealed class Configuration : IPluginConfiguration
             Version = 3;
             changed = true;
         }
+        if (Version < 4)
+        {
+            // The Cautious preset is gone; anyone on it lands on Balanced.
+            if (Profiles.Account.Thresholds.Policy == Core.Rules.ActionPolicy.SellOnly) Profiles.Account.ApplyPreset(Core.Rules.PresetName.Balanced);
+            foreach (var o in Profiles.Overrides)
+                if (o.Values.Thresholds.Policy == Core.Rules.ActionPolicy.SellOnly) o.Values.ApplyPreset(Core.Rules.PresetName.Balanced);
+            Version = 4;
+            changed = true;
+        }
         return changed;
     }
 

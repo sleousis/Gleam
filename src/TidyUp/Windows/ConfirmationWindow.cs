@@ -143,7 +143,7 @@ public sealed class ConfirmationWindow : StyledWindow
 
     private static readonly IReadOnlyList<(Core.Rules.PresetName, string)> PresetOptions =
     [
-        (Core.Rules.PresetName.Cautious, "Cautious"), (Core.Rules.PresetName.Balanced, "Balanced"), (Core.Rules.PresetName.Aggressive, "Aggressive"),
+        (Core.Rules.PresetName.Balanced, "Balanced"), (Core.Rules.PresetName.Aggressive, "Aggressive"),
     ];
 
     private void DrawTopBar(RunPlan plan)
@@ -169,7 +169,7 @@ public sealed class ConfirmationWindow : StyledWindow
                 config.Save(PluginServices.PluginInterface);
                 _ = coordinator.RefreshPlanAsync(openWindow: false, coordinator.FocusContainer);
             }
-            Ui.Tooltip("Aggressive discards everything proposed. Balanced discards untradeable and sells tradeable. Cautious only sells tradeable.");
+            Ui.Tooltip("Aggressive discards everything proposed. Balanced discards untradeable items and sells tradeable ones.");
         }, profile.Thresholds.Policy.Describe());
 
         Ui.Gap(0.4f);

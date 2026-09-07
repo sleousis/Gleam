@@ -69,7 +69,7 @@ public class ListsAndProfilesTests
     public void ProfileStore_effective_profile_applies_only_overridden_properties()
     {
         var store = new ProfileStore();
-        store.Account.ApplyPreset(PresetName.Cautious);
+        store.Account.ApplyPreset(PresetName.Aggressive);
         store.Account.PostDutyNudge = true;
 
         var o = store.GetOrCreateOverride(0xC0FFEE, "Alt");
@@ -78,14 +78,14 @@ public class ListsAndProfilesTests
 
         // Nothing overridden yet: account wins.
         var eff = store.Effective(0xC0FFEE);
-        Assert.Equal(Presets.For(PresetName.Cautious).SoftCapItems, eff.Thresholds.SoftCapItems);
+        Assert.Equal(Presets.For(PresetName.Aggressive).SoftCapItems, eff.Thresholds.SoftCapItems);
         Assert.True(eff.PostDutyNudge);
 
         store.SetOverridden(0xC0FFEE, "Alt", nameof(Profile.PostDutyNudge), true);
         o.Values.PostDutyNudge = false;
         eff = store.Effective(0xC0FFEE);
         Assert.False(eff.PostDutyNudge);
-        Assert.Equal(Presets.For(PresetName.Cautious).SoftCapItems, eff.Thresholds.SoftCapItems);
+        Assert.Equal(Presets.For(PresetName.Aggressive).SoftCapItems, eff.Thresholds.SoftCapItems);
 
         store.SetOverridden(0xC0FFEE, "Alt", nameof(Profile.Thresholds), true);
         o.Values.Thresholds.SoftCapItems = 999;
@@ -93,7 +93,7 @@ public class ListsAndProfilesTests
         Assert.Equal(999, eff.Thresholds.SoftCapItems);
 
         // Other characters are untouched.
-        Assert.Equal(Presets.For(PresetName.Cautious).SoftCapItems, store.Effective(0xDEAD).Thresholds.SoftCapItems);
+        Assert.Equal(Presets.For(PresetName.Aggressive).SoftCapItems, store.Effective(0xDEAD).Thresholds.SoftCapItems);
     }
 
     [Fact]
