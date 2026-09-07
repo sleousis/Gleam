@@ -467,8 +467,10 @@ public sealed class ConfirmationWindow : StyledWindow
         var item = row.Item;
         var pills = new List<(string Text, Vector4 Color)>();
         if (includeType) pills.Add((ItemTags.Of(info).Label(), Ui.AccentSoft));
-        if (info.IsUntradable) pills.Add(("Untradeable", Ui.Warn)); else pills.Add(("Tradeable", Ui.Muted));
-        if (info.IsMarketable) pills.Add(("Marketable", Ui.Ok));
+        // One trade pill: the board implies tradeable, so say the strongest thing that is true.
+        if (info.IsUntradable) pills.Add(("Untradeable", Ui.Warn));
+        else if (info.IsMarketable) pills.Add(("Marketable", Ui.Ok));
+        else pills.Add(("Tradeable", Ui.Muted));
         if (info.IsUnique) pills.Add(("Unique", Ui.Danger));
         if (info.IsIndisposable) pills.Add(("Cannot be discarded", Ui.Danger));
         if (info.IsUsable) pills.Add(("Usable", Ui.Info));
