@@ -1,5 +1,6 @@
 using TidyUp.Core.Logging;
 using TidyUp.Core.Model;
+using TidyUp.Core.Rules;
 
 namespace TidyUp.Core.Execution;
 
@@ -85,7 +86,9 @@ public sealed class ExecutionEngine
                 continue;
             }
 
-            if (action.Action != ActionKind.Discard && !game.IsActionAvailable(action.Action))
+            // A retainer item that must be sold or turned in only needs the retainer open here; the NPC comes later.
+            var tripHome = ContainerConstraints.NeedsTripHome(action.Kind, action.Action);
+            if (action.Action != ActionKind.Discard && !tripHome && !game.IsActionAvailable(action.Action))
             {
                 Park(report, action, game.ActionRequirement(action.Action));
                 Emit(report, progress, new ActionResult(action, ActionOutcome.Pending, $"Needs: {game.ActionRequirement(action.Action)}"));
@@ -203,7 +206,20 @@ public sealed class ExecutionEngine
                 return new ActionResult(action, ActionOutcome.Pending, $"materia cannot be retrieved here and the item could not be brought back ({game.LastFailure ?? "no reason given"})");
             return new ActionResult(action, ActionOutcome.Moved, "brought back to your bags; its materia comes off there once the retainer is closed")
             {
-                Followup = action with { Slot = landed.Value, RetrieveMateriaFirst = true },
+                Followup = action with { Slot = landed.Value, RetrieveMateriaFirst = true, BroughtHome = true },
+            };
+        }
+
+        if (ContainerConstraints.NeedsTripHome(action.Kind, action.Action))
+        {
+            if (game.FreeInventorySlots() < 1)
+                return new ActionResult(action, ActionOutcome.Pending, $"No free inventory slot to bring the item back to {action.Action.Label()} it");
+            var home = await game.MoveToInventoryAsync(target, action.ItemId, action.Quantity, action.IsHq, ct).ConfigureAwait(false);
+            if (home is null)
+                return new ActionResult(action, ActionOutcome.Pending, $"could not be brought back from the retainer ({game.LastFailure ?? "no reason given"})");
+            return new ActionResult(action, ActionOutcome.Moved, $"brought back to your bags to {action.Action.Label()} later")
+            {
+                Followup = action with { Slot = home.Value, BroughtHome = true },
             };
         }
 

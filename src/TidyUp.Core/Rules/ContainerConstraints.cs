@@ -15,8 +15,15 @@ public static class ContainerConstraints
         ActionKind.None or ActionKind.Discard => true,
         // A retainer lists what is in the player's bags or in its own inventory; armoury pieces must be moved first.
         ActionKind.MarketList => kind is ContainerKind.Inventory or ContainerKind.Retainer,
-        _ => kind is ContainerKind.Inventory or ContainerKind.Armoury,
+        // Desynthesis works only from the bags or armoury.
+        ActionKind.Desynth => kind is ContainerKind.Inventory or ContainerKind.Armoury,
+        // Selling and Expert Delivery: from the bags, or from a retainer (the item is brought home first).
+        _ => kind is ContainerKind.Inventory or ContainerKind.Armoury or ContainerKind.Retainer,
     };
+
+    /// <summary>Actions that cannot happen where a retainer item sits; the executor moves it to the bags first.</summary>
+    public static bool NeedsTripHome(ContainerKind kind, ActionKind action) =>
+        kind == ContainerKind.Retainer && action is ActionKind.VendorSell or ActionKind.ExpertDelivery;
 
     public static Proposal Apply(Proposal p)
     {

@@ -304,6 +304,30 @@ public class ExecutionEngineTests
     }
 
     [Fact]
+    public async Task Selling_a_retainer_item_brings_it_home_first_and_sells_it_later()
+    {
+        var game = new FakeGame();
+        game.Open.Add(ContainerKind.Retainer);
+        game.Slots[Ret(2)] = ScannedItem.Simple(Ret(2), 1, 5);
+
+        // At the bell: no shop open, but the item still moves to the bags.
+        var first = await new ExecutionEngine(game, new MemoryRunLog(), new NoDelay())
+            .ExecuteAsync([Q(Ret(2), 1, 5, ActionKind.VendorSell)], Who, CancellationToken.None);
+        var follow = Assert.Single(first.Moved);
+        Assert.True(follow.BroughtHome);
+        Assert.Equal(ContainerKind.Inventory, follow.Kind);
+        Assert.Equal(ActionKind.VendorSell, follow.Action);
+        Assert.Empty(first.Pending);
+
+        // Later, at a vendor.
+        game.AvailableActions.Add(ActionKind.VendorSell);
+        var second = await new ExecutionEngine(game, new MemoryRunLog(), new NoDelay())
+            .ExecuteAsync([follow], Who, CancellationToken.None);
+        Assert.Equal(1, second.Done);
+        Assert.Contains(game.Calls, c => c == $"sell:{follow.Slot}");
+    }
+
+    [Fact]
     public async Task Materia_retrieval_needs_free_slots_per_materia()
     {
         var game = new FakeGame { FreeSlots = 1 };
