@@ -169,6 +169,7 @@ public sealed class Plugin : IDalamudPlugin
                 historyWindow.Toggle();
                 break;
             case "spikes":
+            case "troubleshoot":
             case "debug":
                 debugWindow.Toggle();
                 break;
