@@ -17,7 +17,7 @@ public sealed class ExecutionOptions
 /// <summary>
 /// Runs a queue against the game, one open container at a time, re-validating each slot right before acting.
 /// Anything whose container is closed stays pending for a later resume; anything that changed is skipped;
-/// the first failure aborts everything that remains.
+/// a single failure is skipped and several in a row abort the rest.
 /// </summary>
 public sealed class ExecutionEngine
 {
@@ -41,6 +41,7 @@ public sealed class ExecutionEngine
         IProgress<ActionResult>? progress = null)
     {
         var report = new RunReport();
+        touched.Clear();
 
         // Inventory first, dresser last: dresser restores need the slots the earlier steps free.
         var ordered = queue
@@ -139,23 +140,38 @@ public sealed class ExecutionEngine
         return report;
     }
 
+    private readonly HashSet<SlotRef> touched = new();
+
     private async Task<ActionResult> ExecuteOneAsync(QueuedAction action, CancellationToken ct)
     {
-        // Re-validate: the window is a contract. Only exactly what was shown gets touched.
-        var live = game.ReadSlot(action.Slot);
-        if (live is null)
-            return new ActionResult(action, ActionOutcome.SkippedChanged, "Slot is now empty");
-        if (live.ItemId != action.ItemId || live.Quantity != action.Quantity || live.IsHq != action.IsHq)
-            return new ActionResult(action, ActionOutcome.SkippedChanged,
-                $"slot holds item {live.ItemId} ×{live.Quantity}{(live.IsHq ? " HQ" : "")} (owner {live.Slot.OwnerId:X}), plan expected item {action.ItemId} ×{action.Quantity}{(action.IsHq ? " HQ" : "")} (owner {action.Slot.OwnerId:X})");
-
+        // Re-validate: the window is a contract. Only exactly what was shown gets touched. The *position*
+        // may have come from a cache with a different slot numbering, so when the planned slot does not
+        // hold the planned item, look for that exact item elsewhere in the same container.
         var target = action.Slot;
+        var live = game.ReadSlot(target);
+        var matches = live is not null && live.ItemId == action.ItemId && live.Quantity == action.Quantity && live.IsHq == action.IsHq;
+        if (!matches || touched.Contains(target))
+        {
+            var found = game.FindSlot(action.Kind, action.Slot.OwnerId, action.ItemId, action.Quantity, action.IsHq, touched, action.Slot);
+            if (found is null)
+            {
+                return live is null
+                    ? new ActionResult(action, ActionOutcome.SkippedChanged, "Not found in the container any more")
+                    : new ActionResult(action, ActionOutcome.SkippedChanged,
+                        $"planned slot holds item {live.ItemId} ×{live.Quantity}{(live.IsHq ? " HQ" : "")} and no other slot holds item {action.ItemId} ×{action.Quantity}{(action.IsHq ? " HQ" : "")}");
+            }
+            target = found.Value;
+            live = game.ReadSlot(target);
+            if (live is null || live.ItemId != action.ItemId || live.Quantity != action.Quantity || live.IsHq != action.IsHq)
+                return new ActionResult(action, ActionOutcome.SkippedChanged, "Item moved while it was being located");
+        }
+        touched.Add(target);
 
         if (action.Kind == ContainerKind.GlamourDresser)
         {
             if (game.FreeInventorySlots() < 1)
                 return new ActionResult(action, ActionOutcome.Pending, "No free inventory slot to restore into");
-            var restored = await game.RestoreFromDresserAsync(action.Slot, action.ItemId, ct).ConfigureAwait(false);
+            var restored = await game.RestoreFromDresserAsync(target, action.ItemId, ct).ConfigureAwait(false);
             if (restored is null)
                 return new ActionResult(action, ActionOutcome.Failed, "Restore from dresser failed");
             target = restored.Value;

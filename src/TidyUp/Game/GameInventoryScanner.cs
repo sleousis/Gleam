@@ -1,19 +1,20 @@
-using Dalamud.Game.Inventory;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game;
 using TidyUp.Core.Model;
 
 namespace TidyUp.Game;
 
-/// <summary>Reads live containers into <see cref="ScannedItem"/>s. Runs on the framework thread.</summary>
+/// <summary>
+/// Reads containers straight from the game's InventoryManager. Runs on the framework thread.
+/// Dalamud's inventory helper hides some container types, retainer pages among them, so every read
+/// here goes to the native container and reports whether that container is actually loaded.
+/// </summary>
 public sealed unsafe class GameInventoryScanner
 {
-    private readonly IGameInventory inventory;
     private readonly IPluginLog log;
 
     public GameInventoryScanner(IGameInventory inventory, IPluginLog log)
     {
-        this.inventory = inventory;
         this.log = log;
     }
 
@@ -56,52 +57,67 @@ public sealed unsafe class GameInventoryScanner
 
     private void Scan(List<ScannedItem> into, uint[] pages, ContainerKind kind, ulong ownerId, string ownerName)
     {
+        var im = InventoryManager.Instance();
+        if (im == null) return;
         foreach (var page in pages)
         {
-            ReadOnlySpan<GameInventoryItem> span;
-            try { span = inventory.GetInventoryItems((GameInventoryType)page); }
-            catch (Exception ex) { log.Debug(ex, "Container {Page} unreadable", page); continue; }
-
-            foreach (ref readonly var gi in span)
+            var container = im->GetInventoryContainer((InventoryType)page);
+            if (container == null || !container->IsLoaded || container->Items == null) continue;
+            for (var i = 0; i < container->Size; i++)
             {
-                if (gi.IsEmpty || gi.ItemId == 0 || gi.Quantity <= 0) continue;
-                into.Add(Convert(gi, kind, page, ownerId, ownerName));
+                var item = &container->Items[i];
+                if (item->ItemId == 0 || item->GetQuantity() == 0) continue;
+                into.Add(Convert(item, kind, page, i, ownerId, ownerName));
             }
         }
     }
 
-    public static ScannedItem Convert(in GameInventoryItem gi, ContainerKind kind, uint page, ulong ownerId, string ownerName)
+    private static ScannedItem Convert(InventoryItem* item, ContainerKind kind, uint page, int slot, ulong ownerId, string ownerName)
     {
         var materia = new List<ushort>();
-        foreach (var m in gi.Materia) if (m != 0) materia.Add(m);
-        var stains = gi.Stains;
+        for (byte i = 0; i < 5; i++)
+        {
+            var m = item->GetMateriaId(i);
+            if (m != 0) materia.Add(m);
+        }
         return new ScannedItem(
-            new SlotRef(kind, page, (int)gi.InventorySlot, ownerId),
-            gi.BaseItemId,
-            gi.Quantity,
-            gi.IsHq,
-            gi.IsCollectable,
+            new SlotRef(kind, page, slot, ownerId),
+            ScannedItem.BaseItemId(item->ItemId),
+            (int)item->GetQuantity(),
+            item->IsHighQuality(),
+            item->IsCollectable(),
             materia,
-            stains.Length > 0 ? stains[0] : (byte)0,
-            stains.Length > 1 ? stains[1] : (byte)0,
-            gi.SpiritbondOrCollectability,
+            item->GetStain(0),
+            item->GetStain(1),
+            item->GetSpiritbondOrCollectability(),
             ownerName);
     }
 
-    public ScannedItem? ReadSlot(SlotRef slot)
+    /// <summary>Live read. Null when the slot is empty *or* its container is not loaded; use <see cref="TryReadSlot"/> to tell them apart.</summary>
+    public ScannedItem? ReadSlot(SlotRef slot) => TryReadSlot(slot, out _);
+
+    /// <summary>Live read that also says whether the container was available at all.</summary>
+    public ScannedItem? TryReadSlot(SlotRef slot, out bool containerLoaded)
     {
-        if (slot.Kind == ContainerKind.GlamourDresser) return ReadDresserSlot(slot.Slot);
-        ReadOnlySpan<GameInventoryItem> span;
-        try { span = inventory.GetInventoryItems((GameInventoryType)slot.ContainerId); }
-        catch { return null; }
-        foreach (ref readonly var gi in span)
+        containerLoaded = false;
+        if (slot.Kind == ContainerKind.GlamourDresser)
         {
-            if (gi.InventorySlot != (uint)slot.Slot) continue;
-            if (gi.IsEmpty || gi.ItemId == 0) return null;
-            var ownerId = slot.Kind == ContainerKind.Retainer ? ActiveRetainer().Id : 0;
-            return Convert(gi, slot.Kind, slot.ContainerId, ownerId, string.Empty);
+            containerLoaded = IsDresserLoaded();
+            return containerLoaded ? ReadDresserSlot(slot.Slot) : null;
         }
-        return null;
+
+        var im = InventoryManager.Instance();
+        if (im == null) return null;
+        var container = im->GetInventoryContainer((InventoryType)slot.ContainerId);
+        if (container == null || !container->IsLoaded || container->Items == null) return null;
+        if (slot.Kind == ContainerKind.Retainer && !IsRetainerOpen(slot.OwnerId)) return null;
+        containerLoaded = true;
+        if (slot.Slot < 0 || slot.Slot >= container->Size) return null;
+
+        var item = &container->Items[slot.Slot];
+        if (item->ItemId == 0 || item->GetQuantity() == 0) return null;
+        var ownerId = slot.Kind == ContainerKind.Retainer ? ActiveRetainer().Id : 0;
+        return Convert(item, slot.Kind, slot.ContainerId, slot.Slot, ownerId, string.Empty);
     }
 
     public static bool IsSaddlebagLoaded()
@@ -115,9 +131,13 @@ public sealed unsafe class GameInventoryScanner
     public static (ulong Id, string Name) ActiveRetainer()
     {
         var rm = RetainerManager.Instance();
-        if (rm == null || !rm->IsReady) return (0, string.Empty);
+        if (rm == null) return (0, string.Empty);
         var r = rm->GetActiveRetainer();
         if (r == null || r->RetainerId == 0) return (0, string.Empty);
+        // The retainer is only really "open" once its first page is loaded.
+        var im = InventoryManager.Instance();
+        var page = im == null ? null : im->GetInventoryContainer(InventoryType.RetainerPage1);
+        if (page == null || !page->IsLoaded) return (0, string.Empty);
         return (r->RetainerId, r->NameString);
     }
 
