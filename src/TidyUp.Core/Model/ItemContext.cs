@@ -46,6 +46,9 @@ public sealed class ItemContext
     /// <summary>True when a market lookup was attempted this scan; a marketable item with no price then means "unknown", not "worthless".</summary>
     public bool MarketLookupAttempted { get; init; }
 
+    /// <summary>For items that register something (minions, mounts, orchestrion rolls, cards...): whether this character already has it.</summary>
+    public IReadOnlyDictionary<uint, bool> Registered { get; init; } = new Dictionary<uint, bool>();
+
     /// <summary>Highest level of any combat, crafting, or gathering job.</summary>
     public short MaxJobLevel => JobLevels.Count == 0 ? (short)0 : JobLevels.Values.Max();
 
