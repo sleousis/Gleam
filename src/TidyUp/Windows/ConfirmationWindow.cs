@@ -173,17 +173,6 @@ public sealed class ConfirmationWindow : Window
         ImGui.SameLine();
         Ui.TextColored(Ui.Accent, profile.Thresholds.Policy.Describe());
 
-        ImGui.SameLine();
-        var mode = coordinator.ShowEverything ? 1 : 0;
-        Ui.RightAlign(190 * Ui.Scale);
-        if (Ui.Segmented("##mode", ref mode, [(0, "Proposed"), (1, "Everything")]))
-        {
-            coordinator.ShowEverything = mode == 1;
-            _ = coordinator.RefreshPlanAsync(openWindow: false, coordinator.FocusContainer);
-        }
-        Ui.Tooltip(coordinator.ShowEverything
-            ? "Every item in every scanned container. Rows no rule proposed start unchecked; tick what you want gone."
-            : "Only what the rules propose. Switch to Everything to pick by hand.");
         Ui.Gap(0.3f);
 
         DrawContainerChips(plan);
@@ -270,7 +259,7 @@ public sealed class ConfirmationWindow : Window
         foreach (var r in Core.Rules.RuleEngine.AllRules)
             if (ImGui.MenuItem(r.Name, string.Empty, filterRule == r.Id, true)) filterRule = r.Id;
         if (ImGui.MenuItem("Always-discard list", string.Empty, filterRule == "always-discard", true)) filterRule = "always-discard";
-        if (coordinator.ShowEverything && ImGui.MenuItem("Not proposed", string.Empty, filterRule == "manual", true)) filterRule = "manual";
+        if (ImGui.MenuItem("Not proposed", string.Empty, filterRule == "manual", true)) filterRule = "manual";
 
         ImGui.Separator();
         Ui.Hint("Action");
