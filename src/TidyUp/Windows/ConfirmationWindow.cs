@@ -305,7 +305,7 @@ public sealed class ConfirmationWindow : StyledWindow
         if (ImGui.MenuItem("All rules", string.Empty, filterRule is null, true)) filterRule = null;
         foreach (var r in Core.Rules.RuleEngine.AllRules)
             if (ImGui.MenuItem(r.Name, string.Empty, filterRule == r.Id, true)) filterRule = r.Id;
-        if (ImGui.MenuItem("Always-discard list", string.Empty, filterRule == "always-discard", true)) filterRule = "always-discard";
+        if (ImGui.MenuItem("Always clean list", string.Empty, filterRule == "always-discard", true)) filterRule = "always-discard";
         if (ImGui.MenuItem("Not proposed", string.Empty, filterRule == "manual", true)) filterRule = "manual";
 
         ImGui.Separator();
@@ -551,7 +551,7 @@ public sealed class ConfirmationWindow : StyledWindow
         if (unit <= 0)
         {
             Ui.TextColored(Ui.Muted * new Vector4(1, 1, 1, 0.5f), config.UseUniversalis ? "no listings" : "prices off");
-            Ui.Tooltip(config.UseUniversalis ? "Universalis has no current listing for this item on your home world." : "Turn on market prices in Settings › Advanced › Integrations.");
+            Ui.Tooltip(config.UseUniversalis ? "Nobody is selling this on your home world right now." : "Market prices are turned off in Settings.");
             return;
         }
         Ui.TextColored(Ui.Market, $"{unit:N0}g");
@@ -705,11 +705,11 @@ public sealed class ConfirmationWindow : StyledWindow
         Ui.TextColored(Ui.Accent, row.Info.Name);
         ImGui.Separator();
         if (ImGui.MenuItem("Skip this time", string.Empty, false, true)) coordinator.SkipRow(row);
-        if (ImGui.MenuItem("Never discard", string.Empty, false, true)) coordinator.Protect(row.Info.ItemId, row.Info.Name);
-        if (ImGui.MenuItem("Always discard", string.Empty, false, true)) coordinator.AlwaysDiscard(row.Info.ItemId, row.Info.Name);
+        if (ImGui.MenuItem("Never touch", string.Empty, false, true)) coordinator.Protect(row.Info.ItemId, row.Info.Name);
+        if (ImGui.MenuItem("Always clean", string.Empty, false, true)) coordinator.AlwaysDiscard(row.Info.ItemId, row.Info.Name);
         ImGui.Separator();
         if (ImGui.MenuItem("Garland Tools", string.Empty, false, true)) Ui.OpenLink(Ui.GarlandUrl(row.Info.ItemId));
-        if (ImGui.MenuItem("Universalis", string.Empty, false, true)) Ui.OpenLink(Ui.UniversalisUrl(row.Info.ItemId));
+        if (ImGui.MenuItem("Market history (Universalis)", string.Empty, false, true)) Ui.OpenLink(Ui.UniversalisUrl(row.Info.ItemId));
         if (ImGui.MenuItem("Wiki", string.Empty, false, true)) Ui.OpenLink(Ui.WikiUrl(row.Info.Name));
     }
 
@@ -751,9 +751,9 @@ public sealed class ConfirmationWindow : StyledWindow
         var hard = plan.Excluded.Count(e => e.IsHardBlock);
         var prot = plan.Excluded.Count - hard;
         var parts = new List<string>();
-        if (hard > 0) parts.Add($"{hard} protected by hard rules");
-        if (prot > 0) parts.Add($"{prot} on your protect list");
-        Ui.Hint($"Not shown: {string.Join(", ", parts)}.");
+        if (hard > 0) parts.Add($"{hard} that can never be touched");
+        if (prot > 0) parts.Add($"{prot} on your never-touch list");
+        Ui.Hint($"Not listed: {string.Join(", ", parts)}. Hover for why.");
         if (ImGui.IsItemHovered())
         {
             using var t = ImRaii.Tooltip();

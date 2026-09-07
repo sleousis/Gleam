@@ -56,7 +56,7 @@ public sealed unsafe class AddonDriver : IDisposable
         LastRejection = null;
         if (framework.IsInFrameworkUpdateThread ? IsAddonVisible(addonName) : framework.RunOnFrameworkThread(() => IsAddonVisible(addonName)).Result)
         {
-            LastRejection = $"{addonName} is already open; close it before running an action";
+            LastRejection = "a game window that Tidy Up needs to answer is already open; close it first";
             return Task.FromResult(false);
         }
 
@@ -72,7 +72,7 @@ public sealed unsafe class AddonDriver : IDisposable
         {
             lock (gate) { if (armed?.Completion == tcs) armed = null; }
             var ok = tcs.Task.IsCompletedSuccessfully && tcs.Task.Result;
-            if (!ok && LastRejection is null) LastRejection = $"{addonName} did not appear within {timeout.TotalSeconds:0}s";
+            if (!ok && LastRejection is null) LastRejection = "the game's confirmation did not appear in time";
             return ok;
         }, CancellationToken.None);
     }
@@ -107,7 +107,7 @@ public sealed unsafe class AddonDriver : IDisposable
             // Item names carry soft hyphens and the prompt carries payload bytes; compare letters and digits only.
             if (prompt is null || !Normalize(prompt).Contains(Normalize(a.ExpectedSubstring), StringComparison.OrdinalIgnoreCase))
             {
-                LastRejection = $"SelectYesno prompt '{prompt}' does not mention '{a.ExpectedSubstring}'; dialog left open";
+                LastRejection = "the confirmation that appeared was about a different item, so it was left alone";
                 log.Warning("{Rejection}", LastRejection);
                 lock (gate) { if (armed == a) armed = null; }
                 a.Completion.TrySetResult(false);

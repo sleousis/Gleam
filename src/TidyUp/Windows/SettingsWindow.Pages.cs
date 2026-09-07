@@ -22,54 +22,24 @@ public sealed partial class SettingsWindow
     private void DrawRules()
     {
         var p = Editing;
-        Ui.Section("Rules");
         var rulesLive = Override(nameof(Profile.EnabledRules));
-        var overridesLive = !editingCharacter || config.Profiles.IsOverridden(player.ContentId, nameof(Profile.RuleActionOverrides));
-
         using (ImRaii.Disabled(!rulesLive))
         {
-            foreach (var rule in RuleEngine.AllRules) DrawRuleRow(p, rule.Id, rule.Name, rule.Description, overridesLive, allowsAction: true);
-            DrawRuleRow(p, MarketPricePostProcessor.RuleId, "Vendor vs market",
-                "Re-routes rows: show-only when the market clearly beats the vendor, sell when a discard has vendor value. Needs Universalis.",
-                overridesLive, allowsAction: false);
+            foreach (var rule in RuleEngine.AllRules) DrawRuleRow(p, rule.Id, rule.Name, rule.Description);
+            DrawRuleRow(p, MarketPricePostProcessor.RuleId, "Warn when the market pays far more", "Flags rows whose market value clearly beats the vendor price, so they start unticked.");
         }
+        Ui.Hint("The preset decides what happens to what the rules find; each row can still be changed by hand.");
 
-        if (editingCharacter)
-        {
-            Ui.Gap(0.5f);
-            Override(nameof(Profile.RuleActionOverrides));
-            Ui.Hint("Override preferred actions for this character");
-        }
-
-        Ui.Section("Fine-tune");
+        Ui.Gap(0.5f);
         if (ImGui.CollapsingHeader("Thresholds", ImGuiTreeNodeFlags.None)) DrawThresholds();
     }
 
-    private void DrawRuleRow(Profile p, string ruleId, string name, string description, bool overridesLive, bool allowsAction)
+    private void DrawRuleRow(Profile p, string ruleId, string name, string description)
     {
         using var id = ImRaii.PushId(ruleId);
         var on = p.EnabledRules.Contains(ruleId);
         if (ImGui.Checkbox(name, ref on)) { if (on) p.EnabledRules.Add(ruleId); else p.EnabledRules.Remove(ruleId); dirty = true; }
         Ui.Tooltip(description);
-        if (!allowsAction) return;
-
-        ImGui.SameLine();
-        Ui.RightAlign(150 * Ui.Scale);
-        var options = new List<string> { "rule decides", ActionKind.Discard.Label(), ActionKind.VendorSell.Label(), ActionKind.MarketList.Label(), ActionKind.ExpertDelivery.Label(), ActionKind.Desynth.Label() };
-        var kinds = new[] { ActionKind.None, ActionKind.Discard, ActionKind.VendorSell, ActionKind.MarketList, ActionKind.ExpertDelivery, ActionKind.Desynth };
-        var idx = p.RuleActionOverrides.TryGetValue(ruleId, out var a) ? Array.IndexOf(kinds, a) : 0;
-        if (idx < 0) idx = 0;
-        ImGui.SetNextItemWidth(140 * Ui.Scale);
-        using (ImRaii.Disabled(!overridesLive))
-        using (ImRaii.PushColor(ImGuiCol.FrameBg, Vector4.Zero))
-        {
-            if (Ui.Combo("##action", ref idx, options))
-            {
-                if (idx == 0) p.RuleActionOverrides.Remove(ruleId); else p.RuleActionOverrides[ruleId] = kinds[idx];
-                dirty = true;
-            }
-        }
-        Ui.Tooltip("Preferred action, used when the rule allows it for that item.");
     }
 
     private void DrawThresholds()
@@ -102,13 +72,11 @@ public sealed partial class SettingsWindow
         var factor = t.MarketPremiumFactor;
         ImGui.SetNextItemWidth(w);
         if (Ui.SliderDouble("Market: premium factor", ref factor, 1.0, 5.0, "%.1fx")) { t.MarketPremiumFactor = factor; c = true; }
-        Ui.Tooltip("Market wins when market × (1 − tax) exceeds vendor × this.");
+        Ui.Tooltip("Warn when the market value, after tax, is more than this many times the vendor price.");
         var minMk = t.MarketMinStackValueGil;
         ImGui.SetNextItemWidth(w);
-        if (Ui.InputLong("Market: min stack value", ref minMk)) { t.MarketMinStackValueGil = minMk; c = true; }
-        var tax = t.MarketTaxRate;
-        ImGui.SetNextItemWidth(w);
-        if (Ui.SliderDouble("Market: tax rate", ref tax, 0.0, 0.1, "%.2f")) { t.MarketTaxRate = tax; c = true; }
+        if (Ui.InputLong("Market: ignore stacks under", ref minMk)) { t.MarketMinStackValueGil = minMk; c = true; }
+        Ui.Tooltip("Stacks worth less than this on the market are not worth the warning.");
 
         c |= Number("Cap: items per run", ref t, x => x.SoftCapItems, (x, v) => x.SoftCapItems = v, w,
             "Beyond this, the Clean button needs a second click.");
@@ -135,19 +103,6 @@ public sealed partial class SettingsWindow
     private void DrawContainers()
     {
         var p = Editing;
-        Ui.Section("Open the review automatically");
-        var ao = Override(nameof(Profile.AutoOpenOnContainer));
-        using (ImRaii.Disabled(!ao))
-        {
-            foreach (var kind in new[] { ContainerKind.Saddlebag, ContainerKind.Retainer, ContainerKind.GlamourDresser })
-            {
-                var on = p.IsAutoOpen(kind);
-                if (ImGui.Checkbox($"When the {kind.DisplayName().ToLowerInvariant()} opens##ao{kind}", ref on)) { p.AutoOpenOnContainer[kind] = on; dirty = true; }
-            }
-        }
-        Ui.Hint("Only when there is something to clean there.");
-
-        Ui.Section("Retainers");
         var ex = Override(nameof(Profile.ExcludedRetainerIds));
         using (ImRaii.Disabled(!ex))
         {
@@ -159,8 +114,21 @@ public sealed partial class SettingsWindow
                 if (ImGui.Checkbox($"{name}##ret{id}", ref included)) { if (included) p.ExcludedRetainerIds.Remove(id); else p.ExcludedRetainerIds.Add(id); dirty = true; }
             }
         }
-        Toggle("Retainer sections start collapsed", nameof(Profile.RetainerSectionsCollapsed), p.RetainerSectionsCollapsed, v => p.RetainerSectionsCollapsed = v,
-            "Venture rewards and market returns land in retainers; a collapsed section forces a deliberate look.");
+        Ui.Hint("Unticked retainers are left alone entirely.");
+
+        Ui.Gap(0.5f);
+        var ao = Override(nameof(Profile.AutoOpenOnContainer));
+        using (ImRaii.Disabled(!ao))
+        {
+            var kinds = new[] { ContainerKind.Saddlebag, ContainerKind.Retainer, ContainerKind.GlamourDresser };
+            var on = kinds.Any(p.IsAutoOpen);
+            if (ImGui.Checkbox("Open the review when a saddlebag, retainer or dresser opens", ref on))
+            {
+                foreach (var k in kinds) p.AutoOpenOnContainer[k] = on;
+                dirty = true;
+            }
+            Ui.Tooltip("Only when there is something to clean there. Off while a hands-free run is going.");
+        }
     }
 
     // ---------- Automation ----------
@@ -168,58 +136,30 @@ public sealed partial class SettingsWindow
     private void DrawAutomation()
     {
         var a = config.Automation;
-        Ui.Section("Steps");
-        var v = a.OpenSaddlebag; if (ImGui.Checkbox("Open the saddlebag", ref v)) { a.OpenSaddlebag = v; dirty = true; }
-        v = a.TravelToInn; if (ImGui.Checkbox("Travel to an inn with Lifestream", ref v)) { a.TravelToInn = v; dirty = true; }
-        Ui.Tooltip("Off: you must already be standing in an inn room.");
-        v = a.VisitRetainers; if (ImGui.Checkbox("Visit each retainer at the bell", ref v)) { a.VisitRetainers = v; dirty = true; }
-        v = a.SellAtVendor; if (ImGui.Checkbox("Sell vendor rows at a merchant NPC", ref v)) { a.SellAtVendor = v; dirty = true; }
-        Ui.Tooltip("Retainers cannot buy items. After the other legs, the pilot looks for the named merchant nearby and sells there.");
-        v = a.VisitDresser; if (ImGui.Checkbox("Visit the glamour dresser", ref v)) { a.VisitDresser = v; dirty = true; }
-        v = a.VisitGrandCompany; if (ImGui.Checkbox("Visit your Grand Company for Expert Delivery", ref v)) { a.VisitGrandCompany = v; dirty = true; }
-        Ui.Tooltip("Teleports to your GC's city, reaches the HQ, and talks to the personnel officer.");
-        Ui.Gap(0.3f);
-        Ui.Hint("Items found only once a container opens:");
-        ImGui.SameLine();
-        var unseen = a.UnseenRows;
-        if (Ui.Segmented("##unseen", ref unseen, [(UnseenRowsMode.Clean, "Clean by the rules"), (UnseenRowsMode.Ask, "Ask me"), (UnseenRowsMode.Skip, "Skip")])) { a.UnseenRows = unseen; dirty = true; }
-        Ui.Tooltip("Retainers not yet cached and the dresser only show their contents when open. Clean applies the preset and hard rules to them on the spot.");
-        v = a.VisitContainersWithoutRows; if (ImGui.Checkbox("Also visit containers with nothing ticked, to find more", ref v)) { a.VisitContainersWithoutRows = v; dirty = true; }
-        Ui.Tooltip("Off: a run only travels where your ticked rows are. Ticking one bag item never sends you to the inn.");
+        Ui.Section("Where a run goes");
+        var v = a.OpenSaddlebag; if (ImGui.Checkbox("Saddlebag", ref v)) { a.OpenSaddlebag = v; dirty = true; }
+        v = a.VisitRetainers; if (ImGui.Checkbox("Retainers, at an inn bell", ref v)) { a.VisitRetainers = v; dirty = true; }
+        v = a.VisitDresser; if (ImGui.Checkbox("Glamour dresser", ref v)) { a.VisitDresser = v; dirty = true; }
+        v = a.SellAtVendor; if (ImGui.Checkbox("A merchant, to sell", ref v)) { a.SellAtVendor = v; dirty = true; }
+        v = a.VisitGrandCompany; if (ImGui.Checkbox("Your Grand Company, for Expert Delivery", ref v)) { a.VisitGrandCompany = v; dirty = true; }
+        Ui.Hint("A run only travels where ticked rows are.");
 
-        Ui.Section("Names in your client language");
-        var w = 200 * Ui.Scale;
-        var s = a.BellObjectName; ImGui.SetNextItemWidth(w); if (Ui.InputText("Summoning bell", "", ref s, 64)) { a.BellObjectName = s; dirty = true; }
-        s = a.DresserObjectName; ImGui.SetNextItemWidth(w); if (Ui.InputText("Glamour dresser", "", ref s, 64)) { a.DresserObjectName = s; dirty = true; }
-        s = a.EntrustMenuText; ImGui.SetNextItemWidth(w); if (Ui.InputText("Retainer menu: inventory", "", ref s, 64)) { a.EntrustMenuText = s; dirty = true; }
-        s = a.VendorNpcName; ImGui.SetNextItemWidth(w); if (Ui.InputText("Merchant NPC (optional)", "any gil shop", ref s, 64)) { a.VendorNpcName = s; dirty = true; }
-        Ui.Tooltip("Leave empty to use the nearest NPC that runs a gil shop; merchants are detected from game data, not by name.");
-        s = a.VendorMenuText; ImGui.SetNextItemWidth(w); if (Ui.InputText("Merchant menu: open shop", "", ref s, 64)) { a.VendorMenuText = s; dirty = true; }
-        s = a.VendorAetheryte; ImGui.SetNextItemWidth(w); if (Ui.InputText("Merchant: teleport to", "", ref s, 64)) { a.VendorAetheryte = s; dirty = true; }
-        Ui.Tooltip("Lifestream destination with a merchant right by the aetheryte. Used only when no merchant is within reach.");
-        s = a.QuitMenuText; ImGui.SetNextItemWidth(w); if (Ui.InputText("Retainer menu: quit", "", ref s, 64)) { a.QuitMenuText = s; dirty = true; }
-        s = a.PersonnelOfficerName; ImGui.SetNextItemWidth(w); if (Ui.InputText("GC personnel officer", "", ref s, 64)) { a.PersonnelOfficerName = s; dirty = true; }
-        s = a.GcSupplyMenuText; ImGui.SetNextItemWidth(w); if (Ui.InputText("Officer menu: supply missions", "", ref s, 64)) { a.GcSupplyMenuText = s; dirty = true; }
-        Ui.Hint("Menu texts are matched as substrings, case-insensitive.");
+        Ui.Section("Behaviour");
+        var cleanUnseen = a.UnseenRows != UnseenRowsMode.Skip;
+        if (ImGui.Checkbox("Clean items discovered when a container opens", ref cleanUnseen)) { a.UnseenRows = cleanUnseen ? UnseenRowsMode.Clean : UnseenRowsMode.Skip; dirty = true; }
+        Ui.Tooltip("Retainers not yet cached and the dresser only show their contents once open. On: the preset is applied to them on the spot. Off: they wait for the next review.");
+        v = a.VisitContainersWithoutRows; if (ImGui.Checkbox("Also visit containers with nothing ticked", ref v)) { a.VisitContainersWithoutRows = v; dirty = true; }
+        Ui.Tooltip("Looks inside every enabled container on every run, even when the list had nothing for it.");
 
-        Ui.Section("Grand Company route");
-        foreach (var (id, label) in new (byte, string)[] { (1, "Maelstrom"), (2, "Twin Adder"), (3, "Immortal Flames") })
-        {
-            var city = a.GcCityAetheryte.GetValueOrDefault(id, string.Empty);
-            var shard = a.GcAethernetShard.GetValueOrDefault(id, string.Empty);
-            ImGui.SetNextItemWidth(w); if (Ui.InputText($"{label}: aetheryte", "", ref city, 64)) { a.GcCityAetheryte[id] = city; dirty = true; }
-            ImGui.SameLine();
-            ImGui.SetNextItemWidth(w); if (Ui.InputText($"shard##{id}", "aethernet shard (optional)", ref shard, 64)) { a.GcAethernetShard[id] = shard; dirty = true; }
-        }
-        var tab = a.ExpertDeliveryTabCallback; ImGui.SetNextItemWidth(w); if (Ui.InputText("Expert Delivery tab callback", "", ref tab, 32)) { a.ExpertDeliveryTabCallback = tab; dirty = true; }
-        Ui.Tooltip("Comma-separated ints fired on the supply window to switch to the Expert Delivery tab.");
+        Ui.Section("Merchant");
+        var w = 220 * Ui.Scale;
+        var s = a.VendorAetheryte; ImGui.SetNextItemWidth(w); if (Ui.InputText("Teleport to", "", ref s, 64)) { a.VendorAetheryte = s; dirty = true; }
+        Ui.Tooltip("An aetheryte with a merchant right next to it. Used when no merchant is in reach.");
 
-        Ui.Section("Timing");
-        var t = a.TravelTimeoutSeconds; ImGui.SetNextItemWidth(100 * Ui.Scale); if (Ui.InputInt("Travel timeout (s)", ref t, 10)) { a.TravelTimeoutSeconds = Math.Clamp(t, 30, 600); dirty = true; }
-        t = a.StepTimeoutSeconds; ImGui.SetNextItemWidth(100 * Ui.Scale); if (Ui.InputInt("Menu step timeout (s)", ref t, 5)) { a.StepTimeoutSeconds = Math.Clamp(t, 5, 120); dirty = true; }
-        var r = a.InteractRange; ImGui.SetNextItemWidth(100 * Ui.Scale); if (ImGui.SliderFloat("Interact range (yalms)", ref r, 2f, 6f, "%.1f", ImGuiSliderFlags.None)) { a.InteractRange = r; dirty = true; }
-        var sel = a.RetainerListSelect; ImGui.SetNextItemWidth(100 * Ui.Scale); if (Ui.InputInt("Retainer list callback", ref sel)) { a.RetainerListSelect = sel; dirty = true; }
-        Ui.Tooltip("First callback value used to pick a retainer from the list. 2 is the known value; change only if selection fails.");
+        Ui.Section("Patience");
+        var t = a.TravelTimeoutSeconds; ImGui.SetNextItemWidth(100 * Ui.Scale); if (Ui.InputInt("Travel (s)", ref t, 10)) { a.TravelTimeoutSeconds = Math.Clamp(t, 30, 600); dirty = true; }
+        t = a.StepTimeoutSeconds; ImGui.SetNextItemWidth(100 * Ui.Scale); if (Ui.InputInt("Each menu step (s)", ref t, 5)) { a.StepTimeoutSeconds = Math.Clamp(t, 5, 120); dirty = true; }
+        Ui.Hint("Playing in another language? The names Tidy Up looks for can be changed in Troubleshooting.");
     }
 
     // ---------- Notifications ----------
@@ -227,18 +167,15 @@ public sealed partial class SettingsWindow
     private void DrawNotifications()
     {
         var p = Editing;
-        Ui.Section("Server info bar");
-        Toggle("Show used slots and cleanable count", nameof(Profile.ShowDtrEntry), p.ShowDtrEntry, v => p.ShowDtrEntry = v, "Click it to open the review.");
+        Toggle("Show bag usage in the server info bar", nameof(Profile.ShowDtrEntry), p.ShowDtrEntry, v => p.ShowDtrEntry = v, "Click it to open the review.");
         var np = Override(nameof(Profile.FullnessNudgePercent));
         using (ImRaii.Disabled(!np))
         {
             var pct = p.FullnessNudgePercent;
             ImGui.SetNextItemWidth(180 * Ui.Scale);
-            if (ImGui.SliderInt("Toast when inventory is this full", ref pct, 50, 100, "%d%%", ImGuiSliderFlags.None)) { p.FullnessNudgePercent = pct; dirty = true; }
+            if (ImGui.SliderInt("Nudge when bags are this full", ref pct, 50, 100, "%d%%", ImGuiSliderFlags.None)) { p.FullnessNudgePercent = pct; dirty = true; }
         }
-
-        Ui.Section("After duties");
-        Toggle("Toast how many items could be cleaned", nameof(Profile.PostDutyNudge), p.PostDutyNudge, v => p.PostDutyNudge = v,
+        Toggle("Nudge after a duty when there is something to clean", nameof(Profile.PostDutyNudge), p.PostDutyNudge, v => p.PostDutyNudge = v,
             "A few seconds after a duty ends, once loot has landed.");
     }
 
@@ -246,14 +183,12 @@ public sealed partial class SettingsWindow
 
     private void DrawIntegrations()
     {
-        Ui.Section("Universalis");
         var uni = config.UseUniversalis;
-        if (ImGui.Checkbox("Use market prices", ref uni)) { config.UseUniversalis = uni; dirty = true; }
-        Ui.Tooltip("Cached 15 minutes, fetched 100 items at a time. A failed fetch just means \"market unknown\".");
+        if (ImGui.Checkbox("Market prices from Universalis", ref uni)) { config.UseUniversalis = uni; dirty = true; }
+        Ui.Tooltip("Lowest listing on your home world, refreshed every 15 minutes. Without it, market rows fall back to the vendor.");
 
-        Ui.Section("Allagan Tools");
         var at = config.UseAllaganTools;
-        if (ImGui.Checkbox("Read closed containers and other characters", ref at)) { config.UseAllaganTools = at; allagan.Enabled = at; dirty = true; }
+        if (ImGui.Checkbox("Closed containers from Allagan Tools", ref at)) { config.UseAllaganTools = at; allagan.Enabled = at; dirty = true; }
         ImGui.SameLine();
         if (!allagan.IsInstalled) Ui.Pill("not installed", Ui.Muted);
         else if (allagan.IsAvailable) Ui.Pill("connected", Ui.Ok);
@@ -261,7 +196,7 @@ public sealed partial class SettingsWindow
         var alts = config.ShowAltSections;
         if (ImGui.Checkbox("Show other characters in the review", ref alts)) { config.ShowAltSections = alts; dirty = true; }
 
-        Ui.Section("Import from Discard Helper");
+        Ui.Section("Import a Discard Helper list");
         ImGui.SetNextItemWidth(-120 * Ui.Scale);
         Ui.InputText("##import", "Path to ARDiscard.json", ref importPath, 512);
         ImGui.SameLine();
@@ -287,7 +222,7 @@ public sealed partial class SettingsWindow
     private void DrawAdvanced()
     {
         var cb = config.Callbacks;
-        Ui.Section("Timing");
+        Ui.Section("Pace");
         var rl = cb.RateLimitMs;
         ImGui.SetNextItemWidth(120 * Ui.Scale);
         if (Ui.InputInt("Pause between actions (ms)", ref rl, 50)) { cb.RateLimitMs = Math.Clamp(rl, 100, 5000); dirty = true; }
@@ -300,12 +235,9 @@ public sealed partial class SettingsWindow
         if (ImGui.Checkbox("If materia cannot be retrieved, act anyway and lose it", ref act)) { config.ActWhenMateriaFails = act; dirty = true; }
         Ui.Tooltip("Off: the item is left in place with the reason, so you can remove the materia by hand. Retrieval needs the materia-retrieval quest and free bag slots.");
 
-        Ui.Section("Verification");
-        ImGui.SameLine(0, 0);
-        if (Ui.Button("Open the spike window")) openDebug();
-        ImGui.SameLine();
-        if (config.SpikesVerified) Ui.Pill("verified", Ui.Ok); else Ui.Pill("not verified", Ui.Warn);
-        Ui.Hint("Dialog button values and menu labels live in the spike window. Change them only if a spike shows a default is wrong.");
+        Ui.Section("Troubleshooting");
+        if (Ui.Button("Open troubleshooting")) openDebug();
+        Ui.Hint("Only needed if a step keeps failing after a game update.");
 
         Ui.Section("Per-character overrides");
         if (config.Profiles.Overrides.Count == 0) Ui.Hint("None.");

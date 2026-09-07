@@ -96,14 +96,14 @@ public sealed class GameActions : IGameActions
         var deadline = DateTime.UtcNow + Timeout;
         while (!AddonDriver.IsAddonVisible("RetainerSell"))
         {
-            if (DateTime.UtcNow > deadline) { LastFailure = "the RetainerSell window did not appear"; return false; }
+            if (DateTime.UtcNow > deadline) { LastFailure = "the sell window did not open"; return false; }
             await Task.Delay(50, ct).ConfigureAwait(false);
         }
         await Task.Delay(200, ct).ConfigureAwait(false);
 
         var price = (int)Math.Clamp(unitPrice, 1, 999_999_999);
         var filled = await framework.RunOnFrameworkThread(() => Native.FillRetainerSell(price, quantity, config.Callbacks.RetainerSellConfirm)).ConfigureAwait(false);
-        if (!filled) { LastFailure = "could not fill price and quantity into the RetainerSell window"; await framework.RunOnFrameworkThread(() => AddonDriver.CloseAddon("RetainerSell")).ConfigureAwait(false); return false; }
+        if (!filled) { LastFailure = "the price could not be entered in the sell window"; await framework.RunOnFrameworkThread(() => AddonDriver.CloseAddon("RetainerSell")).ConfigureAwait(false); return false; }
 
         // A listing shows up as a *move* into the retainer's market container rather than a removal, so
         // instead of waiting on a particular inventory event, watch the slot itself empty out.
@@ -115,7 +115,7 @@ public sealed class GameActions : IGameActions
             await Task.Delay(100, ct).ConfigureAwait(false);
         }
 
-        LastFailure = "the listing was confirmed but the item stayed in its slot";
+        LastFailure = "the listing was confirmed but the item never left the bag";
         await framework.RunOnFrameworkThread(() => AddonDriver.CloseAddon("RetainerSell")).ConfigureAwait(false);
         return false;
     }
@@ -137,14 +137,14 @@ public sealed class GameActions : IGameActions
         var sent = await framework.RunOnFrameworkThread(() => Native.RestoreFromDresser(dresserSlot.Slot)).ConfigureAwait(false);
         if (!sent)
         {
-            LastFailure = "RestorePrismBoxItem refused: dresser not loaded, unique item already owned, or no inventory space";
+            LastFailure = "the dresser would not return it: no bag space, or you already own this unique item";
             log.Warning("{Failure} (index {Index})", LastFailure, dresserSlot.Slot);
             return null;
         }
         var landed = await added.ConfigureAwait(false);
         if (landed is null)
         {
-            LastFailure = "Restore was sent but no item arrived in the inventory before the timeout";
+            LastFailure = "the dresser was asked to return it but nothing arrived in your bags";
             return null;
         }
         return new SlotRef(ContainerKind.Inventory, (uint)landed.Item.ContainerType, (int)landed.Item.InventorySlot);
@@ -157,7 +157,7 @@ public sealed class GameActions : IGameActions
     public async Task<SlotRef?> MoveToInventoryAsync(SlotRef slot, uint itemId, int quantity, bool isHq, CancellationToken ct)
     {
         LastFailure = null;
-        if (slot.Kind != ContainerKind.Retainer) { LastFailure = "Only retainer items can be brought back automatically"; return null; }
+        if (slot.Kind != ContainerKind.Retainer) { LastFailure = "only items held by a retainer can be brought back"; return null; }
 
         var arrived = WaitForEvent<InventoryEventArgs>(
             e => e is InventoryItemAddedArgs or InventoryItemMovedArgs
@@ -172,7 +172,7 @@ public sealed class GameActions : IGameActions
 
         // No event seen: look for the item in the bags directly before giving up.
         var found = FindSlot(ContainerKind.Inventory, 0, itemId, quantity, isHq, new HashSet<SlotRef>(), slot);
-        if (found is null) LastFailure = "'Retrieve from Retainer' was selected but the item did not arrive in your bags";
+        if (found is null) LastFailure = "the retainer was asked to hand it over but nothing arrived in your bags";
         return found;
     }
 
@@ -185,13 +185,13 @@ public sealed class GameActions : IGameActions
     {
         LastFailure = null;
         var start = scanner.ReadSlot(slot);
-        if (start is null || start.ItemId != itemId) { LastFailure = "Item is no longer in the slot"; return false; }
+        if (start is null || start.ItemId != itemId) { LastFailure = "the item is no longer where it was"; return false; }
         var rounds = start.MateriaCount + 1;
 
         for (var round = 0; round < rounds; round++)
         {
             var current = scanner.ReadSlot(slot);
-            if (current is null || current.ItemId != itemId) { LastFailure = "Item left the slot while its materia was being retrieved"; return false; }
+            if (current is null || current.ItemId != itemId) { LastFailure = "the item moved while its materia was being removed"; return false; }
             if (!current.HasMateria) return true;
 
             await WaitUntilFreeAsync(ct).ConfigureAwait(false);
@@ -207,13 +207,13 @@ public sealed class GameActions : IGameActions
             var winner = await Task.WhenAny(changed, dialog).ConfigureAwait(false);
             if (winner == dialog)
             {
-                if (!dialog.Result) { LastFailure = dialogs.LastRejection ?? "MateriaRetrieveDialog was not answered"; return false; }
-                if (await changed.ConfigureAwait(false) is null) { LastFailure = "Materia dialog answered but the item did not change"; return false; }
+                if (!dialog.Result) { LastFailure = dialogs.LastRejection ?? "the materia window was not answered"; return false; }
+                if (await changed.ConfigureAwait(false) is null) { LastFailure = "the materia window was confirmed but no materia came off"; return false; }
             }
             else
             {
                 dialogs.Disarm();
-                if (changed.Result is null) { LastFailure = "'Retrieve Materia' was selected but the item did not change"; return false; }
+                if (changed.Result is null) { LastFailure = "Retrieve Materia was chosen but no materia came off"; return false; }
             }
 
             // The retrieval animation blocks the next context menu; let it finish.
@@ -222,7 +222,7 @@ public sealed class GameActions : IGameActions
         }
 
         var after = scanner.ReadSlot(slot);
-        if (after is { HasMateria: true }) { LastFailure = $"{after.MateriaCount} materia still attached after {rounds} attempts"; return false; }
+        if (after is { HasMateria: true }) { LastFailure = $"{after.MateriaCount} materia still attached after {rounds} tries"; return false; }
         return true;
     }
 
@@ -263,10 +263,10 @@ public sealed class GameActions : IGameActions
         var dialog = dialogs.ExpectAsync("GrandCompanySupplyReward", config.Callbacks.ExpertDeliveryConfirm, null, Timeout, ct);
         if (dialog.IsCompleted && !dialog.Result) { LastFailure = dialogs.LastRejection; return false; }
         var selected = await framework.RunOnFrameworkThread(() => Native.SelectExpertDelivery(itemId, config.Callbacks.ExpertDeliverySelect)).ConfigureAwait(false);
-        if (!selected) { dialogs.Disarm(); LastFailure = "Item not in the Expert Delivery list, or the list window is not open"; return false; }
+        if (!selected) { dialogs.Disarm(); LastFailure = "the item is not on the Expert Delivery list"; return false; }
         var confirmed = await dialog.ConfigureAwait(false);
-        if (!confirmed) { LastFailure = dialogs.LastRejection ?? "GrandCompanySupplyReward did not appear"; return false; }
-        if (await removed.ConfigureAwait(false) is null) { LastFailure = "Reward dialog answered but the item was not removed"; return false; }
+        if (!confirmed) { LastFailure = dialogs.LastRejection ?? "the delivery confirmation did not open"; return false; }
+        if (await removed.ConfigureAwait(false) is null) { LastFailure = "the delivery was confirmed but the item stayed in your bags"; return false; }
         return true;
     }
 
@@ -322,7 +322,7 @@ public sealed class GameActions : IGameActions
                 var answered = await dialogTask.ConfigureAwait(false);
                 if (!answered)
                 {
-                    LastFailure = dialogs.LastRejection ?? "dialog was not answered";
+                    LastFailure = dialogs.LastRejection ?? "the confirmation was not answered";
                     log.Warning("{Failure} for {Slot}", LastFailure, slot);
                     return false;
                 }
@@ -346,13 +346,13 @@ public sealed class GameActions : IGameActions
             }).ConfigureAwait(false);
             if (!loaded)
             {
-                LastFailure = "Container closed before the result could be confirmed";
+                LastFailure = "the container closed before the result could be checked";
                 return false;
             }
             if (after is null || after.ItemId != expectedItemId) return true;
             await Task.Delay(2000, ct).ConfigureAwait(false);
         }
-        LastFailure = "Dialog answered but the slot still holds the item";
+        LastFailure = "the confirmation was answered but the item is still there";
         return false;
     }
 

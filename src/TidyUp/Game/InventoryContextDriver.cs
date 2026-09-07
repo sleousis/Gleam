@@ -95,7 +95,7 @@ public sealed class InventoryContextDriver
             var selected = await framework.RunOnFrameworkThread(() => SelectEntry(index)).ConfigureAwait(false);
             if (selected) return true;
         }
-        LastFailure = $"ContextMenu addon did not appear for '{englishLabel}'";
+        LastFailure = "the item's menu did not open";
         await framework.RunOnFrameworkThread(CloseMenu).ConfigureAwait(false);
         return false;
     }
@@ -103,12 +103,12 @@ public sealed class InventoryContextDriver
     private unsafe int OpenAndFind(SlotRef slot, string englishLabel, uint? wantedLabelId)
     {
         var agent = AgentModule.Instance()->GetAgentInventoryContext();
-        if (agent == null) { LastFailure = "Inventory context agent unavailable"; return -1; }
+        if (agent == null) { LastFailure = "the item's menu could not be opened"; return -1; }
         agent->OpenForItemSlot((InventoryType)slot.ContainerId, slot.Slot, 0, 0);
         var entries = ReadOpenEntries(agent);
         if (entries.Count == 0)
         {
-            LastFailure = $"Context menu for {slot} has no entries";
+            LastFailure = "the item's menu was empty";
             CloseMenu();
             return -1;
         }
@@ -120,15 +120,16 @@ public sealed class InventoryContextDriver
         {
             var offered = string.Join(" | ", entries.Select(e => e.Text.Length > 0 ? e.Text : e.LabelId.ToString()));
             var hint = entries.Any(e => e.Text.Contains("Retainer", StringComparison.OrdinalIgnoreCase))
-                ? " A retainer window is open, which changes this menu; close it and try again."
+                ? " A retainer window is open; close it and try again."
                 : string.Empty;
-            LastFailure = $"'{englishLabel}' not offered for {slot}. Offered: {offered}.{hint}";
+            log.Information("Menu for {Slot} had no '{Label}'. Offered: {Offered}", slot, englishLabel, offered);
+            LastFailure = $"the item's menu had no '{englishLabel}' option.{hint}";
             CloseMenu();
             return -1;
         }
         if (match.Disabled)
         {
-            LastFailure = $"'{englishLabel}' is greyed out for {slot}";
+            LastFailure = $"'{englishLabel}' is greyed out for this item";
             CloseMenu();
             return -1;
         }

@@ -80,12 +80,12 @@ public sealed class RunReport
 
     public string Summary()
     {
-        var parts = new List<string> { $"{Done} done" };
-        if (Skipped > 0) parts.Add($"{Skipped} skipped (changed)");
+        var parts = new List<string> { $"{Done} cleaned" };
+        if (Skipped > 0) parts.Add($"{Skipped} had moved and were left alone");
         if (Failed > 0) parts.Add($"{Failed} failed");
-        if (Moved.Count > 0) parts.Add($"{Moved.Count} moved to your bags for materia retrieval");
-        if (Pending.Count > 0) parts.Add($"{Pending.Count} pending");
-        if (Aborted) parts.Add($"aborted: {AbortReason}");
+        if (Moved.Count > 0) parts.Add($"{Moved.Count} brought home for later");
+        if (Pending.Count > 0) parts.Add($"{Pending.Count} waiting");
+        if (Aborted) parts.Add($"stopped: {AbortReason}");
         return string.Join(", ", parts);
     }
 }

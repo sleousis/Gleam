@@ -113,7 +113,7 @@ public sealed class Plugin : IDalamudPlugin
             CleanableCount = () => coordinator.LastCleanableCount,
         };
         dutyNudge = new DutyNudge(dutyState, framework, coordinator.CountCleanableAsync,
-            count => toast.ShowNormal($"Tidy Up: {count} items from that run could be cleaned. /tidyup to review."));
+            count => toast.ShowNormal($"Tidy Up: {count} item{(count == 1 ? "" : "s")} from that duty could be cleaned. /tidyup to review."));
 
         config.Saved += ApplyProfileToServices;
         ApplyProfileToServices();

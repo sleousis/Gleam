@@ -115,7 +115,7 @@ public sealed class RunCoordinator : IDisposable
             if (profile.StackMergeBeforeScan && focus is null)
             {
                 var merged = await StackMergeAsync().ConfigureAwait(false);
-                if (merged > 0) chat.Print($"Merged {merged} split stacks.", "Tidy Up");
+                if (merged > 0) chat.Print($"Tidy Up: merged {merged} split stack{(merged == 1 ? "" : "s")}.", "Tidy Up");
             }
 
             var (items, ctx, retainerNames) = await framework.RunOnFrameworkThread(() =>
@@ -297,7 +297,7 @@ public sealed class RunCoordinator : IDisposable
         save();
         if (CurrentPlan is not null)
             foreach (var s in CurrentPlan.Sections) s.Rows.RemoveAll(r => r.Item.ItemId == itemId);
-        chat.Print($"{name} will never be proposed.", "Tidy Up");
+        chat.Print($"{name} will never be touched.", "Tidy Up");
         PlanChanged?.Invoke();
     }
 
@@ -306,7 +306,7 @@ public sealed class RunCoordinator : IDisposable
         config.AlwaysDiscardList.Add(itemId);
         config.ProtectList.RemoveAll(itemId);
         save();
-        chat.Print($"{name} added to the always-discard list.", "Tidy Up");
+        chat.Print($"{name} will always be cleaned.", "Tidy Up");
     }
 
     // ---------- execution ----------
@@ -370,9 +370,9 @@ public sealed class RunCoordinator : IDisposable
                 log.Information("Skipped {Item} at {Slot} (owner {Owner:X}): {Why}", r.Action.ItemName, r.Action.Slot, r.Action.Slot.OwnerId, r.Message);
             if (skipped.Count >= 3)
             {
-                chat.Print($"Tidy Up: {skipped.Count} rows did not match their slot. First few:", "Tidy Up");
+                chat.Print($"Tidy Up: {skipped.Count} items had moved since the scan and were left alone, for example:", "Tidy Up");
                 foreach (var r in skipped.Take(3))
-                    chat.Print($"  {r.Action.ItemName} @ {r.Action.Slot}: {r.Message}", "Tidy Up");
+                    chat.Print($"  {r.Action.ItemName}: {r.Message}", "Tidy Up");
             }
 
             if (config.ChatSummaryAfterRun && !SuppressChatSummary)
@@ -381,10 +381,10 @@ public sealed class RunCoordinator : IDisposable
                 foreach (var (reason, count) in report.PendingByReason())
                     chat.Print($"  {count} waiting: {(string.IsNullOrEmpty(reason) ? "container not open" : reason)}.", "Tidy Up");
                 if (report.Moved.Count > 0)
-                    chat.Print($"  {report.Moved.Count} brought back to your bags: close the retainer and clean again to strip the materia and finish.", "Tidy Up");
+                    chat.Print($"  {report.Moved.Count} brought back to your bags. Close the retainer and clean again to finish them.", "Tidy Up");
             }
             if (report.Aborted && report.Failed > 0)
-                chat.PrintError($"Tidy Up stopped: {report.AbortReason}. Nothing after that item was touched.", "Tidy Up");
+                chat.PrintError($"Tidy Up stopped after repeated failures: {report.AbortReason}. Nothing after that item was touched.", "Tidy Up");
         }
         catch (Exception ex)
         {
@@ -433,6 +433,6 @@ public sealed class RunCoordinator : IDisposable
     {
         // A vendor or GC officer window opened; if actions were waiting for it, tell the user.
         var waiting = PendingActions.Count(p => p.Action is ActionKind.VendorSell or ActionKind.ExpertDelivery or ActionKind.MarketList);
-        if (waiting > 0) toast.ShowNormal($"Tidy Up: {waiting} accepted items can now be processed. Open /tidyup and accept.");
+        if (waiting > 0) toast.ShowNormal($"Tidy Up: {waiting} waiting item{(waiting == 1 ? "" : "s")} can be finished here. Open /tidyup and clean.");
     }
 }
