@@ -184,6 +184,8 @@ public sealed partial class SettingsWindow
         var unseen = a.UnseenRows;
         if (Ui.Segmented("##unseen", ref unseen, [(UnseenRowsMode.Clean, "Clean by the rules"), (UnseenRowsMode.Ask, "Ask me"), (UnseenRowsMode.Skip, "Skip")])) { a.UnseenRows = unseen; dirty = true; }
         Ui.Tooltip("Retainers not yet cached and the dresser only show their contents when open. Clean applies the preset and hard rules to them on the spot.");
+        v = a.VisitContainersWithoutRows; if (ImGui.Checkbox("Also visit containers with nothing ticked, to find more", ref v)) { a.VisitContainersWithoutRows = v; dirty = true; }
+        Ui.Tooltip("Off: a run only travels where your ticked rows are. Ticking one bag item never sends you to the inn.");
 
         Ui.Section("Names in your client language");
         var w = 200 * Ui.Scale;

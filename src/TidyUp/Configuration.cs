@@ -50,6 +50,12 @@ public sealed class AutomationSettings
     /// <summary>Rows discovered only once a container opens. Clean means the run is truly hands-free.</summary>
     public UnseenRowsMode UnseenRows { get; set; } = UnseenRowsMode.Clean;
 
+    /// <summary>
+    /// Also travel to containers with nothing selected, to scan and clean them. Off: a run only goes
+    /// where the ticked rows are, so ticking one bag item never triggers a trip to the inn.
+    /// </summary>
+    public bool VisitContainersWithoutRows { get; set; } = false;
+
     public bool Enabled { get; set; } = false;
 
     /// <summary>Travel to an inn with Lifestream when retainers, sells, or the dresser are involved.</summary>

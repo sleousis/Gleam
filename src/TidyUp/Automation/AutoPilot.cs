@@ -109,10 +109,11 @@ public sealed class AutoPilot
 
             if (here.Count > 0) await Leg("bags", () => Step("Cleaning inventory and armoury", () => Execute(here), ct), ct);
 
-            var cleanUnseen = S.UnseenRows == UnseenRowsMode.Clean;
-            if (S.OpenSaddlebag && (saddle.Count > 0 || cleanUnseen)) await Leg("saddlebag", () => SaddlebagAsync(saddle, ct), ct);
+            // Go only where the ticked rows are, unless the user asked to sweep everything.
+            var sweep = S.VisitContainersWithoutRows && S.UnseenRows != UnseenRowsMode.Skip;
+            if (S.OpenSaddlebag && (saddle.Count > 0 || sweep)) await Leg("saddlebag", () => SaddlebagAsync(saddle, ct), ct);
 
-            var needsInn = (S.VisitRetainers && (retainers.Count > 0 || cleanUnseen)) || (S.VisitDresser && (dresser.Count > 0 || cleanUnseen));
+            var needsInn = (S.VisitRetainers && (retainers.Count > 0 || sweep)) || (S.VisitDresser && (dresser.Count > 0 || sweep));
             if (needsInn)
             {
                 var inInn = await Leg("inn", () => TravelToInnAsync(ct), ct);
@@ -264,7 +265,8 @@ public sealed class AutoPilot
 
     private async Task RetainersAsync(Dictionary<ulong, List<QueuedAction>> byRetainer, CancellationToken ct)
     {
-        if (byRetainer.Count == 0 && S.UnseenRows == UnseenRowsMode.Skip) return;
+        var sweep = S.VisitContainersWithoutRows && S.UnseenRows != UnseenRowsMode.Skip;
+        if (byRetainer.Count == 0 && !sweep) return;
         await EnsureRetainerListAsync(ct).ConfigureAwait(false);
 
         // The list appears before the server has filled it; selecting too early is silently ignored.
@@ -277,7 +279,7 @@ public sealed class AutoPilot
             ct.ThrowIfCancellationRequested();
             var (id, name) = order[index];
             var rows = byRetainer.GetValueOrDefault(id) ?? new List<QueuedAction>();
-            if (rows.Count == 0 && S.UnseenRows == UnseenRowsMode.Skip) continue;
+            if (rows.Count == 0 && !sweep) continue;
 
             var ok = await Leg($"retainer {name}", () => OneRetainerAsync(index, id, name, rows, ct), ct).ConfigureAwait(false);
             if (!ok) await EnsureRetainerListAsync(ct).ConfigureAwait(false);
@@ -362,7 +364,6 @@ public sealed class AutoPilot
                 throw new AutoPilotException($"{name}'s menu did not open after selecting row {i} four times. Try another 'Retainer list callback' value in Settings › Advanced.");
             }, ct);
 
-            if (rows.Count > 0 || S.UnseenRows != UnseenRowsMode.Skip)
             {
                 await Step($"Opening {name}'s inventory", async () =>
                 {
@@ -389,7 +390,7 @@ public sealed class AutoPilot
     private async Task DresserAsync(List<QueuedAction> rows, CancellationToken ct)
     {
         // The dresser is never cached, so its rows only exist if it was open during the scan.
-        if (rows.Count == 0 && S.UnseenRows == UnseenRowsMode.Skip) return;
+        if (rows.Count == 0 && !(S.VisitContainersWithoutRows && S.UnseenRows != UnseenRowsMode.Skip)) return;
         await WalkToAndInteractAsync(S.DresserObjectName, "MiragePrismPrismBox", ct).ConfigureAwait(false);
         await WaitUntil(GameInventoryScanner.IsDresserLoaded, StepTimeout, "the dresser to load", ct).ConfigureAwait(false);
         await Task.Delay(800, ct).ConfigureAwait(false);
