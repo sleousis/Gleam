@@ -369,18 +369,18 @@ public sealed class ConfirmationWindow : StyledWindow
         ImGui.SetCursorPosY(ImGui.GetCursorPosY() + pillDrop);
         Ui.Pill(checkedHere > 0 ? $"{checkedHere} / {rows.Count}" : $"{rows.Count}", checkedHere > 0 ? Ui.AccentSoft : Ui.Muted);
 
-        // Only containers that are not reachable right now say so; "ready" is the default and stays silent.
-        if (!section.IsAvailableNow)
+        // A closed container only gets a marker when the player has to go there themselves; with
+        // hands-free on, the run does the walking and the marker would just be noise.
+        var handsFree = Pilot is not null && config.Automation.Enabled;
+        if (!section.IsAvailableNow && !handsFree)
         {
-            var chip = section.Requirement;
-            if (section.Kind == ContainerKind.GlamourDresser) chip += $" · {section.FreeSlotsNeeded} free bag slots";
+            var why = section.Requirement;
+            if (section.Kind == ContainerKind.GlamourDresser) why += $" · {section.FreeSlotsNeeded} free bag slots";
             ImGui.SameLine();
-            Ui.RightAlign(ImGui.CalcTextSize(chip, false, 0).X + 46 * Ui.Scale);
-            ImGui.SetCursorPosY(ImGui.GetCursorPosY() + pillDrop);
-            Ui.Pill(chip, Ui.Muted, FontAwesomeIcon.MapMarkerAlt);
-            Ui.Tooltip(Pilot is not null && config.Automation.Enabled
-                ? "Not open right now. A hands-free run goes there for you."
-                : "Not open right now. Open it, or accept and the rows wait until you do.");
+            Ui.RightAlign(30 * Ui.Scale);
+            ImGui.SetCursorPosY(ImGui.GetCursorPosY() + pillDrop + 2 * Ui.Scale);
+            Ui.Icon(FontAwesomeIcon.MapMarkerAlt, Ui.Muted);
+            Ui.Tooltip($"Not open right now: {why}. Accept anyway and these rows wait until it is.");
         }
         if (!expanded) { Ui.Gap(0.2f); return; }
 
