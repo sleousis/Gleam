@@ -52,13 +52,13 @@ public sealed class ExecutionEngine
         {
             if (ct.IsCancellationRequested)
             {
-                report.Pending.Add(action);
+                Park(report, action, "the run was stopped before reaching it");
                 continue;
             }
 
             if (report.Aborted)
             {
-                report.Pending.Add(action);
+                Park(report, action, "the run stopped at an earlier failure");
                 continue;
             }
 

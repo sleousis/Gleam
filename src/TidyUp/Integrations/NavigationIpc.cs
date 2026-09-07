@@ -55,6 +55,7 @@ public sealed class LifestreamIpc
     private readonly ICallGateSubscriber<object> abort;
     private readonly ICallGateSubscriber<int?, object> enqueueInn;
     private readonly ICallGateSubscriber<string, object> executeCommand;
+    private readonly ICallGateSubscriber<string, bool> aethernetTeleport;
 
     public LifestreamIpc(IDalamudPluginInterface pi)
     {
@@ -63,6 +64,19 @@ public sealed class LifestreamIpc
         abort = pi.GetIpcSubscriber<object>("Lifestream.Abort");
         enqueueInn = pi.GetIpcSubscriber<int?, object>("Lifestream.EnqueueInnShortcut");
         executeCommand = pi.GetIpcSubscriber<string, object>("Lifestream.ExecuteCommand");
+        aethernetTeleport = pi.GetIpcSubscriber<string, bool>("Lifestream.AethernetTeleport");
+    }
+
+    /// <summary>Anything you could type after /li: an aetheryte name, "inn", "home".</summary>
+    public bool Execute(string arguments)
+    {
+        try { executeCommand.InvokeAction(arguments); return true; } catch { return false; }
+    }
+
+    /// <summary>Uses the nearest aethernet shard to reach the named one in the same city.</summary>
+    public bool AethernetTeleport(string destination)
+    {
+        try { return aethernetTeleport.InvokeFunc(destination); } catch { return false; }
     }
 
     public bool IsInstalled => pi.InstalledPlugins.Any(p => p.InternalName == "Lifestream" && p.IsLoaded);

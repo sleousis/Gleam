@@ -62,6 +62,16 @@ public static unsafe class GameUi
         return -1;
     }
 
+    /// <summary>Fires an arbitrary int callback on a visible addon, e.g. to switch a tab.</summary>
+    public static bool FireInts(string addonName, IReadOnlyList<int> ints)
+    {
+        var addon = AddonDriver.GetAddon(addonName);
+        if (addon == null || !addon->IsVisible || ints.Count == 0) return false;
+        var values = stackalloc AtkValue[ints.Count];
+        for (var i = 0; i < ints.Count; i++) values[i].SetInt(ints[i]);
+        return addon->FireCallback((uint)ints.Count, values, false);
+    }
+
     /// <summary>Selects a retainer on the RetainerList by display index.</summary>
     public static bool RetainerListSelect(int firstValue, int index)
     {

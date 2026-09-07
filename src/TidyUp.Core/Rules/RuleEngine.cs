@@ -81,6 +81,7 @@ public sealed class RuleEngine
             if (enabledRuleIds is not null && !enabledRuleIds.Contains(post.Id)) continue;
             result = post.Process(result, ctx, thresholds);
         }
-        return result;
+        // Physical limits of each container win over every rule, override and market re-route.
+        return ContainerConstraints.Apply(result);
     }
 }
