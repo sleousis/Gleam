@@ -8,7 +8,7 @@ public enum ActionKind
     VendorSell,
     ExpertDelivery,
     Desynth,
-    /// <summary>Put up for sale on the market board through a retainer, at the lowest data-centre price.</summary>
+    /// <summary>Put up for sale on the market board through a retainer, at the lowest home-world price.</summary>
     MarketList,
 }
 
@@ -52,7 +52,7 @@ public sealed record Proposal
     public long ValueGil { get; init; }
     public string ValueLabel { get; init; } = "—";
 
-    /// <summary>Lowest current market-board listing per unit for this item's quality, 0 when unknown or unmarketable.</summary>
+    /// <summary>Lowest current home-world listing per unit for this item's quality, 0 when unknown or unmarketable.</summary>
     public long MarketUnitPrice { get; init; }
     public IReadOnlyList<string> Warnings { get; init; } = Array.Empty<string>();
 

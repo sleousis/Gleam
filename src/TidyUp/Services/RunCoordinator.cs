@@ -229,15 +229,15 @@ public sealed class RunCoordinator : IDisposable
         }
     }
 
-    /// <summary>Where market prices come from: the current data centre, e.g. "Chaos".</summary>
+    /// <summary>Where market prices come from: the character's home world, e.g. "Omega".</summary>
     public string MarketScope { get; private set; } = string.Empty;
 
     private async Task<ItemContext> AddMarketPricesAsync(IReadOnlyList<ScannedItem> items, ItemContext ctx, Profile profile)
     {
         if (!config.UseUniversalis) return ctx;
-        var w = player.CurrentWorld.ValueNullable;
-        var world = w?.DataCenter.ValueNullable?.Name.ExtractText();
-        if (string.IsNullOrEmpty(world)) world = w?.Name.ExtractText();
+        // Listings are placed on the home world's board, so that is the price that matters.
+        var world = player.HomeWorld.ValueNullable?.Name.ExtractText();
+        if (string.IsNullOrEmpty(world)) world = player.CurrentWorld.ValueNullable?.Name.ExtractText();
         if (string.IsNullOrEmpty(world)) return ctx;
         MarketScope = world;
         var ids = items.Select(i => i.ItemId).Distinct().Where(id => db.Get(id)?.IsMarketable == true).ToList();

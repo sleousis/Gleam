@@ -171,7 +171,7 @@ public sealed class ConfirmationWindow : StyledWindow
                 config.Save(PluginServices.PluginInterface);
                 _ = coordinator.RefreshPlanAsync(openWindow: false, coordinator.FocusContainer);
             }
-            Ui.Tooltip("Sell on marketboard: lists marketable items through your retainers at the lowest price on your data centre, vendors other tradeable items, discards untradeable ones.\nSell on vendors: vendors tradeable items, discards untradeable ones.\nDiscard all: discards everything proposed.");
+            Ui.Tooltip("Sell on marketboard: lists marketable items through your retainers at the lowest price on your home world, vendors other tradeable items, discards untradeable ones.\nSell on vendors: vendors tradeable items, discards untradeable ones.\nDiscard all: discards everything proposed.");
         }, profile.Thresholds.Policy.Describe());
 
         Ui.Gap(0.4f);
@@ -444,7 +444,7 @@ public sealed class ConfirmationWindow : StyledWindow
         DrawAttributePills(row);
     }
 
-    /// <summary>Lowest market-board listing on the data centre, per unit. Blank for unmarketable items.</summary>
+    /// <summary>Lowest market-board listing on the home world, per unit. Blank for unmarketable items.</summary>
     private void DrawMarketPrice(PlanRow row)
     {
         ImGui.AlignTextToFramePadding();
@@ -453,11 +453,11 @@ public sealed class ConfirmationWindow : StyledWindow
         if (unit <= 0)
         {
             Ui.TextColored(Ui.Muted * new Vector4(1, 1, 1, 0.5f), config.UseUniversalis ? "no listings" : "prices off");
-            Ui.Tooltip(config.UseUniversalis ? "Universalis has no current listing for this item on your data centre." : "Turn on market prices in Settings › Advanced › Integrations.");
+            Ui.Tooltip(config.UseUniversalis ? "Universalis has no current listing for this item on your home world." : "Turn on market prices in Settings › Advanced › Integrations.");
             return;
         }
         Ui.TextColored(Ui.Market, $"{unit:N0}g");
-        var scope = string.IsNullOrEmpty(coordinator.MarketScope) ? "your data centre" : coordinator.MarketScope;
+        var scope = string.IsNullOrEmpty(coordinator.MarketScope) ? "your home world" : coordinator.MarketScope;
         Ui.Tooltip($"Lowest listing on {scope} ({(row.Item.IsHq ? "HQ" : "NQ")}): {unit:N0}g each · {unit * row.Item.Quantity:N0}g for the stack of {row.Item.Quantity}.");
     }
 
