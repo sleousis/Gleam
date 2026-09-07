@@ -150,12 +150,12 @@ public sealed partial class SettingsWindow : StyledWindow
             ImGui.Spacing();
             var a = config.Automation;
             var auto = a.Enabled;
-            if (ImGui.Checkbox("Do the walking for me", ref auto)) { a.Enabled = auto; dirty = true; }
+            if (ImGui.Checkbox("Do the travelling for me", ref auto)) { a.Enabled = auto; dirty = true; }
             ImGui.SameLine();
-            if (Nav is null || !Nav.IsInstalled) Ui.Pill("needs vnavmesh", Ui.Warn); else Ui.Pill("vnavmesh", Ui.Ok, Dalamud.Interface.FontAwesomeIcon.Check);
+            if (Nav is null || !Nav.IsInstalled) Ui.Pill("needs the vnavmesh plugin", Ui.Warn); else Ui.Pill("vnavmesh", Ui.Ok, Dalamud.Interface.FontAwesomeIcon.Check);
             ImGui.SameLine();
-            if (Travel is null || !Travel.IsInstalled) Ui.Pill("needs Lifestream", Ui.Warn); else Ui.Pill("Lifestream", Ui.Ok, Dalamud.Interface.FontAwesomeIcon.Check);
-            Ui.HintWrapped("Opens the saddlebag, travels to an inn, visits every retainer and the dresser, then your Grand Company and a merchant. This is gameplay automation and is against the game's terms.");
+            if (Travel is null || !Travel.IsInstalled) Ui.Pill("needs the Lifestream plugin", Ui.Warn); else Ui.Pill("Lifestream", Ui.Ok, Dalamud.Interface.FontAwesomeIcon.Check);
+            Ui.HintWrapped("Opens the saddlebag, teleports to an inn for the retainers and the dresser, then visits a merchant and your Grand Company as needed. Gameplay automation; use at your own risk.");
         }
 
         using (Ui.Card("protect")) protectEditor.Draw();
@@ -169,12 +169,12 @@ public sealed partial class SettingsWindow : StyledWindow
         Ui.Gap(0.5f);
         DrawScopeSwitch();
 
-        Fold("Rules and thresholds", DrawRules);
+        Fold("Rules", DrawRules);
+        Fold("Hands-free", DrawAutomation);
+        Fold("Retainers", DrawContainers);
         Fold("Notifications", DrawNotifications);
-        Fold("Hands-free details", DrawAutomation);
-        Fold("Retainers and auto-open", DrawContainers);
         Fold("Integrations", DrawIntegrations);
-        Fold("Timing and verification", DrawAdvanced);
+        Fold("Pace and troubleshooting", DrawAdvanced);
     }
 
     private static void Fold(string title, Action body)

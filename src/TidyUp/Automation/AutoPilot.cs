@@ -105,7 +105,7 @@ public sealed class AutoPilot
             tally.Clear();
 
             // A previous run or the player may have left a retainer window, shop, or dresser open.
-            Status = "Tidying up open windows";
+            Status = "Closing leftover windows";
             await RecoverUiAsync(ct).ConfigureAwait(false);
 
             if (here.Count > 0) await Leg("bags", () => Step("Cleaning inventory and armoury", () => Execute(here), ct), ct);
@@ -148,7 +148,7 @@ public sealed class AutoPilot
         catch (OperationCanceledException)
         {
             Status = "Stopped";
-            chat.Print("Tidy Up: stopped. Nothing after the current item was touched.", "Tidy Up");
+            chat.Print("Tidy Up: stopped. Nothing else was touched.", "Tidy Up");
         }
         catch (AutoPilotException ex)
         {
@@ -253,7 +253,7 @@ public sealed class AutoPilot
         await Step("Opening the saddlebag", async () =>
         {
             var id = saddlebagCommandId ??= db.MainCommandIdForEnglishName(S.SaddlebagCommandName);
-            if (id is null) throw new AutoPilotException($"No main command named '{S.SaddlebagCommandName}'");
+            if (id is null) throw new AutoPilotException("The saddlebag could not be opened");
             await framework.RunOnFrameworkThread(() => GameUi.ExecuteMainCommand(id.Value)).ConfigureAwait(false);
             await WaitUntil(() => GameInventoryScanner.IsSaddlebagLoaded() && GameUi.IsVisible("InventoryBuddy"), StepTimeout, "the saddlebag to open", ct).ConfigureAwait(false);
         }, ct);
@@ -265,10 +265,10 @@ public sealed class AutoPilot
     private async Task TravelToInnAsync(CancellationToken ct)
     {
         if (await OnFramework(IsInInn).ConfigureAwait(false)) return;
-        if (!S.TravelToInn) throw new AutoPilotException("Not in an inn and travel is turned off");
+        if (!S.TravelToInn) throw new AutoPilotException("Not in an inn room, and travelling there is turned off");
         await Step("Travelling to an inn", async () =>
         {
-            if (!travel.GoToInn(S.InnIndex)) throw new AutoPilotException("Lifestream refused the inn shortcut");
+            if (!travel.GoToInn(S.InnIndex)) throw new AutoPilotException("The teleport to the inn did not start");
             await Task.Delay(1500, ct).ConfigureAwait(false);
             await WaitUntil(() => !travel.IsBusy && !condition[ConditionFlag.BetweenAreas] && !condition[ConditionFlag.BetweenAreas51] && IsInInn(),
                 TimeSpan.FromSeconds(S.TravelTimeoutSeconds), "the inn room", ct).ConfigureAwait(false);
@@ -388,7 +388,7 @@ public sealed class AutoPilot
                         await Task.Delay(800, ct).ConfigureAwait(false);
                     }
                 }
-                throw new AutoPilotException($"{name}'s menu did not open after selecting row {i} four times. Try another 'Retainer list callback' value in Settings › Advanced.");
+                throw new AutoPilotException($"{name} could not be summoned from the list");
             }, ct);
 
             {
@@ -404,7 +404,7 @@ public sealed class AutoPilot
                     {
                         var (activeId, activeName) = await OnFramework(GameInventoryScanner.ActiveRetainer).ConfigureAwait(false);
                         var windowOpen = await OnFramework(() => GameUi.AnyVisible("InventoryRetainer", "InventoryRetainerLarge")).ConfigureAwait(false);
-                        throw new AutoPilotException($"{name}'s inventory did not become usable: window open {windowOpen}, game reports active retainer '{activeName}' ({activeId:X}), plan expected {id:X}");
+                        throw new AutoPilotException($"{name}'s inventory did not open (the game shows {(windowOpen ? activeName : "no retainer")})");
                     }
                     await Task.Delay(600, ct).ConfigureAwait(false);
                 }, ct);
@@ -493,7 +493,7 @@ public sealed class AutoPilot
             await Step($"Teleporting to {S.VendorAetheryte} for a merchant", async () =>
             {
                 var before = clientState.TerritoryType;
-                if (!travel.Execute(S.VendorAetheryte)) throw new AutoPilotException("Lifestream refused the teleport");
+                if (!travel.Execute(S.VendorAetheryte)) throw new AutoPilotException("The teleport did not start");
                 await Task.Delay(1500, ct).ConfigureAwait(false);
                 await WaitUntil(() => !travel.IsBusy && !condition[ConditionFlag.BetweenAreas] && !condition[ConditionFlag.BetweenAreas51] && clientState.TerritoryType != before,
                     TimeSpan.FromSeconds(S.TravelTimeoutSeconds), S.VendorAetheryte, ct).ConfigureAwait(false);
@@ -537,12 +537,12 @@ public sealed class AutoPilot
         {
             if (!S.TravelToInn) throw new AutoPilotException($"No '{S.PersonnelOfficerName}' nearby and travel is off");
             if (!S.GcCityAetheryte.TryGetValue(gc, out var city) || string.IsNullOrEmpty(city))
-                throw new AutoPilotException("No city aetheryte configured for your Grand Company");
+                throw new AutoPilotException("No destination is set for your Grand Company's city");
 
             await Step($"Teleporting to {city}", async () =>
             {
                 var before = clientState.TerritoryType;
-                if (!travel.Execute(city)) throw new AutoPilotException("Lifestream refused the teleport");
+                if (!travel.Execute(city)) throw new AutoPilotException("The teleport did not start");
                 await Task.Delay(1500, ct).ConfigureAwait(false);
                 await WaitUntil(() => !travel.IsBusy && !condition[ConditionFlag.BetweenAreas] && !condition[ConditionFlag.BetweenAreas51] && clientState.TerritoryType != before,
                     TimeSpan.FromSeconds(S.TravelTimeoutSeconds), city, ct).ConfigureAwait(false);
@@ -553,7 +553,7 @@ public sealed class AutoPilot
             {
                 await Step($"Aethernet to {shard}", async () =>
                 {
-                    if (!travel.AethernetTeleport(shard)) throw new AutoPilotException($"Lifestream could not reach '{shard}'");
+                    if (!travel.AethernetTeleport(shard)) throw new AutoPilotException($"The aethernet trip to {shard} did not start");
                     await Task.Delay(1500, ct).ConfigureAwait(false);
                     await WaitUntil(() => !travel.IsBusy && !condition[ConditionFlag.BetweenAreas] && !condition[ConditionFlag.BetweenAreas51],
                         TimeSpan.FromSeconds(S.TravelTimeoutSeconds), shard, ct).ConfigureAwait(false);
@@ -598,7 +598,7 @@ public sealed class AutoPilot
 
         Status = $"Waiting for you to review the {kind.DisplayName().ToLowerInvariant()}";
         coordinator.RaiseOpenWindow();
-        chat.Print($"Tidy Up: the {kind.DisplayName().ToLowerInvariant()} has items that were not in the accepted plan. Review them, then Clean or close the window to continue.", "Tidy Up");
+        chat.Print($"Tidy Up: new items found in the {kind.DisplayName().ToLowerInvariant()}. Clean them or close the window to carry on.", "Tidy Up");
 
         var deadline = DateTime.UtcNow + TimeSpan.FromMinutes(5);
         var sawRun = false;
@@ -619,7 +619,7 @@ public sealed class AutoPilot
         if (target is null)
         {
             var nearby = await OnFramework(NearbyObjectNames).ConfigureAwait(false);
-            throw new AutoPilotException($"No object named '{objectName}' nearby. Set the name in Settings › Automation. Nearby: {string.Join(", ", nearby.Take(8))}");
+            throw new AutoPilotException($"No {objectName.ToLowerInvariant()} nearby");
         }
 
         await Step($"Walking to the {objectName.ToLowerInvariant()}", async () =>
@@ -629,10 +629,10 @@ public sealed class AutoPilot
             {
                 if (!nav.IsReady)
                 {
-                    Status = "Waiting for vnavmesh to build this zone's mesh";
+                    Status = "Waiting for the pathfinder to learn this area";
                     await WaitUntil(() => nav.IsReady, TimeSpan.FromSeconds(45), "vnavmesh to finish building the navmesh for this zone", ct).ConfigureAwait(false);
                 }
-                if (!nav.MoveCloseTo(pos, S.InteractRange - 0.5f)) throw new AutoPilotException("vnavmesh refused the path");
+                if (!nav.MoveCloseTo(pos, S.InteractRange - 0.5f)) throw new AutoPilotException("No path could be found there");
                 await Task.Delay(500, ct).ConfigureAwait(false);
                 await WaitUntil(() => !nav.IsMoving, TimeSpan.FromSeconds(60), $"arrival at the {objectName.ToLowerInvariant()}", ct).ConfigureAwait(false);
                 if (Distance(pos) > S.InteractRange + 1.5f) throw new AutoPilotException($"Stopped {Distance(pos):0.0}y from the {objectName.ToLowerInvariant()}");
@@ -651,7 +651,7 @@ public sealed class AutoPilot
                 }
                 catch (AutoPilotException) when (attempt < 2) { }
             }
-            throw new AutoPilotException($"The {objectName.ToLowerInvariant()} did not open {expectAddon}. If a retainer, shop or dresser window is still open, close it and run again.");
+            throw new AutoPilotException($"The {objectName.ToLowerInvariant()} did not respond. If a retainer, shop or dresser window is still open, close it and run again.");
         }, ct);
         await Task.Delay(600, ct).ConfigureAwait(false);
     }
@@ -758,8 +758,8 @@ public sealed class AutoPilot
         var chosen = await framework.RunOnFrameworkThread(() => GameUi.SelectStringChoose(text)).ConfigureAwait(false);
         if (chosen < 0)
             throw new AutoPilotException(entries.Count == 0
-                ? $"The menu never filled with entries, so '{text}' could not be chosen"
-                : $"No menu entry containing '{text}'. Offered: {string.Join(" | ", entries)}");
+                ? $"The menu stayed empty, so '{text}' could not be chosen"
+                : $"The menu had no '{text}' option");
         await Task.Delay(400, ct).ConfigureAwait(false);
     }
 

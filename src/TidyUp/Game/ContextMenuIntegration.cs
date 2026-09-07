@@ -49,26 +49,26 @@ public sealed class ContextMenuIntegration : IDisposable
             {
                 new MenuItem
                 {
-                    Name = isProtected ? "Remove from protect list" : "Never discard (protect)",
+                    Name = isProtected ? "Tidy Up: allow again" : "Tidy Up: never touch",
                     PrefixChar = 'T',
                     OnClicked = _ =>
                     {
                         if (isProtected) config.ProtectList.RemoveAll(baseId);
                         else { config.ProtectList.Add(baseId); config.AlwaysDiscardList.RemoveAll(baseId); }
                         save();
-                        chat.Print(isProtected ? $"{name} is no longer protected." : $"{name} will never be proposed.", "Tidy Up");
+                        chat.Print(isProtected ? $"{name} can be cleaned again." : $"{name} will never be touched.", "Tidy Up");
                     },
                 },
                 new MenuItem
                 {
-                    Name = isAlways ? "Remove from always-discard list" : "Always discard",
+                    Name = isAlways ? "Tidy Up: stop always cleaning" : "Tidy Up: always clean",
                     PrefixChar = 'T',
                     OnClicked = _ =>
                     {
                         if (isAlways) config.AlwaysDiscardList.RemoveAll(baseId);
                         else { config.AlwaysDiscardList.Add(baseId); config.ProtectList.RemoveAll(baseId); }
                         save();
-                        chat.Print(isAlways ? $"{name} removed from the always-discard list." : $"{name} will always be proposed.", "Tidy Up");
+                        chat.Print(isAlways ? $"{name} is no longer always cleaned." : $"{name} will always be cleaned.", "Tidy Up");
                     },
                 },
             }),

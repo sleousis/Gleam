@@ -269,7 +269,7 @@ public class ExecutionEngineTests
         var follow = Assert.Single(first.Moved);
         Assert.Equal(ContainerKind.Inventory, follow.Kind);
         Assert.DoesNotContain(game.Calls, c => c.StartsWith("materia:") || c.StartsWith("discard:"));
-        Assert.Contains("moved to your bags", first.Summary());
+        Assert.Contains("brought home", first.Summary());
 
         var second = await new ExecutionEngine(game, new MemoryRunLog(), new NoDelay())
             .ExecuteAsync([follow], Who, CancellationToken.None);
