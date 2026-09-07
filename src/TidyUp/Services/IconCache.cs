@@ -4,15 +4,17 @@ using Dalamud.Plugin.Services;
 
 namespace TidyUp.Services;
 
-/// <summary>Item icons for ImGui. Dalamud caches the textures; this only remembers the lookups.</summary>
+/// <summary>Item icons and the plugin logo for ImGui. Dalamud caches the textures; this only remembers the lookups.</summary>
 public sealed class IconCache
 {
     private readonly ITextureProvider textures;
     private readonly Dictionary<(uint, bool), ISharedImmediateTexture> lookups = new();
+    private ISharedImmediateTexture? logo;
 
-    public IconCache(ITextureProvider textures)
+    public IconCache(ITextureProvider textures, string? logoPath = null)
     {
         this.textures = textures;
+        if (logoPath is not null && File.Exists(logoPath)) logo = textures.GetFromFile(logoPath);
     }
 
     public ImTextureID Get(uint iconId, bool hq)
@@ -22,4 +24,7 @@ public sealed class IconCache
             lookups[(iconId, hq)] = tex = textures.GetFromGameIcon(new GameIconLookup(iconId, hq));
         return tex.GetWrapOrEmpty().Handle;
     }
+
+    /// <summary>The plugin logo, or a null handle when the image is missing.</summary>
+    public ImTextureID Logo => logo?.GetWrapOrDefault()?.Handle ?? ImTextureID.Null;
 }

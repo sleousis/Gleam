@@ -23,5 +23,9 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <Visible>true</Visible>
     </Content>
+    <Content Include="images\icon.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Visible>true</Visible>
+    </Content>
   </ItemGroup>
 </Project>

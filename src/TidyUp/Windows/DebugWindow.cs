@@ -11,7 +11,7 @@ using TidyUp.Integrations;
 namespace TidyUp.Windows;
 
 /// <summary>Verification tools. Each button does one thing to one item and says what happened.</summary>
-public sealed class DebugWindow : Window
+public sealed class DebugWindow : StyledWindow
 {
     private readonly IFramework framework;
     private readonly GameActions actions;
