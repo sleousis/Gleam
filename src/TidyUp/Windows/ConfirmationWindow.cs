@@ -365,7 +365,7 @@ public sealed class ConfirmationWindow : StyledWindow
         var pillDrop = 5 * Ui.Scale; // pills are shorter than the padded header; centre them on it
 
         ImGui.SameLine();
-        ImGui.SetCursorPosX(x0 + labelStart + ImGui.CalcTextSize(section.Title, false, 0).X + 10 * Ui.Scale);
+        ImGui.SetCursorPosX(x0 + labelStart + ImGui.CalcTextSize(section.Title, false, 0).X + 22 * Ui.Scale);
         ImGui.SetCursorPosY(ImGui.GetCursorPosY() + pillDrop);
         Ui.Pill(checkedHere > 0 ? $"{checkedHere} / {rows.Count}" : $"{rows.Count}", checkedHere > 0 ? Ui.AccentSoft : Ui.Muted);
 
