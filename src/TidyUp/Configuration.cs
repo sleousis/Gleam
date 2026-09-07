@@ -69,7 +69,7 @@ public sealed class AutomationSettings
     public bool SellAtVendor { get; set; } = true;
 
     /// <summary>Client-language name of a merchant NPC whose shop window allows selling.</summary>
-    public string VendorNpcName { get; set; } = "Merchant & Mender";
+    public string VendorNpcName { get; set; } = string.Empty;
 
     /// <summary>If the vendor shows a menu first, the entry that opens the shop window.</summary>
     public string VendorMenuText { get; set; } = "Purchase";
