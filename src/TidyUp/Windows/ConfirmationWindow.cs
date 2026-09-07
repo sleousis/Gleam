@@ -205,20 +205,22 @@ public sealed class ConfirmationWindow : Window
         Ui.RightAlign(w);
         Ui.Hint(label);
         ImGui.SameLine();
-        var safeRows = plan.AllRows.Where(r => r.IsExecutable && r.Proposal.Warnings.Count == 0).ToList();
-        var allSafeChecked = safeRows.Count > 0 && safeRows.All(r => r.Checked);
-        if (Ui.LinkButton(allSafeChecked ? "None" : "All"))
+        // All means all. The soft cap still asks for a second click on a big run, and hard-blocked
+        // items are never in this list to begin with.
+        var executable = plan.AllRows.Where(r => r.IsExecutable).ToList();
+        var allChecked = executable.Count > 0 && executable.All(r => r.Checked);
+        if (Ui.LinkButton(allChecked ? "None" : "All"))
         {
-            if (allSafeChecked)
+            foreach (var r in executable)
             {
-                foreach (var r in plan.AllRows.Where(r => r.IsExecutable)) { r.Checked = false; coordinator.SessionSkips.Add(r.Key); }
-            }
-            else
-            {
-                foreach (var r in safeRows) { r.Checked = true; coordinator.SessionSkips.Remove(r.Key); }
+                r.Checked = !allChecked;
+                if (allChecked) coordinator.SessionSkips.Add(r.Key); else coordinator.SessionSkips.Remove(r.Key);
             }
         }
-        Ui.Tooltip("All ticks only rows without a warning. Hand-picked, usable, or market-flagged rows must be ticked one by one.");
+        var warned = executable.Count(r => r.Proposal.Warnings.Count > 0);
+        Ui.Tooltip(warned > 0
+            ? $"Ticks every row, including {warned} with a warning (usable, untradeable, or valuable on the market). Glance at those before you clean."
+            : "Ticks every row.");
     }
 
     private void DrawFilterMenu()
