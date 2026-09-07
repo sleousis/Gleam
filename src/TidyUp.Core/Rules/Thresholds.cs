@@ -1,0 +1,100 @@
+namespace TidyUp.Core.Rules;
+
+/// <summary>Every tunable number the rules and the run caps read. Mutable so it round-trips through plugin config.</summary>
+public sealed class Thresholds
+{
+    /// <summary>Gear is obsolete when the best job that can wear it is at least this many levels above the gear's equip level.</summary>
+    public int ObsoleteGearLevelGap { get; set; } = 15;
+
+    /// <summary>Also propose gear for job categories where no job has ever been levelled (all at level 1).</summary>
+    public bool IncludeGearForUnplayedJobs { get; set; } = false;
+
+    /// <summary>Food and medicine are outleveled when their item level is this far below the best gearset item level.</summary>
+    public int ConsumableItemLevelGap { get; set; } = 200;
+
+    /// <summary>Crafting materials count as unusable when every recipe using them is at or below this level ...</summary>
+    public int CraftingMatMaxRecipeLevel { get; set; } = 50;
+
+    /// <summary>... and the relevant crafter is at least this far above that level.</summary>
+    public int CraftingMatCrafterLeadLevels { get; set; } = 10;
+
+    /// <summary>Vendor-only junk must be worth at most this much per unit to be proposed.</summary>
+    public uint VendorOnlyMaxUnitPrice { get; set; } = 500;
+
+    /// <summary>Market beats vendor when market×(1-tax) exceeds vendor×this factor.</summary>
+    public double MarketPremiumFactor { get; set; } = 1.5;
+
+    /// <summary>Only bother flagging market value when the whole stack is worth at least this much.</summary>
+    public long MarketMinStackValueGil { get; set; } = 5000;
+
+    /// <summary>Market board tax fraction used when comparing to vendor price.</summary>
+    public double MarketTaxRate { get; set; } = 0.05;
+
+    public int SoftCapItems { get; set; } = 50;
+    public long SoftCapGil { get; set; } = 50_000;
+
+    public Thresholds Clone() => (Thresholds)MemberwiseClone();
+}
+
+public enum PresetName
+{
+    Cautious,
+    Balanced,
+    Aggressive,
+    Custom,
+}
+
+public static class Presets
+{
+    public static Thresholds For(PresetName preset) => preset switch
+    {
+        PresetName.Cautious => new Thresholds
+        {
+            ObsoleteGearLevelGap = 20,
+            IncludeGearForUnplayedJobs = false,
+            ConsumableItemLevelGap = 300,
+            CraftingMatMaxRecipeLevel = 30,
+            CraftingMatCrafterLeadLevels = 20,
+            VendorOnlyMaxUnitPrice = 100,
+            MarketPremiumFactor = 1.2,
+            MarketMinStackValueGil = 2000,
+            SoftCapItems = 30,
+            SoftCapGil = 20_000,
+        },
+        PresetName.Aggressive => new Thresholds
+        {
+            ObsoleteGearLevelGap = 10,
+            IncludeGearForUnplayedJobs = true,
+            ConsumableItemLevelGap = 120,
+            CraftingMatMaxRecipeLevel = 70,
+            CraftingMatCrafterLeadLevels = 5,
+            VendorOnlyMaxUnitPrice = 2000,
+            MarketPremiumFactor = 2.0,
+            MarketMinStackValueGil = 10_000,
+            SoftCapItems = 100,
+            SoftCapGil = 150_000,
+        },
+        _ => new Thresholds(),
+    };
+
+    /// <summary>Which preset a threshold set matches exactly, or Custom.</summary>
+    public static PresetName Detect(Thresholds t)
+    {
+        foreach (var p in new[] { PresetName.Cautious, PresetName.Balanced, PresetName.Aggressive })
+            if (Equal(For(p), t)) return p;
+        return PresetName.Custom;
+    }
+
+    private static bool Equal(Thresholds a, Thresholds b) =>
+        a.ObsoleteGearLevelGap == b.ObsoleteGearLevelGap &&
+        a.IncludeGearForUnplayedJobs == b.IncludeGearForUnplayedJobs &&
+        a.ConsumableItemLevelGap == b.ConsumableItemLevelGap &&
+        a.CraftingMatMaxRecipeLevel == b.CraftingMatMaxRecipeLevel &&
+        a.CraftingMatCrafterLeadLevels == b.CraftingMatCrafterLeadLevels &&
+        a.VendorOnlyMaxUnitPrice == b.VendorOnlyMaxUnitPrice &&
+        Math.Abs(a.MarketPremiumFactor - b.MarketPremiumFactor) < 0.0001 &&
+        a.MarketMinStackValueGil == b.MarketMinStackValueGil &&
+        Math.Abs(a.MarketTaxRate - b.MarketTaxRate) < 0.0001 &&
+        a.SoftCapItems == b.SoftCapItems &&
+        a.SoftCapGil == b.SoftCapGil;
+}

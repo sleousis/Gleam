@@ -1,0 +1,241 @@
+using TidyUp.Core.Execution;
+using TidyUp.Core.Logging;
+using TidyUp.Core.Model;
+using static TidyUp.Core.Tests.TestData;
+
+namespace TidyUp.Core.Tests;
+
+/// <summary>An in-memory game: containers hold items, actions mutate them, and every call is recorded.</summary>
+internal sealed class FakeGame : IGameActions
+{
+    public Dictionary<SlotRef, ScannedItem> Slots { get; } = new();
+    public HashSet<ContainerKind> Open { get; } = new() { ContainerKind.Inventory, ContainerKind.Armoury };
+    public HashSet<ActionKind> AvailableActions { get; } = new() { ActionKind.Discard, ActionKind.VendorSell, ActionKind.ExpertDelivery, ActionKind.Desynth };
+    public List<string> Calls { get; } = new();
+    public int FreeSlots { get; set; } = 10;
+    public Func<SlotRef, bool> FailWhen { get; set; } = _ => false;
+    public Func<Task>? BeforeAction { get; set; }
+
+    public bool IsContainerAvailable(ContainerKind kind, ulong ownerId) => Open.Contains(kind);
+    public ScannedItem? ReadSlot(SlotRef slot) => Slots.GetValueOrDefault(slot);
+    public int FreeInventorySlots() => FreeSlots;
+    public bool IsActionAvailable(ActionKind action) => AvailableActions.Contains(action);
+    public string ActionRequirement(ActionKind action) => $"open a window for {action}";
+
+    private async Task<bool> Do(string name, SlotRef slot)
+    {
+        if (BeforeAction is not null) await BeforeAction();
+        Calls.Add($"{name}:{slot}");
+        if (FailWhen(slot)) return false;
+        Slots.Remove(slot);
+        return true;
+    }
+
+    public Task<bool> DiscardAsync(SlotRef slot, uint itemId, CancellationToken ct) => Do("discard", slot);
+    public Task<bool> VendorSellAsync(SlotRef slot, uint itemId, CancellationToken ct) => Do("sell", slot);
+    public Task<bool> ExpertDeliveryAsync(SlotRef slot, uint itemId, CancellationToken ct) => Do("seals", slot);
+    public Task<bool> DesynthAsync(SlotRef slot, uint itemId, CancellationToken ct) => Do("desynth", slot);
+
+    public Task<bool> RetrieveMateriaAsync(SlotRef slot, uint itemId, CancellationToken ct)
+    {
+        Calls.Add($"materia:{slot}");
+        if (Slots.TryGetValue(slot, out var item)) Slots[slot] = item with { Materia = Array.Empty<ushort>() };
+        return Task.FromResult(true);
+    }
+
+    public Task<SlotRef?> RestoreFromDresserAsync(SlotRef dresserSlot, uint itemId, CancellationToken ct)
+    {
+        Calls.Add($"restore:{dresserSlot}");
+        if (!Slots.TryGetValue(dresserSlot, out var item)) return Task.FromResult<SlotRef?>(null);
+        var landed = new SlotRef(ContainerKind.Inventory, 0, 99);
+        Slots.Remove(dresserSlot);
+        Slots[landed] = item with { Slot = landed };
+        FreeSlots--;
+        return Task.FromResult<SlotRef?>(landed);
+    }
+}
+
+public class ExecutionEngineTests
+{
+    private static readonly RunIdentity Who = new(0xC0FFEE, "Test Char");
+
+    private static QueuedAction Q(SlotRef slot, uint itemId, int qty, ActionKind action = ActionKind.Discard, bool materia = false, bool hq = false) =>
+        new(slot, itemId, qty, hq, action, materia, $"item{itemId}", 0, "rule");
+
+    [Fact]
+    public async Task Executes_exactly_what_was_shown_and_logs_each_success()
+    {
+        var game = new FakeGame();
+        game.Slots[Inv(0)] = ScannedItem.Simple(Inv(0), 1, 14);
+        game.Slots[Inv(1)] = ScannedItem.Simple(Inv(1), 3, 9);
+        var log = new MemoryRunLog();
+
+        var report = await new ExecutionEngine(game, log, new NoDelay())
+            .ExecuteAsync([Q(Inv(0), 1, 14, ActionKind.VendorSell), Q(Inv(1), 3, 9)], Who, CancellationToken.None);
+
+        Assert.Equal(2, report.Done);
+        Assert.False(report.Aborted);
+        Assert.Equal(["sell:Inventory:0#0", "discard:Inventory:0#1"], game.Calls);
+        Assert.Equal(2, log.Entries.Count);
+        Assert.Equal(ActionKind.VendorSell, log.Entries[0].Action);
+        Assert.Empty(game.Slots);
+    }
+
+    [Fact]
+    public async Task Skips_slots_that_changed_since_the_window_was_shown()
+    {
+        var game = new FakeGame();
+        game.Slots[Inv(0)] = ScannedItem.Simple(Inv(0), 1, 13);      // quantity differs
+        game.Slots[Inv(1)] = ScannedItem.Simple(Inv(1), 2, 1);       // item differs
+        game.Slots[Inv(2)] = ScannedItem.Simple(Inv(2), 1, 1, hq: true); // HQ differs
+        // Inv(3) is empty now
+
+        var report = await new ExecutionEngine(game, new MemoryRunLog(), new NoDelay())
+            .ExecuteAsync([Q(Inv(0), 1, 14), Q(Inv(1), 1, 1), Q(Inv(2), 1, 1), Q(Inv(3), 1, 1)], Who, CancellationToken.None);
+
+        Assert.Equal(0, report.Done);
+        Assert.Equal(4, report.Skipped);
+        Assert.Empty(game.Calls);
+        Assert.Equal(3, game.Slots.Count); // nothing touched
+    }
+
+    [Fact]
+    public async Task Closed_containers_stay_pending_and_do_not_block_open_ones()
+    {
+        var game = new FakeGame();
+        game.Slots[Inv(0)] = ScannedItem.Simple(Inv(0), 1, 1);
+        game.Slots[Saddle(0)] = ScannedItem.Simple(Saddle(0), 1, 1);
+        game.Slots[Ret(0)] = ScannedItem.Simple(Ret(0), 1, 1);
+
+        var report = await new ExecutionEngine(game, new MemoryRunLog(), new NoDelay())
+            .ExecuteAsync([Q(Saddle(0), 1, 1), Q(Ret(0), 1, 1), Q(Inv(0), 1, 1)], Who, CancellationToken.None);
+
+        Assert.Equal(1, report.Done);
+        Assert.Equal(2, report.Pending.Count);
+        Assert.Equal(1, report.PendingByContainer[ContainerKind.Saddlebag]);
+        Assert.Equal(1, report.PendingByContainer[ContainerKind.Retainer]);
+        Assert.Equal(["discard:Inventory:0#0"], game.Calls);
+    }
+
+    [Fact]
+    public async Task Dresser_items_restore_first_then_discard_from_the_landing_slot_and_run_last()
+    {
+        var game = new FakeGame();
+        game.Open.Add(ContainerKind.GlamourDresser);
+        game.Slots[SlotRef.Dresser(5)] = ScannedItem.Simple(SlotRef.Dresser(5), 6, 1);
+        game.Slots[Inv(0)] = ScannedItem.Simple(Inv(0), 1, 1);
+
+        var report = await new ExecutionEngine(game, new MemoryRunLog(), new NoDelay())
+            .ExecuteAsync([Q(SlotRef.Dresser(5), 6, 1), Q(Inv(0), 1, 1)], Who, CancellationToken.None);
+
+        Assert.Equal(2, report.Done);
+        Assert.Equal(["discard:Inventory:0#0", "restore:GlamourDresser:4294901761#5", "discard:Inventory:0#99"], game.Calls);
+    }
+
+    [Fact]
+    public async Task Dresser_restore_waits_for_a_free_inventory_slot()
+    {
+        var game = new FakeGame { FreeSlots = 0 };
+        game.Open.Add(ContainerKind.GlamourDresser);
+        game.Slots[SlotRef.Dresser(5)] = ScannedItem.Simple(SlotRef.Dresser(5), 6, 1);
+
+        var report = await new ExecutionEngine(game, new MemoryRunLog(), new NoDelay())
+            .ExecuteAsync([Q(SlotRef.Dresser(5), 6, 1)], Who, CancellationToken.None);
+
+        Assert.Equal(0, report.Done);
+        Assert.Empty(game.Calls);
+        Assert.Single(report.Pending);
+    }
+
+    [Fact]
+    public async Task Materia_is_retrieved_before_the_destructive_action()
+    {
+        var game = new FakeGame();
+        game.Slots[Arm(0)] = WithMateria(ScannedItem.Simple(Arm(0), 4, 1), 12, 34);
+
+        var report = await new ExecutionEngine(game, new MemoryRunLog(), new NoDelay())
+            .ExecuteAsync([Q(Arm(0), 4, 1, ActionKind.ExpertDelivery, materia: true)], Who, CancellationToken.None);
+
+        Assert.Equal(1, report.Done);
+        Assert.Equal(["materia:Armoury:3202#0", "seals:Armoury:3202#0"], game.Calls);
+    }
+
+    [Fact]
+    public async Task Materia_retrieval_needs_free_slots_per_materia()
+    {
+        var game = new FakeGame { FreeSlots = 1 };
+        game.Slots[Arm(0)] = WithMateria(ScannedItem.Simple(Arm(0), 4, 1), 12, 34);
+
+        var report = await new ExecutionEngine(game, new MemoryRunLog(), new NoDelay())
+            .ExecuteAsync([Q(Arm(0), 4, 1, ActionKind.Discard, materia: true)], Who, CancellationToken.None);
+
+        Assert.Single(report.Pending);
+        Assert.Empty(game.Calls);
+    }
+
+    [Fact]
+    public async Task First_failure_aborts_everything_that_remains()
+    {
+        var game = new FakeGame { FailWhen = s => s.Slot == 1 };
+        for (var i = 0; i < 4; i++) game.Slots[Inv(i)] = ScannedItem.Simple(Inv(i), 1, 1);
+
+        var report = await new ExecutionEngine(game, new MemoryRunLog(), new NoDelay())
+            .ExecuteAsync(Enumerable.Range(0, 4).Select(i => Q(Inv(i), 1, 1)).ToList(), Who, CancellationToken.None);
+
+        Assert.True(report.Aborted);
+        Assert.Equal(1, report.Done);
+        Assert.Equal(1, report.Failed);
+        Assert.Equal(2, report.Pending.Count);
+        Assert.Contains("item1", report.AbortReason);
+        Assert.Equal(2, game.Calls.Count);
+    }
+
+    [Fact]
+    public async Task Actions_needing_a_closed_npc_window_stay_pending()
+    {
+        var game = new FakeGame();
+        game.AvailableActions.Remove(ActionKind.VendorSell);
+        game.Slots[Inv(0)] = ScannedItem.Simple(Inv(0), 1, 1);
+
+        var report = await new ExecutionEngine(game, new MemoryRunLog(), new NoDelay())
+            .ExecuteAsync([Q(Inv(0), 1, 1, ActionKind.VendorSell)], Who, CancellationToken.None);
+
+        Assert.Single(report.Pending);
+        Assert.Empty(game.Calls);
+    }
+
+    [Fact]
+    public async Task Cancellation_stops_before_the_next_action()
+    {
+        var game = new FakeGame();
+        for (var i = 0; i < 3; i++) game.Slots[Inv(i)] = ScannedItem.Simple(Inv(i), 1, 1);
+        var cts = new CancellationTokenSource();
+        game.BeforeAction = () => { cts.Cancel(); return Task.CompletedTask; };
+
+        var report = await new ExecutionEngine(game, new MemoryRunLog(), new NoDelay())
+            .ExecuteAsync(Enumerable.Range(0, 3).Select(i => Q(Inv(i), 1, 1)).ToList(), Who, cts.Token);
+
+        Assert.Equal(1, report.Done);
+        Assert.Equal(2, report.Pending.Count);
+    }
+
+    [Fact]
+    public async Task Progress_reports_pending_and_terminal_results()
+    {
+        var game = new FakeGame();
+        game.Slots[Inv(0)] = ScannedItem.Simple(Inv(0), 1, 1);
+        var seen = new List<ActionOutcome>();
+        var progress = new Progress<ActionResult>(r => seen.Add(r.Outcome));
+
+        await new ExecutionEngine(game, new MemoryRunLog(), new NoDelay())
+            .ExecuteAsync([Q(Inv(0), 1, 1), Q(Saddle(0), 1, 1)], Who, CancellationToken.None, new SyncProgress(seen));
+
+        Assert.Contains(ActionOutcome.Done, seen);
+        Assert.Contains(ActionOutcome.Pending, seen);
+    }
+
+    private sealed class SyncProgress(List<ActionOutcome> sink) : IProgress<ActionResult>
+    {
+        public void Report(ActionResult value) => sink.Add(value.Outcome);
+    }
+}
