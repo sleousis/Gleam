@@ -211,6 +211,15 @@ public class PlannerTests
         Assert.Equal(ActionKind.VendorSell, manual.Single(r => r.Item.Slot.Kind == ContainerKind.Inventory).ChosenAction);
         Assert.Equal(ActionKind.Discard, manual.Single(r => r.Item.Slot.Kind == ContainerKind.Retainer).ChosenAction);
         Assert.DoesNotContain(everything.AllRows, r => r.Item.ItemId == 16);
+
+        // Hand-picked rows follow the preset: Aggressive means discard everywhere.
+        var aggressive = new RunPlanner().Build(items, new PlannerInputs
+        {
+            Context = inputs.Context, Profile = MakeProfile(PresetName.Aggressive), InfoLookup = inputs.InfoLookup, ProtectList = inputs.ProtectList,
+            AlwaysDiscardList = inputs.AlwaysDiscardList, IsAvailable = inputs.IsAvailable, RetainerNames = inputs.RetainerNames, IncludeUnproposed = true,
+        });
+        Assert.All(aggressive.AllRows, r => Assert.Equal(ActionKind.Discard, r.ChosenAction));
+        Assert.Equal(3, aggressive.AllRows.Count());
     }
 
     [Fact]
