@@ -66,14 +66,14 @@ public sealed class Plugin : IDalamudPlugin
         if (config.Migrate()) Save();
 
         db = new ItemDatabase(data, log) { Curated = LoadCurated(pi, log) };
-        var scanner = new GameInventoryScanner(inventory, log);
+        var scanner = new GameInventoryScanner(inventory, log, id => db.Get(id)?.IsEquipment == true);
         var contextBuilder = new ItemContextBuilder(player, data, db, config, log);
         dialogs = new AddonDriver(addonLifecycle, framework, log);
         var contextDriver = new InventoryContextDriver(framework, db, log);
         var actions = new GameActions(framework, inventory, scanner, dialogs, contextDriver, db, config, log, condition);
         var merger = new StackMerger(framework, log);
         var runLog = new JsonLinesRunLog(new ReliableTextStorage(storage, pi.GetPluginConfigDirectory()), "tidyup-history.jsonl");
-        allagan = new AllaganToolsSource(pi, log) { Enabled = config.UseAllaganTools, RetainerNames = GameInventoryScanner.KnownRetainers };
+        allagan = new AllaganToolsSource(pi, log) { Enabled = config.UseAllaganTools, RetainerNames = GameInventoryScanner.KnownRetainers, CanHoldMateria = id => db.Get(id)?.IsEquipment == true };
         IMarketPriceSource market = new UniversalisClient();
 
         coordinator = new RunCoordinator(framework, player, chat, toast, log, config, db, scanner, contextBuilder, actions, merger, runLog, allagan, market, Save);

@@ -12,10 +12,12 @@ namespace TidyUp.Game;
 public sealed unsafe class GameInventoryScanner
 {
     private readonly IPluginLog log;
+    private readonly Func<uint, bool> canHoldMateria;
 
-    public GameInventoryScanner(IGameInventory inventory, IPluginLog log)
+    public GameInventoryScanner(IGameInventory inventory, IPluginLog log, Func<uint, bool> canHoldMateria)
     {
         this.log = log;
+        this.canHoldMateria = canHoldMateria;
     }
 
     public IReadOnlyList<ScannedItem> ScanAll(bool includeSaddlebag, bool includeRetainer, bool includeDresser)
@@ -72,17 +74,23 @@ public sealed unsafe class GameInventoryScanner
         }
     }
 
-    private static ScannedItem Convert(InventoryItem* item, ContainerKind kind, uint page, int slot, ulong ownerId, string ownerName)
+    private ScannedItem Convert(InventoryItem* item, ContainerKind kind, uint page, int slot, ulong ownerId, string ownerName)
     {
+        var baseId = ScannedItem.BaseItemId(item->ItemId);
+        // The materia bytes carry other data on non-equipment (a materia stack reports "1 materia"), so
+        // only read them for items that actually have materia slots.
         var materia = new List<ushort>();
-        for (byte i = 0; i < 5; i++)
+        if (canHoldMateria(baseId))
         {
-            var m = item->GetMateriaId(i);
-            if (m != 0) materia.Add(m);
+            for (byte i = 0; i < 5; i++)
+            {
+                var m = item->GetMateriaId(i);
+                if (m != 0) materia.Add(m);
+            }
         }
         return new ScannedItem(
             new SlotRef(kind, page, slot, ownerId),
-            ScannedItem.BaseItemId(item->ItemId),
+            baseId,
             (int)item->GetQuantity(),
             item->IsHighQuality(),
             item->IsCollectable(),
