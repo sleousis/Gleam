@@ -4,6 +4,8 @@ using Dalamud.Interface.Utility.Raii;
 using Dalamud.Interface.Windowing;
 using Dalamud.Plugin.Services;
 using TidyUp.Core.Lists;
+using TidyUp.Core.Model;
+using TidyUp.Core.Rules;
 using TidyUp.Game;
 using TidyUp.Integrations;
 using TidyUp.Services;
@@ -11,18 +13,12 @@ using TidyUp.Services;
 namespace TidyUp.Windows;
 
 /// <summary>
-/// Settings as a sidebar of pages. Each page is a short list of label + control rows; help lives in
-/// tooltips, not in paragraphs. Edits the account profile unless the character switch at the top is on.
+/// One page. What matters is at the top: the preset and what it means, which containers, hands-free
+/// on or off, and the two lists. Everything else is a knob most people never touch and lives behind
+/// one "Advanced" fold at the bottom.
 /// </summary>
 public sealed partial class SettingsWindow : Window
 {
-    private enum Page { General, Rules, Lists, Containers, Automation, Notifications, Integrations, Advanced }
-
-    /// <summary>Set by the plugin so the Automation page can show dependency status.</summary>
-    public Automation.AutoPilot? Pilot { get; set; }
-    public Integrations.VnavmeshIpc? Nav { get; set; }
-    public Integrations.LifestreamIpc? Travel { get; set; }
-
     private readonly Configuration config;
     private readonly IPlayerState player;
     private readonly ItemDatabase db;
@@ -33,11 +29,20 @@ public sealed partial class SettingsWindow : Window
     private readonly ListEditor protectEditor;
     private readonly ListEditor alwaysEditor;
 
-    private Page page = Page.General;
     private bool editingCharacter;
     private bool dirty;
     private string importPath = string.Empty;
     private string importResult = string.Empty;
+
+    /// <summary>Set by the plugin so the Automation section can show dependency status.</summary>
+    public Automation.AutoPilot? Pilot { get; set; }
+    public VnavmeshIpc? Nav { get; set; }
+    public LifestreamIpc? Travel { get; set; }
+
+    private static readonly IReadOnlyList<(PresetName, string)> PresetOptions =
+    [
+        (PresetName.Cautious, "Cautious"), (PresetName.Balanced, "Balanced"), (PresetName.Aggressive, "Aggressive"),
+    ];
 
     public SettingsWindow(Configuration config, IPlayerState player, ItemDatabase db, IconCache icons, AllaganToolsSource allagan, RunCoordinator coordinator, Action openDebug)
         : base("Tidy Up Settings###TidyUpSettings")
@@ -49,11 +54,11 @@ public sealed partial class SettingsWindow : Window
         this.allagan = allagan;
         this.coordinator = coordinator;
         this.openDebug = openDebug;
-        protectEditor = new ListEditor(db, icons, () => config.ProtectList, "Protect list", "Never proposed, whatever the rules say.", () => player.ContentId, MarkDirty);
-        alwaysEditor = new ListEditor(db, icons, () => config.AlwaysDiscardList, "Always discard", "Proposed on every run. Protected items and hard rules still win.", () => player.ContentId, MarkDirty);
-        Size = new Vector2(760, 540);
+        protectEditor = new ListEditor(db, icons, () => config.ProtectList, "Never touch", "Items here are never proposed, whatever the preset says.", () => player.ContentId, MarkDirty);
+        alwaysEditor = new ListEditor(db, icons, () => config.AlwaysDiscardList, "Always clean", "Items here are proposed on every run.", () => player.ContentId, MarkDirty);
+        Size = new Vector2(620, 560);
         SizeCondition = ImGuiCond.FirstUseEver;
-        SizeConstraints = new WindowSizeConstraints { MinimumSize = new Vector2(600, 380), MaximumSize = new Vector2(4000, 3000) };
+        SizeConstraints = new WindowSizeConstraints { MinimumSize = new Vector2(480, 360), MaximumSize = new Vector2(4000, 3000) };
     }
 
     private void MarkDirty() => dirty = true;
@@ -80,28 +85,14 @@ public sealed partial class SettingsWindow : Window
 
     public override void Draw()
     {
-        var navWidth = 150 * Ui.Scale;
-        using (var nav = ImRaii.Child("##nav", new Vector2(navWidth, 0), false, ImGuiWindowFlags.None))
-        {
-            if (nav) DrawNav();
-        }
-        ImGui.SameLine();
         using (var body = ImRaii.Child("##body", new Vector2(0, 0), false, ImGuiWindowFlags.None))
         {
             if (body)
             {
-                DrawScopeSwitch();
-                switch (page)
-                {
-                    case Page.General: DrawGeneral(); break;
-                    case Page.Rules: DrawRules(); break;
-                    case Page.Lists: DrawLists(); break;
-                    case Page.Containers: DrawContainers(); break;
-                    case Page.Automation: DrawAutomation(); break;
-                    case Page.Notifications: DrawNotifications(); break;
-                    case Page.Integrations: DrawIntegrations(); break;
-                    case Page.Advanced: DrawAdvanced(); break;
-                }
+                DrawEssentials();
+                Ui.Gap(1.5f);
+                ImGui.Separator();
+                if (ImGui.CollapsingHeader("Advanced", ImGuiTreeNodeFlags.None)) DrawAdvancedFold();
             }
         }
 
@@ -112,22 +103,81 @@ public sealed partial class SettingsWindow : Window
         }
     }
 
-    private void DrawNav()
+    // ---------- the page most people see ----------
+
+    private void DrawEssentials()
+    {
+        var p = Editing;
+
+        Ui.Section("What to do with junk");
+        var live = Override(nameof(Profile.Thresholds));
+        using (ImRaii.Disabled(!live))
+        {
+            var preset = Presets.Detect(p.Thresholds);
+            if (Ui.Segmented("##preset", ref preset, PresetOptions)) { p.ApplyPreset(preset); dirty = true; }
+            if (preset == PresetName.Custom) { ImGui.SameLine(); Ui.Hint("custom"); }
+        }
+        Ui.TextColored(Ui.Accent, p.Thresholds.Policy.Describe());
+        Ui.Hint("You always see the full list and can change any row before anything happens.");
+
+        Ui.Section("Where to look");
+        var en = Override(nameof(Profile.ContainerEnabled));
+        using (ImRaii.Disabled(!en))
+        {
+            var kinds = Enum.GetValues<ContainerKind>();
+            for (var i = 0; i < kinds.Length; i++)
+            {
+                var kind = kinds[i];
+                var on = p.IsContainerEnabled(kind);
+                if (ImGui.Checkbox($"{kind.DisplayName()}##en{kind}", ref on)) { p.ContainerEnabled[kind] = on; dirty = true; }
+                if (i < kinds.Length - 1 && i != 2) ImGui.SameLine();
+            }
+        }
+
+        Ui.Section("Hands-free");
+        var a = config.Automation;
+        var auto = a.Enabled;
+        if (ImGui.Checkbox("Do the walking for me", ref auto)) { a.Enabled = auto; dirty = true; }
+        ImGui.SameLine();
+        if (Nav is null || !Nav.IsInstalled) Ui.Pill("needs vnavmesh", Ui.Warn); else Ui.Pill("vnavmesh", Ui.Ok);
+        ImGui.SameLine();
+        if (Travel is null || !Travel.IsInstalled) Ui.Pill("needs Lifestream", Ui.Warn); else Ui.Pill("Lifestream", Ui.Ok);
+        Ui.Hint("Opens the saddlebag, travels to an inn, visits every retainer and the dresser, then your Grand Company and a merchant. This is gameplay automation and is against the game's terms.");
+
+        protectEditor.Draw();
+        alwaysEditor.Draw();
+    }
+
+    // ---------- everything else, folded ----------
+
+    private void DrawAdvancedFold()
     {
         Ui.Gap(0.5f);
-        foreach (var p in Enum.GetValues<Page>())
-        {
-            var selected = p == page;
-            using var c = ImRaii.PushColor(ImGuiCol.Header, Ui.Accent * new Vector4(1, 1, 1, 0.25f), selected);
-            using var t = ImRaii.PushColor(ImGuiCol.Text, Ui.Muted, !selected);
-            if (ImGui.Selectable($"  {p}", selected, ImGuiSelectableFlags.None, new Vector2(0, 26 * Ui.Scale))) page = p;
-        }
+        DrawScopeSwitch();
+
+        Fold("Rules and thresholds", DrawRules);
+        Fold("Notifications", DrawNotifications);
+        Fold("Hands-free details", DrawAutomation);
+        Fold("Retainers and auto-open", DrawContainers);
+        Fold("Integrations", DrawIntegrations);
+        Fold("Timing and verification", DrawAdvanced);
+    }
+
+    private static void Fold(string title, Action body)
+    {
+        using var id = ImRaii.PushId(title);
+        if (!ImGui.CollapsingHeader(title, ImGuiTreeNodeFlags.None)) return;
+        using var indent = ImRaii.PushIndent(12f, true, true);
+        body();
+        Ui.Gap(0.5f);
     }
 
     private void DrawScopeSwitch()
     {
         var name = player.IsLoaded ? player.CharacterName : "not logged in";
         var scope = editingCharacter ? 1 : 0;
+        Ui.Hint("Editing");
+        ImGui.SameLine();
         using (ImRaii.Disabled(!player.IsLoaded))
         {
             if (Ui.Segmented("##scope", ref scope, [(0, "Account"), (1, name)])) editingCharacter = scope == 1;
