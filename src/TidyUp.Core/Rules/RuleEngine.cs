@@ -14,6 +14,7 @@ public sealed class RuleEngine
         new UnusableCraftingMatsRule(),
         new SeasonalItemsRule(),
         new RetiredCurrencyGearRule(),
+        new RegisteredDuplicateRule(),
     ];
 
     public static IReadOnlyList<string> AllRuleIds { get; } =

@@ -215,6 +215,13 @@ public sealed class Configuration : IPluginConfiguration
             Version = 5;
             changed = true;
         }
+        if (Version < 6)
+        {
+            Profiles.Account.EnabledRules.Add(Core.Rules.RegisteredDuplicateRule.RuleId);
+            foreach (var o in Profiles.Overrides) o.Values.EnabledRules.Add(Core.Rules.RegisteredDuplicateRule.RuleId);
+            Version = 6;
+            changed = true;
+        }
         return changed;
     }
 

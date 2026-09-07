@@ -29,13 +29,18 @@ public static class HardBlocks
     public static HardBlockReason Check(ScannedItem item, ItemInfo info, ItemContext ctx)
     {
         if (info.IsIndisposable) return HardBlockReason.Indisposable;
-        if (info.IsUnique && info.IsUntradable) return HardBlockReason.UniqueUntradeable;
-        if (info.IsNeverProposed) return HardBlockReason.NeverProposedCategory;
+
+        // A spare copy of something already registered (minion, mount, roll, card...) is plain clutter; the
+        // guards below exist to protect things that cannot be regained, which does not apply to it.
+        var registeredSpare = ctx.Registered.TryGetValue(info.ItemId, out var registered) && registered;
+
+        if (info.IsUnique && info.IsUntradable && !registeredSpare) return HardBlockReason.UniqueUntradeable;
+        if (info.IsNeverProposed && !registeredSpare) return HardBlockReason.NeverProposedCategory;
 
         // A Fantasia is untradeable, sells for nothing, and is used by no recipe: it looks exactly like junk
         // to every heuristic. Anything in that shape can only be destroyed by being on the curated seasonal
         // list, which is a deliberate human decision rather than a rule's guess.
-        if (!info.IsEquipment && info.IsUntradable && info.VendorPrice == 0 && !ctx.SeasonalItemIds.Contains(info.ItemId))
+        if (!info.IsEquipment && info.IsUntradable && info.VendorPrice == 0 && !ctx.SeasonalItemIds.Contains(info.ItemId) && !registeredSpare)
             return HardBlockReason.IrreplaceableUntradeable;
 
         // Gearsets reference armoury/inventory gear by item id; dresser copies are a separate physical item.

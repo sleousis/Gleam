@@ -31,6 +31,8 @@ internal static class TestData
         [13] = ItemInfo.Test(13, "Dragoon Gear Never Played", vendor: 100, marketable: false, equipment: true, levelEquip: 30, ilvl: 30, rarity: 2, cjc: CjcNeverPlayed, category: "Legs"),
         [14] = ItemInfo.Test(14, "Retired Tome Coat", vendor: 300, marketable: false, equipment: true, levelEquip: 60, ilvl: 270, rarity: 3, cjc: CjcAll, category: "Body"),
         [15] = ItemInfo.Test(15, "Stackable Widget", vendor: 5, marketable: true, stack: 99),
+        [20] = ItemInfo.Test(20, "Wind-up Spare", vendor: 0, marketable: false, untradable: true, unique: true, category: "Minion", stack: 1),
+        [21] = ItemInfo.Test(21, "Dungeon Orchestrion Roll", vendor: 150, marketable: true, category: "Orchestrion Roll", stack: 99),
         [16] = ItemInfo.Test(16, "Phial of Fantasia", vendor: 0, marketable: false, untradable: true, category: "Miscellany", stack: 1),
         [17] = ItemInfo.Test(17, "Priority Aetheryte Pass", vendor: 100, marketable: false, untradable: true, category: "Miscellany", usable: true),
         [18] = ItemInfo.Test(18, "Cordial", vendor: 30, marketable: true, category: "Medicine", levelEquip: 1, ilvl: 1),
@@ -47,7 +49,8 @@ internal static class TestData
         IReadOnlyDictionary<uint, MarketPrice>? market = null,
         IEnumerable<uint>? seasonal = null,
         IEnumerable<uint>? retiredGear = null,
-        Func<uint, IReadOnlyList<RecipeUse>>? recipes = null) => new()
+        Func<uint, IReadOnlyList<RecipeUse>>? recipes = null,
+        IReadOnlyDictionary<uint, bool>? registered = null) => new()
     {
         CharacterId = 0xC0FFEE,
         CharacterName = "Test Char",
@@ -69,6 +72,7 @@ internal static class TestData
         SeasonalItemIds = new HashSet<uint>(seasonal ?? []),
         RetiredCurrencyGearIds = new HashSet<uint>(retiredGear ?? []),
         RecipesUsing = recipes ?? (_ => Array.Empty<RecipeUse>()),
+        Registered = registered ?? new Dictionary<uint, bool>(),
     };
 
     public static SlotRef Inv(int slot, uint page = 0) => new(ContainerKind.Inventory, page, slot);
