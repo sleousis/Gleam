@@ -352,7 +352,7 @@ public sealed class ConfirmationWindow : StyledWindow
         {
             SortKey.Quantity => dir > 0 ? q.OrderBy(r => r.Item.Quantity) : q.OrderByDescending(r => r.Item.Quantity),
             SortKey.Action => dir > 0 ? q.OrderBy(r => r.ChosenAction.Label()) : q.OrderByDescending(r => r.ChosenAction.Label()),
-            SortKey.Market => dir > 0 ? q.OrderBy(r => r.Proposal.MarketUnitPrice * r.Item.Quantity) : q.OrderByDescending(r => r.Proposal.MarketUnitPrice * r.Item.Quantity),
+            SortKey.Market => dir > 0 ? q.OrderBy(r => r.Proposal.MarketUnitPrice) : q.OrderByDescending(r => r.Proposal.MarketUnitPrice),
             _ => dir > 0 ? q.OrderBy(r => r.Info.Name, StringComparer.OrdinalIgnoreCase) : q.OrderByDescending(r => r.Info.Name, StringComparer.OrdinalIgnoreCase),
         };
         return key == SortKey.Name ? ordered : ordered.ThenBy(r => r.Info.Name, StringComparer.OrdinalIgnoreCase);
