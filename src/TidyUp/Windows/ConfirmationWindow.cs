@@ -36,10 +36,15 @@ public sealed class ConfirmationWindow : StyledWindow
     /// <summary>null = both, true = tradeable only, false = untradeable only.</summary>
     private bool? filterTradeable;
     private enum SortKey { Name, Quantity, Action, Market }
+    /// <summary>Sort applied from the Filter menu to every section.</summary>
     private SortKey sortKey = SortKey.Name;
     /// <summary>+1 ascending, -1 descending. "None" is Name ascending, the natural order.</summary>
     private int sortDir = 1;
     private bool SortIsDefault => sortKey == SortKey.Name && sortDir == 1;
+    /// <summary>Per-section sort set by clicking a column title; wins over the global one for that section.</summary>
+    private readonly Dictionary<string, (SortKey Key, int Dir)> sectionSort = new();
+
+    private readonly record struct HeaderColumn(float X, float Width, string Label, SortKey? Key, bool Numeric);
     private bool capArmed;
     private int cursor = -1;
     private readonly List<PlanRow> visibleRows = new();
@@ -100,7 +105,7 @@ public sealed class ConfirmationWindow : StyledWindow
                 var drewAny = false;
                 foreach (var section in sections.OrderBy(s => s.Kind.ExecutionOrder()).ThenBy(s => s.OwnerName))
                 {
-                    var rows = Filter(section.Rows).ToList();
+                    var rows = Filter(section.Rows, $"{section.Kind}:{section.OwnerId}").ToList();
                     if (rows.Count == 0) continue;
                     drewAny = true;
                     DrawSection(section, rows);
@@ -329,11 +334,12 @@ public sealed class ConfirmationWindow : StyledWindow
         if (ImGui.MenuItem("Market price", string.Empty, sortKey == SortKey.Market, true)) { sortKey = SortKey.Market; sortDir = -1; }
 
         ImGui.Separator();
-        if (ImGui.MenuItem("Reset", string.Empty, false, true)) { filterContainer = null; filterRule = null; filterAction = null; filterTags.Clear(); filterTradeable = null; sortKey = SortKey.Name; sortDir = 1; }
+        if (ImGui.MenuItem("Reset", string.Empty, false, true)) { filterContainer = null; filterRule = null; filterAction = null; filterTags.Clear(); filterTradeable = null; sortKey = SortKey.Name; sortDir = 1; sectionSort.Clear(); }
     }
 
-    private IEnumerable<PlanRow> Filter(IEnumerable<PlanRow> rows)
+    private IEnumerable<PlanRow> Filter(IEnumerable<PlanRow> rows, string? sectionKey = null)
     {
+        var (key, dir) = sectionKey is not null && sectionSort.TryGetValue(sectionKey, out var own) ? own : (sortKey, sortDir);
         var q = rows;
         if (filterContainer is { } c) q = q.Where(r => r.Item.Slot.Kind == c);
         if (filterRule is { } rule) q = q.Where(r => r.Proposal.RuleId == rule);
@@ -342,44 +348,80 @@ public sealed class ConfirmationWindow : StyledWindow
         if (filterTradeable is { } tradeOnly) q = q.Where(r => r.Info.IsUntradable != tradeOnly);
         if (!string.IsNullOrWhiteSpace(search))
             q = q.Where(r => r.Info.Name.Contains(search, StringComparison.OrdinalIgnoreCase) || r.Proposal.Reason.Contains(search, StringComparison.OrdinalIgnoreCase));
-        IOrderedEnumerable<PlanRow> ordered = sortKey switch
+        IOrderedEnumerable<PlanRow> ordered = key switch
         {
-            SortKey.Quantity => sortDir > 0 ? q.OrderBy(r => r.Item.Quantity) : q.OrderByDescending(r => r.Item.Quantity),
-            SortKey.Action => sortDir > 0 ? q.OrderBy(r => r.ChosenAction.Label()) : q.OrderByDescending(r => r.ChosenAction.Label()),
-            SortKey.Market => sortDir > 0 ? q.OrderBy(r => r.Proposal.MarketUnitPrice * r.Item.Quantity) : q.OrderByDescending(r => r.Proposal.MarketUnitPrice * r.Item.Quantity),
-            _ => sortDir > 0 ? q.OrderBy(r => r.Info.Name, StringComparer.OrdinalIgnoreCase) : q.OrderByDescending(r => r.Info.Name, StringComparer.OrdinalIgnoreCase),
+            SortKey.Quantity => dir > 0 ? q.OrderBy(r => r.Item.Quantity) : q.OrderByDescending(r => r.Item.Quantity),
+            SortKey.Action => dir > 0 ? q.OrderBy(r => r.ChosenAction.Label()) : q.OrderByDescending(r => r.ChosenAction.Label()),
+            SortKey.Market => dir > 0 ? q.OrderBy(r => r.Proposal.MarketUnitPrice * r.Item.Quantity) : q.OrderByDescending(r => r.Proposal.MarketUnitPrice * r.Item.Quantity),
+            _ => dir > 0 ? q.OrderBy(r => r.Info.Name, StringComparer.OrdinalIgnoreCase) : q.OrderByDescending(r => r.Info.Name, StringComparer.OrdinalIgnoreCase),
         };
-        return sortKey == SortKey.Name ? ordered : ordered.ThenBy(r => r.Info.Name, StringComparer.OrdinalIgnoreCase);
+        return key == SortKey.Name ? ordered : ordered.ThenBy(r => r.Info.Name, StringComparer.OrdinalIgnoreCase);
     }
 
-    /// <summary>Click cycles ascending, descending, then back to the natural order.</summary>
-    private void ClickSort(SortKey key, bool numeric)
+    /// <summary>Click cycles ascending, descending, then back to the natural order, for this section only.</summary>
+    private void ClickSort(string sectionKey, SortKey key, bool numeric)
     {
-        if (sortKey != key) { sortKey = key; sortDir = numeric ? -1 : 1; return; }
+        var (curKey, curDir) = sectionSort.TryGetValue(sectionKey, out var own) ? own : (SortKey.Name, 1);
+        if (curKey != key || !sectionSort.ContainsKey(sectionKey)) { sectionSort[sectionKey] = (key, numeric ? -1 : 1); return; }
         var second = numeric ? 1 : -1;
-        if (sortDir != second) sortDir = second;
-        else { sortKey = SortKey.Name; sortDir = 1; }
+        if (curDir != second) sectionSort[sectionKey] = (key, second);
+        else sectionSort.Remove(sectionKey);
     }
 
-    private void HeaderCell(string label, SortKey? key, bool numeric = false)
+    /// <summary>One column title: muted, clickable when sortable, with a small arrow when it is the active sort.</summary>
+    private void DrawHeaderTitle(string sectionKey, HeaderColumn col, string idSuffix)
     {
-        ImGui.TableNextColumn();
-        if (key is null) { Ui.Hint(label); return; }
-        var isSorted = sortKey == key && !(key == SortKey.Name && SortIsDefault);
-        var text = label;
+        if (col.Key is null) { ImGui.AlignTextToFramePadding(); Ui.Hint(col.Label); return; }
+        var (curKey, curDir) = sectionSort.TryGetValue(sectionKey, out var own) ? own : (SortKey.Name, 1);
+        var isSorted = sectionSort.ContainsKey(sectionKey) && curKey == col.Key;
         using (ImRaii.PushColor(ImGuiCol.Text, isSorted ? Ui.AccentSoft : Ui.Muted))
         using (ImRaii.PushColor(ImGuiCol.HeaderHovered, new Vector4(1, 1, 1, 0.06f)))
         using (ImRaii.PushColor(ImGuiCol.HeaderActive, new Vector4(1, 1, 1, 0.09f)))
         {
-            if (ImGui.Selectable($"{text}##hdr{key}", false, ImGuiSelectableFlags.None, Vector2.Zero)) ClickSort(key.Value, numeric);
+            if (ImGui.Selectable($"{col.Label}##hdr{col.Key}{idSuffix}", false, ImGuiSelectableFlags.None, new Vector2(col.Width, 0)))
+                ClickSort(sectionKey, col.Key.Value, col.Numeric);
         }
         Ui.Tooltip(isSorted
-            ? (sortDir > 0 ? "Sorted ascending. Click for descending." : "Sorted descending. Click to clear.")
-            : $"Sort by {label.ToLowerInvariant()}.");
+            ? (curDir > 0 ? "Sorted ascending. Click for descending." : "Sorted descending. Click to clear.")
+            : $"Sort this section by {col.Label.ToLowerInvariant()}.");
         if (!isSorted) return;
-        ImGui.SameLine();
-        ImGui.SetCursorPosX(ImGui.GetCursorPosX() - ImGui.GetStyle().ItemSpacing.X + ImGui.CalcTextSize(text, false, 0).X + 6 * Ui.Scale);
-        Ui.Icon(sortDir > 0 ? FontAwesomeIcon.SortUp : FontAwesomeIcon.SortDown, Ui.AccentSoft);
+
+        // Arrow right after the title, inside the same cell.
+        var min = ImGui.GetItemRectMin();
+        var h = ImGui.GetItemRectSize().Y;
+        var icon = (curDir > 0 ? FontAwesomeIcon.SortUp : FontAwesomeIcon.SortDown).ToIconString();
+        var textW = ImGui.CalcTextSize(col.Label, false, 0).X;
+        using var f = ImRaii.PushFont(UiBuilder.IconFont);
+        var iconH = ImGui.GetTextLineHeight();
+        ImGui.GetWindowDrawList().AddText(new Vector2(min.X + textW + 8 * Ui.Scale, min.Y + (h - iconH) / 2), ImGui.GetColorU32(Ui.AccentSoft), icon);
+    }
+
+    /// <summary>
+    /// When a section's table runs past the top of the scrolling list, its column titles are re-drawn
+    /// pinned to the top edge so they stay readable while scrolling through that section.
+    /// </summary>
+    private void DrawStickyHeader(string sectionKey, IReadOnlyList<HeaderColumn> cols, Vector2 tableMin, Vector2 tableMax)
+    {
+        var headerH = 24 * Ui.Scale;
+        var top = ImGui.GetWindowPos().Y;
+        if (tableMin.Y >= top || tableMax.Y <= top + headerH * 2) return;
+
+        var left = ImGui.GetWindowPos().X;
+        var right = left + ImGui.GetWindowWidth();
+        var dl = ImGui.GetWindowDrawList();
+        dl.AddRectFilled(new Vector2(left, top), new Vector2(right, top + headerH), ImGui.GetColorU32(Ui.Ink with { W = 1f }));
+        dl.AddLine(new Vector2(left, top + headerH), new Vector2(right, top + headerH), ImGui.GetColorU32(Ui.InkLine), 1f);
+
+        var saved = ImGui.GetCursorScreenPos();
+        using (ImRaii.PushId($"sticky{sectionKey}"))
+        {
+            foreach (var col in cols)
+            {
+                ImGui.SetCursorScreenPos(new Vector2(col.X, top + 2 * Ui.Scale));
+                DrawHeaderTitle(sectionKey, col, "s");
+            }
+        }
+        ImGui.SetCursorScreenPos(saved);
     }
 
     // ---------- sections ----------
@@ -423,7 +465,10 @@ public sealed class ConfirmationWindow : StyledWindow
         }
         if (!expanded) { Ui.Gap(0.2f); return; }
 
-        using var table = ImRaii.Table($"##t{key}", 6, ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingFixedFit | ImGuiTableFlags.NoSavedSettings | ImGuiTableFlags.PadOuterX);
+        var cols = new List<HeaderColumn>();
+        Vector2 tableMin, tableMax;
+        using (var table = ImRaii.Table($"##t{key}", 6, ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingFixedFit | ImGuiTableFlags.NoSavedSettings | ImGuiTableFlags.PadOuterX))
+        {
         if (!table) return;
         ImGui.TableSetupColumn("##chk", ImGuiTableColumnFlags.WidthFixed, 24 * Ui.Scale, 0);
         ImGui.TableSetupColumn("##icon", ImGuiTableColumnFlags.WidthFixed, 30 * Ui.Scale, 0);
@@ -432,14 +477,17 @@ public sealed class ConfirmationWindow : StyledWindow
         ImGui.TableSetupColumn("##market", ImGuiTableColumnFlags.WidthFixed, 96 * Ui.Scale, 0);
         ImGui.TableSetupColumn("##attrs", ImGuiTableColumnFlags.WidthStretch, 5f, 0);
 
-        // Column titles; the sortable ones cycle asc / desc / off and apply to every section.
+        // Column titles; the sortable ones cycle asc / desc / off for this section.
         ImGui.TableNextRow(ImGuiTableRowFlags.None, 24 * Ui.Scale);
         ImGui.TableNextColumn();
         ImGui.TableNextColumn();
-        HeaderCell("Item", SortKey.Name);
-        HeaderCell("Action", SortKey.Action);
-        HeaderCell("Market", SortKey.Market, numeric: true);
-        HeaderCell("Attributes", null);
+        foreach (var (label, sortBy, numeric) in new (string, SortKey?, bool)[] { ("Item", SortKey.Name, false), ("Action", SortKey.Action, false), ("Market", SortKey.Market, true), ("Attributes", null, false) })
+        {
+            ImGui.TableNextColumn();
+            var col = new HeaderColumn(ImGui.GetCursorScreenPos().X, ImGui.GetContentRegionAvail().X, label, sortBy, numeric);
+            cols.Add(col);
+            DrawHeaderTitle(key, col, string.Empty);
+        }
 
         foreach (var row in rows)
         {
@@ -447,6 +495,10 @@ public sealed class ConfirmationWindow : StyledWindow
             visibleRows.Add(row);
             DrawRow(row, index);
         }
+        }
+        tableMin = ImGui.GetItemRectMin();
+        tableMax = ImGui.GetItemRectMax();
+        DrawStickyHeader(key, cols, tableMin, tableMax);
         Ui.Gap(0.5f);
     }
 
