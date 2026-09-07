@@ -103,6 +103,10 @@ public sealed class AutoPilot
             coordinator.SuppressChatSummary = true;
             tally.Clear();
 
+            // A previous run or the player may have left a retainer window, shop, or dresser open.
+            Status = "Tidying up open windows";
+            await RecoverUiAsync(ct).ConfigureAwait(false);
+
             if (here.Count > 0) await Leg("bags", () => Step("Cleaning inventory and armoury", () => Execute(here), ct), ct);
 
             if (S.OpenSaddlebag && saddle.Count > 0) await Leg("saddlebag", () => SaddlebagAsync(saddle, ct), ct);
@@ -260,7 +264,7 @@ public sealed class AutoPilot
     private async Task RetainersAsync(Dictionary<ulong, List<QueuedAction>> byRetainer, CancellationToken ct)
     {
         if (byRetainer.Count == 0) return;
-        await WalkToAndInteractAsync(S.BellObjectName, "RetainerList", ct).ConfigureAwait(false);
+        await EnsureRetainerListAsync(ct).ConfigureAwait(false);
 
         // The list appears before the server has filled it; selecting too early is silently ignored.
         await WaitUntil(RetainerListReady, StepTimeout, "the retainer list to fill", ct).ConfigureAwait(false);
@@ -275,15 +279,53 @@ public sealed class AutoPilot
             if (rows.Count == 0 && !S.PauseForUnseenRows) continue;
 
             var ok = await Leg($"retainer {name}", () => OneRetainerAsync(index, id, name, rows, ct), ct).ConfigureAwait(false);
-            if (!ok)
-            {
-                // Get back to the list for the next retainer, re-using the bell if the list was lost.
-                if (!await OnFramework(() => GameUi.IsVisible("RetainerList")).ConfigureAwait(false))
-                    await WalkToAndInteractAsync(S.BellObjectName, "RetainerList", ct).ConfigureAwait(false);
-            }
+            if (!ok) await EnsureRetainerListAsync(ct).ConfigureAwait(false);
         }
 
         await framework.RunOnFrameworkThread(() => GameUi.Close("RetainerList")).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Gets the game to the retainer list from wherever the retainer UI currently is: a retainer's
+    /// inventory or sell window open, the retainer menu showing, the list already up, or nothing at all.
+    /// Interacting with the bell while a retainer session is active does nothing, so this must come first.
+    /// </summary>
+    private async Task EnsureRetainerListAsync(CancellationToken ct)
+    {
+        for (var attempt = 0; attempt < 4; attempt++)
+        {
+            ct.ThrowIfCancellationRequested();
+            var state = await OnFramework(() =>
+                GameUi.AnyVisible("InventoryRetainer", "InventoryRetainerLarge", "RetainerSellList", "RetainerSell") ? "inventory"
+                : GameUi.SelectStringReady() ? "menu"
+                : GameUi.IsVisible("RetainerList") ? "list"
+                : "none").ConfigureAwait(false);
+
+            switch (state)
+            {
+                case "list":
+                    return;
+                case "inventory":
+                    Status = "Closing the open retainer window";
+                    await framework.RunOnFrameworkThread(() =>
+                    {
+                        GameUi.Close("InventoryRetainer"); GameUi.Close("InventoryRetainerLarge");
+                        GameUi.Close("RetainerSellList"); GameUi.Close("RetainerSell");
+                    }).ConfigureAwait(false);
+                    await Task.Delay(800, ct).ConfigureAwait(false);
+                    break;
+                case "menu":
+                    Status = "Leaving the retainer menu";
+                    var chosen = await framework.RunOnFrameworkThread(() => GameUi.SelectStringChoose(S.QuitMenuText)).ConfigureAwait(false);
+                    if (chosen < 0) await framework.RunOnFrameworkThread(() => GameUi.Close("SelectString")).ConfigureAwait(false);
+                    await Task.Delay(800, ct).ConfigureAwait(false);
+                    break;
+                default:
+                    await WalkToAndInteractAsync(S.BellObjectName, "RetainerList", ct).ConfigureAwait(false);
+                    return;
+            }
+        }
+        throw new AutoPilotException("Could not get back to the retainer list; close the retainer windows and run again");
     }
 
     private async Task OneRetainerAsync(int index, ulong id, string name, List<QueuedAction> rows, CancellationToken ct)
@@ -493,7 +535,7 @@ public sealed class AutoPilot
                 }
                 catch (AutoPilotException) when (attempt < 2) { }
             }
-            throw new AutoPilotException($"The {objectName.ToLowerInvariant()} did not open {expectAddon}");
+            throw new AutoPilotException($"The {objectName.ToLowerInvariant()} did not open {expectAddon}. If a retainer, shop or dresser window is still open, close it and run again.");
         }, ct);
         await Task.Delay(600, ct).ConfigureAwait(false);
     }
