@@ -30,26 +30,6 @@ public static unsafe class GameUi
 
     public static void ExecuteMainCommand(uint id) => UIModule.Instance()->ExecuteMainCommand(id);
 
-    /// <summary>Types a text command into the game as if the player had, e.g. "/isort execute inventory".</summary>
-    public static void SendCommand(string text)
-    {
-        var ui = UIModule.Instance();
-        if (ui == null) return;
-        var str = Utf8String.FromString(text);
-        try { ui->ProcessChatBoxEntry(str); }
-        finally { str->Dtor(true); }
-    }
-
-    /// <summary>The game's /itemsort targets for a container kind. Armoury pieces sort per slot.</summary>
-    public static IEnumerable<string> SortTargets(ContainerKind kind) => kind switch
-    {
-        ContainerKind.Inventory => ["inventory"],
-        ContainerKind.Saddlebag => ["saddlebag"],
-        ContainerKind.Retainer => ["retainer"],
-        ContainerKind.Armoury => ["mh", "oh", "head", "body", "hands", "legs", "feet", "ears", "neck", "wrists", "rings", "soul"],
-        _ => [],
-    };
-
     public static bool Interact(IGameObject obj)
     {
         var target = TargetSystem.Instance();

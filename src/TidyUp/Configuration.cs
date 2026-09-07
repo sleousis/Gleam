@@ -33,6 +33,9 @@ public sealed class CallbackSettings
     /// <summary>Context entry that opens the RetainerSell window while a retainer's sell list is up.</summary>
     public string PutUpForSaleLabel { get; set; } = "Put Up for Sale";
 
+    /// <summary>Item menu entry that sorts the container the item sits in.</summary>
+    public string SortLabel { get; set; } = "Sort";
+
     /// <summary>RetainerSell callback value that confirms the listing (verify in spike).</summary>
     public int RetainerSellConfirm { get; set; } = 0;
 

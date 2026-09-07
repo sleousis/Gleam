@@ -407,14 +407,17 @@ public sealed class RunCoordinator : IDisposable
     /// <summary>Runs the game's own sort on every container something was just removed from. Containers are still open at this point.</summary>
     private async Task SortTouchedAsync(RunReport report)
     {
-        var kinds = report.Results.Where(r => r.Outcome is ActionOutcome.Done or ActionOutcome.Moved).Select(r => r.Action.Kind).Distinct()
-            .Concat(report.Moved.Select(m => m.Kind)).Distinct().ToList();
+        var kinds = report.Results.Where(r => r.Outcome is ActionOutcome.Done or ActionOutcome.Moved).Select(r => r.Action.Kind)
+            .Concat(report.Moved.Select(m => m.Kind))
+            .Distinct()
+            .Where(k => k != ContainerKind.GlamourDresser)
+            .ToList();
         if (kinds.Count == 0) return;
         Status = "Sorting…";
-        foreach (var target in kinds.SelectMany(Automation.GameUi.SortTargets))
+        foreach (var kind in kinds)
         {
-            await framework.RunOnFrameworkThread(() => Automation.GameUi.SendCommand($"/isort execute {target}")).ConfigureAwait(false);
-            await Task.Delay(150).ConfigureAwait(false);
+            try { await actions.SortContainerAsync(kind, runCts?.Token ?? CancellationToken.None).ConfigureAwait(false); }
+            catch (Exception ex) when (ex is not OperationCanceledException) { log.Warning(ex, "Sorting {Kind} failed", kind); }
         }
     }
 

@@ -82,6 +82,28 @@ public sealed class GameActions : IGameActions
 
     public int FreeMarketSlots() => Native.FreeMarketSlots();
 
+    // ---------- sort ----------
+
+    /// <summary>
+    /// Sorts a container the way the game's own item menu does: pick any item in it and choose "Sort".
+    /// The armoury chest is one sub-container per slot type, so each page with an item gets its own pass.
+    /// </summary>
+    public async Task<int> SortContainerAsync(ContainerKind kind, CancellationToken ct)
+    {
+        var items = scanner.ScanKind(kind);
+        var pages = items.GroupBy(i => i.Slot.ContainerId).Select(g => g.First().Slot).ToList();
+        var sorted = 0;
+        foreach (var slot in pages)
+        {
+            ct.ThrowIfCancellationRequested();
+            var ok = await context.InvokeAsync(slot, config.Callbacks.SortLabel, ct).ConfigureAwait(false);
+            if (ok) sorted++;
+            else log.Information("Sort not offered for {Slot}: {Why}", slot, context.LastFailure);
+            await Task.Delay(250, ct).ConfigureAwait(false);
+        }
+        return sorted;
+    }
+
     // ---------- market board ----------
 
     public async Task<bool> MarketListAsync(SlotRef slot, uint itemId, long unitPrice, int quantity, CancellationToken ct)
