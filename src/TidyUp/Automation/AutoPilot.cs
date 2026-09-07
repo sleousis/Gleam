@@ -221,7 +221,7 @@ public sealed class AutoPilot
         nav.Stop();
         await framework.RunOnFrameworkThread(() =>
         {
-            foreach (var addon in new[] { "SelectString", "InventoryRetainer", "InventoryRetainerLarge", "RetainerSellList", "RetainerList", "Shop", "GrandCompanySupplyList", "MiragePrismPrismBox", "InventoryBuddy" })
+            foreach (var addon in new[] { "SelectString", "SelectIconString", "InventoryRetainer", "InventoryRetainerLarge", "RetainerSellList", "RetainerList", "Shop", "GrandCompanySupplyList", "MiragePrismPrismBox", "InventoryBuddy" })
                 GameUi.Close(addon);
         }).ConfigureAwait(false);
         await Task.Delay(800, ct).ConfigureAwait(false);
@@ -368,8 +368,17 @@ public sealed class AutoPilot
                 await Step($"Opening {name}'s inventory", async () =>
                 {
                     await ChooseMenu(S.EntrustMenuText, ct).ConfigureAwait(false);
-                    await WaitUntil(() => GameUi.AnyVisible("InventoryRetainer", "InventoryRetainerLarge") && GameInventoryScanner.IsRetainerOpen(id),
-                        StepTimeout, $"{name}'s inventory", ct).ConfigureAwait(false);
+                    try
+                    {
+                        await WaitUntil(() => GameUi.AnyVisible("InventoryRetainer", "InventoryRetainerLarge") && GameInventoryScanner.IsRetainerOpen(id),
+                            StepTimeout, $"{name}'s inventory", ct).ConfigureAwait(false);
+                    }
+                    catch (AutoPilotException)
+                    {
+                        var (activeId, activeName) = await OnFramework(GameInventoryScanner.ActiveRetainer).ConfigureAwait(false);
+                        var windowOpen = await OnFramework(() => GameUi.AnyVisible("InventoryRetainer", "InventoryRetainerLarge")).ConfigureAwait(false);
+                        throw new AutoPilotException($"{name}'s inventory did not become usable: window open {windowOpen}, game reports active retainer '{activeName}' ({activeId:X}), plan expected {id:X}");
+                    }
                     await Task.Delay(600, ct).ConfigureAwait(false);
                 }, ct);
                 if (rows.Count > 0) await Step($"Cleaning {name}", () => Execute(rows), ct);
@@ -542,7 +551,11 @@ public sealed class AutoPilot
             var pos = target.Position;
             if (Distance(pos) > S.InteractRange)
             {
-                if (!nav.IsReady) throw new AutoPilotException("vnavmesh has no navmesh for this zone yet");
+                if (!nav.IsReady)
+                {
+                    Status = "Waiting for vnavmesh to build this zone's mesh";
+                    await WaitUntil(() => nav.IsReady, TimeSpan.FromSeconds(45), "vnavmesh to finish building the navmesh for this zone", ct).ConfigureAwait(false);
+                }
                 if (!nav.MoveCloseTo(pos, S.InteractRange - 0.5f)) throw new AutoPilotException("vnavmesh refused the path");
                 await Task.Delay(500, ct).ConfigureAwait(false);
                 await WaitUntil(() => !nav.IsMoving, TimeSpan.FromSeconds(60), $"arrival at the {objectName.ToLowerInvariant()}", ct).ConfigureAwait(false);
