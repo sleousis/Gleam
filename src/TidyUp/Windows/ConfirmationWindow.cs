@@ -461,21 +461,27 @@ public sealed class ConfirmationWindow : StyledWindow
         Ui.Tooltip($"Lowest listing on {scope} ({(row.Item.IsHq ? "HQ" : "NQ")}): {unit:N0}g each · {unit * row.Item.Quantity:N0}g for the stack of {row.Item.Quantity}.");
     }
 
-    /// <summary>What the item *is*, as small pills. The why (rule, warnings) lives in the name tooltip.</summary>
-    private void DrawAttributePills(PlanRow row)
+    private List<(string Text, Vector4 Color)> AttributePills(PlanRow row, bool includeType)
     {
         var info = row.Info;
         var item = row.Item;
         var pills = new List<(string Text, Vector4 Color)>();
-        if (info.IsUntradable) pills.Add(("untradeable", Ui.Warn)); else pills.Add(("tradeable", Ui.Muted));
-        if (info.IsMarketable) pills.Add(("marketable", Ui.Ok));
-        if (info.IsUnique) pills.Add(("unique", Ui.Danger));
-        if (info.IsIndisposable) pills.Add(("cannot discard", Ui.Danger));
-        if (info.IsUsable) pills.Add(("usable", Ui.Info));
+        if (includeType) pills.Add((ItemTags.Of(info).Label(), Ui.AccentSoft));
+        if (info.IsUntradable) pills.Add(("Untradeable", Ui.Warn)); else pills.Add(("Tradeable", Ui.Muted));
+        if (info.IsMarketable) pills.Add(("Marketable", Ui.Ok));
+        if (info.IsUnique) pills.Add(("Unique", Ui.Danger));
+        if (info.IsIndisposable) pills.Add(("Cannot be discarded", Ui.Danger));
+        if (info.IsUsable) pills.Add(("Usable", Ui.Info));
         if (item.IsHq) pills.Add(("HQ", Ui.AccentSoft));
         if (item.HasMateria) pills.Add(($"{item.MateriaCount} materia", Ui.Accent));
         if (item.IsDyed) pills.Add((db.StainName(item.Stain0), Ui.Muted));
+        return pills;
+    }
 
+    /// <summary>What the item *is*, as small pills. The why (rule, warnings) lives in the name tooltip.</summary>
+    private void DrawAttributePills(PlanRow row)
+    {
+        var pills = AttributePills(row, includeType: false);
         ImGui.SetCursorPosY(ImGui.GetCursorPosY() + 3 * Ui.Scale);
         using var sp = ImRaii.PushStyle(ImGuiStyleVar.ItemSpacing, new Vector2(4 * Ui.Scale, 0));
         for (var i = 0; i < pills.Count; i++)
@@ -536,9 +542,26 @@ public sealed class ConfirmationWindow : StyledWindow
         {
             Ui.TextColored(Ui.AccentSoft, info.Name + (item.IsHq ? " (HQ)" : string.Empty));
             var sub = info.UiCategory;
-            if (info.IsEquipment) sub += $" · iL{info.ItemLevel} · Lv{info.LevelEquip}";
-            sub += $" · ×{item.Quantity}";
+            if (info.IsEquipment) sub += $" · Item level {info.ItemLevel} · Level {info.LevelEquip}";
+            sub += item.Quantity == 1 ? " · 1 in the stack" : $" · {item.Quantity} in the stack";
             Ui.Hint(sub);
+        }
+
+        Ui.Gap(0.4f);
+        Ui.Rule();
+        Ui.Gap(0.4f);
+        var tags = AttributePills(row, includeType: true);
+        using (ImRaii.PushStyle(ImGuiStyleVar.ItemSpacing, new Vector2(4 * Ui.Scale, 4 * Ui.Scale)))
+        {
+            var x0 = ImGui.GetCursorPosX();
+            var limit = ImGui.GetWindowContentRegionMax().X;
+            for (var i = 0; i < tags.Count; i++)
+            {
+                var w = ImGui.CalcTextSize(tags[i].Text, false, 0).X + 16 * Ui.Scale;
+                if (i > 0 && ImGui.GetCursorPosX() + w > limit) { ImGui.NewLine(); ImGui.SetCursorPosX(x0); }
+                Ui.Pill(tags[i].Text, tags[i].Color);
+                if (i < tags.Count - 1) ImGui.SameLine();
+            }
         }
 
         var notes = row.Proposal.Warnings.Where(w => w != "Not proposed by any rule").ToList();
@@ -562,12 +585,12 @@ public sealed class ConfirmationWindow : StyledWindow
         Ui.Gap(0.4f);
 
         // Worth and whereabouts.
-        Ui.KeyValue("Vendor", info.VendorPrice > 0 ? $"{info.VendorPrice:N0}g each · {(long)info.VendorPrice * item.Quantity:N0}g stack" : "no vendor value");
+        Ui.KeyValue("Vendor", info.VendorPrice > 0 ? $"{info.VendorPrice:N0}g each, {(long)info.VendorPrice * item.Quantity:N0}g for the stack" : "No vendor value");
         if (info.IsMarketable)
         {
             var mkt = row.Proposal.MarketUnitPrice;
             var scope = string.IsNullOrEmpty(coordinator.MarketScope) ? "home world" : coordinator.MarketScope;
-            Ui.KeyValue("Market", mkt > 0 ? $"{mkt:N0}g each on {scope} · {mkt * item.Quantity:N0}g stack" : "no current listings", mkt > 0 ? Ui.Market : null);
+            Ui.KeyValue("Market", mkt > 0 ? $"{mkt:N0}g each on {scope}, {mkt * item.Quantity:N0}g for the stack" : "No current listings", mkt > 0 ? Ui.Market : null);
         }
         Ui.KeyValue("Where", string.IsNullOrEmpty(item.OwnerName) ? item.Slot.Kind.DisplayName() : $"{item.Slot.Kind.DisplayName()} · {item.OwnerName}");
 
