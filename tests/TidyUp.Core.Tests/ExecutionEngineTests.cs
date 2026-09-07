@@ -18,6 +18,14 @@ internal sealed class FakeGame : IGameActions
 
     public bool IsContainerAvailable(ContainerKind kind, ulong ownerId) => Open.Contains(kind);
     public ScannedItem? ReadSlot(SlotRef slot) => Slots.GetValueOrDefault(slot);
+
+    public SlotRef? FindSlot(ContainerKind kind, ulong ownerId, uint itemId, int quantity, bool isHq, IReadOnlySet<SlotRef> exclude, SlotRef preferred)
+    {
+        var hits = Slots.Values.Where(i => i.Slot.Kind == kind && (kind != ContainerKind.Retainer || i.Slot.OwnerId == ownerId)
+                                          && i.ItemId == itemId && i.Quantity == quantity && i.IsHq == isHq && !exclude.Contains(i.Slot)).ToList();
+        if (hits.Count == 0) return null;
+        return (hits.FirstOrDefault(h => h.Slot == preferred) ?? hits[0]).Slot;
+    }
     public int FreeInventorySlots() => FreeSlots;
     public bool IsActionAvailable(ActionKind action) => AvailableActions.Contains(action);
     public string ActionRequirement(ActionKind action) => $"open a window for {action}";
@@ -82,21 +90,42 @@ public class ExecutionEngineTests
     }
 
     [Fact]
-    public async Task Skips_slots_that_changed_since_the_window_was_shown()
+    public async Task Skips_items_that_are_no_longer_anywhere_in_the_container()
     {
         var game = new FakeGame();
-        game.Slots[Inv(0)] = ScannedItem.Simple(Inv(0), 1, 13);      // quantity differs
+        game.Slots[Inv(0)] = ScannedItem.Simple(Inv(0), 1, 13);      // quantity differs, and no other 1×14 exists
         game.Slots[Inv(1)] = ScannedItem.Simple(Inv(1), 2, 1);       // item differs
-        game.Slots[Inv(2)] = ScannedItem.Simple(Inv(2), 1, 1, hq: true); // HQ differs
+        game.Slots[Inv(2)] = ScannedItem.Simple(Inv(2), 1, 1, hq: true); // only an HQ copy exists
         // Inv(3) is empty now
 
         var report = await new ExecutionEngine(game, new MemoryRunLog(), new NoDelay())
-            .ExecuteAsync([Q(Inv(0), 1, 14), Q(Inv(1), 1, 1), Q(Inv(2), 1, 1), Q(Inv(3), 1, 1)], Who, CancellationToken.None);
+            .ExecuteAsync([Q(Inv(0), 1, 14), Q(Inv(1), 5, 1), Q(Inv(2), 1, 1), Q(Inv(3), 7, 1)], Who, CancellationToken.None);
 
         Assert.Equal(0, report.Done);
         Assert.Equal(4, report.Skipped);
         Assert.Empty(game.Calls);
         Assert.Equal(3, game.Slots.Count); // nothing touched
+    }
+
+    [Fact]
+    public async Task Finds_the_planned_item_by_identity_when_the_cached_slot_numbering_is_wrong()
+    {
+        // The plan says slot 1 holds a 1×14 stack; live, that stack sits in slot 9 and slot 1 holds something else.
+        var game = new FakeGame();
+        game.Open.Add(ContainerKind.Retainer);
+        game.Slots[Ret(1)] = ScannedItem.Simple(Ret(1), 2, 1);
+        game.Slots[Ret(9)] = ScannedItem.Simple(Ret(9), 1, 14);
+        game.Slots[Ret(10)] = ScannedItem.Simple(Ret(10), 1, 14); // an identical second stack
+
+        var report = await new ExecutionEngine(game, new MemoryRunLog(), new NoDelay())
+            .ExecuteAsync([Q(Ret(1), 1, 14), Q(Ret(2), 1, 14)], Who, CancellationToken.None);
+
+        Assert.Equal(2, report.Done);
+        Assert.Equal(0, report.Skipped);
+        Assert.Equal(2, game.Calls.Count);
+        Assert.True(game.Slots.ContainsKey(Ret(1)));        // the mismatched slot was never touched
+        Assert.False(game.Slots.ContainsKey(Ret(9)));       // both identical stacks were used, each once
+        Assert.False(game.Slots.ContainsKey(Ret(10)));
     }
 
     [Fact]

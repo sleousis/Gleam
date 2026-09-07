@@ -204,15 +204,39 @@ public sealed class GameActions : IGameActions
             : await changed.ConfigureAwait(false) is not null;
         if (confirmedByEvent) return true;
 
-        // Events can lag the server round-trip; the slot itself is the ground truth. Check twice, two seconds apart.
+        // Events can lag the server round-trip; the slot itself is the ground truth. Check twice, two seconds
+        // apart, and only trust an *emptied* slot in a *loaded* container. An unloaded container proves nothing.
         for (var attempt = 0; attempt < 2; attempt++)
         {
-            var after = await framework.RunOnFrameworkThread(() => scanner.ReadSlot(slot)).ConfigureAwait(false);
+            var (after, loaded) = await framework.RunOnFrameworkThread(() =>
+            {
+                var item = scanner.TryReadSlot(slot, out var isLoaded);
+                return (item, isLoaded);
+            }).ConfigureAwait(false);
+            if (!loaded)
+            {
+                LastFailure = "Container closed before the result could be confirmed";
+                return false;
+            }
             if (after is null || after.ItemId != expectedItemId) return true;
             await Task.Delay(2000, ct).ConfigureAwait(false);
         }
         LastFailure = "Dialog answered but the slot still holds the item";
         return false;
+    }
+
+    /// <summary>
+    /// Cached rows carry the cache's idea of a slot, which for retainers follows the on-screen tab layout
+    /// rather than memory. Find the planned item by identity in the live container instead.
+    /// </summary>
+    public SlotRef? FindSlot(ContainerKind kind, ulong ownerId, uint itemId, int quantity, bool isHq, IReadOnlySet<SlotRef> exclude, SlotRef preferred)
+    {
+        var candidates = scanner.ScanKind(kind)
+            .Where(i => i.ItemId == itemId && i.Quantity == quantity && i.IsHq == isHq && !exclude.Contains(i.Slot))
+            .Where(i => kind != ContainerKind.Retainer || i.Slot.OwnerId == ownerId)
+            .ToList();
+        if (candidates.Count == 0) return null;
+        return (candidates.FirstOrDefault(c => c.Slot == preferred) ?? candidates[0]).Slot;
     }
 
     /// <summary>Resolves with the first matching inventory event, or null on timeout.</summary>

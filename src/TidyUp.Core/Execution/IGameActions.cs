@@ -14,6 +14,13 @@ public interface IGameActions
     /// <summary>Live re-read of a slot. Null when empty or unreadable.</summary>
     ScannedItem? ReadSlot(SlotRef slot);
 
+    /// <summary>
+    /// Finds a live slot holding exactly this item, quantity and quality in the given container, skipping
+    /// slots already acted on this run. Planned slots can come from a cache whose numbering differs from
+    /// the game's, so identity is what gets trusted, never position.
+    /// </summary>
+    SlotRef? FindSlot(ContainerKind kind, ulong ownerId, uint itemId, int quantity, bool isHq, IReadOnlySet<SlotRef> exclude, SlotRef preferred);
+
     int FreeInventorySlots();
 
     /// <summary>Whether the NPC window an action needs is open (vendor shop, GC officer, desynth is always available).</summary>
