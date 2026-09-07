@@ -159,10 +159,12 @@ internal static class Ui
     /// Product header: logo tile, name in gold, one muted line under it. An optional control of the given
     /// width is drawn right-aligned and vertically centred on the same row.
     /// </summary>
-    public static void Header(ImTextureID logo, string title, string subtitle, float rightWidth = 0f, Action? right = null)
+    public static void Header(ImTextureID logo, string title, string subtitle, float rightWidth = 0f, Action? right = null, string? rightNote = null)
     {
         var size = 36f * Scale;
         var start = ImGui.GetCursorPos();
+        var rightBlock = right is null ? 0f : ImGui.GetFrameHeight() + (rightNote is null ? 0f : ImGui.GetTextLineHeight() + 3f * Scale);
+        var rowH = Math.Max(size, rightBlock);
         if (!logo.IsNull)
         {
             ImageRounded(logo, new Vector2(size, size), 8f * Scale);
@@ -180,10 +182,17 @@ internal static class Ui
         {
             ImGui.SameLine();
             RightAlign(rightWidth);
-            ImGui.SetCursorPosY(start.Y + Math.Max(0, (size - ImGui.GetFrameHeight()) / 2));
+            var top = start.Y + Math.Max(0, (rowH - rightBlock) / 2);
+            ImGui.SetCursorPosY(top);
             right();
+            if (rightNote is not null)
+            {
+                var noteW = ImGui.CalcTextSize(rightNote, false, 0).X;
+                ImGui.SetCursorPos(new Vector2(ImGui.GetWindowWidth() - noteW - ImGui.GetStyle().WindowPadding.X, top + ImGui.GetFrameHeight() + 3f * Scale));
+                TextColored(Accent * new Vector4(1, 1, 1, 0.9f), rightNote);
+            }
         }
-        ImGui.SetCursorPos(new Vector2(start.X, start.Y + size + 4f * Scale));
+        ImGui.SetCursorPos(new Vector2(start.X, start.Y + rowH + 4f * Scale));
         ImGui.Dummy(Vector2.Zero);
     }
 
