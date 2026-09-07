@@ -7,10 +7,13 @@ using TidyUp.Core.Model;
 
 namespace TidyUp.Windows;
 
-/// <summary>Thin wrappers so ImGui binding signatures live in one place.</summary>
+/// <summary>
+/// Thin wrappers so ImGui binding signatures live in one place, plus the few visual primitives the
+/// windows share: one accent, one muted tone, semantic colours only for actions and states.
+/// </summary>
 internal static class Ui
 {
-    public static readonly Vector4 Gold = new(0.85f, 0.71f, 0.29f, 1f);
+    public static readonly Vector4 Accent = new(0.85f, 0.71f, 0.29f, 1f);
     public static readonly Vector4 Danger = ImGuiColors.DalamudRed;
     public static readonly Vector4 Ok = ImGuiColors.HealerGreen;
     public static readonly Vector4 Warn = ImGuiColors.DalamudOrange;
@@ -18,6 +21,7 @@ internal static class Ui
     public static readonly Vector4 Muted = ImGuiColors.DalamudGrey;
 
     public static float Scale => ImGuiHelpers.GlobalScale;
+    public static float Space => 8f * Scale;
 
     public static void Text(string text) => ImGui.TextUnformatted(text);
 
@@ -27,16 +31,58 @@ internal static class Ui
         ImGui.TextUnformatted(text);
     }
 
-    public static void Muted2(string text) => ImGui.TextDisabled(text);
+    /// <summary>Secondary text: explanations, counts, anything the eye should skip on a first pass.</summary>
+    public static void Hint(string text) => ImGui.TextDisabled(text);
+
+    public static void HintWrapped(string text)
+    {
+        using var c = ImRaii.PushColor(ImGuiCol.Text, Muted);
+        ImGui.TextWrapped(text);
+    }
+
+    /// <summary>A quiet section label with breathing room above it. No rules, no caps.</summary>
+    public static void Section(string title)
+    {
+        ImGui.Dummy(new Vector2(0, Space));
+        TextColored(Muted, title);
+        ImGui.Spacing();
+    }
+
+    public static void Gap(float multiple = 1f) => ImGui.Dummy(new Vector2(0, Space * multiple));
 
     public static bool Button(string label, float width = 0f) => ImGui.Button(label, new Vector2(width, 0f));
 
-    public static bool ButtonColored(string label, Vector4 color, float width = 0f)
+    /// <summary>The one filled button on a screen. Everything else is a plain button or a link.</summary>
+    public static bool PrimaryButton(string label, float width = 0f, bool danger = false)
     {
-        using var c = ImRaii.PushColor(ImGuiCol.Button, color * new Vector4(1, 1, 1, 0.6f));
-        using var h = ImRaii.PushColor(ImGuiCol.ButtonHovered, color * new Vector4(1, 1, 1, 0.8f));
+        var color = danger ? Danger : Accent;
+        using var c = ImRaii.PushColor(ImGuiCol.Button, color * new Vector4(1, 1, 1, 0.75f));
+        using var h = ImRaii.PushColor(ImGuiCol.ButtonHovered, color * new Vector4(1, 1, 1, 0.9f));
         using var a = ImRaii.PushColor(ImGuiCol.ButtonActive, color);
+        using var t = ImRaii.PushColor(ImGuiCol.Text, new Vector4(0.08f, 0.08f, 0.08f, 1f));
         return ImGui.Button(label, new Vector2(width, 0f));
+    }
+
+    /// <summary>A text-only button for secondary actions.</summary>
+    public static bool LinkButton(string label)
+    {
+        using var b = ImRaii.PushColor(ImGuiCol.Button, Vector4.Zero);
+        using var h = ImRaii.PushColor(ImGuiCol.ButtonHovered, new Vector4(1, 1, 1, 0.08f));
+        using var a = ImRaii.PushColor(ImGuiCol.ButtonActive, new Vector4(1, 1, 1, 0.12f));
+        using var t = ImRaii.PushColor(ImGuiCol.Text, Muted);
+        return ImGui.Button(label, new Vector2(0, 0));
+    }
+
+    /// <summary>Small coloured status chip, e.g. "ready" or "needs saddlebag".</summary>
+    public static void Pill(string text, Vector4 color)
+    {
+        using var b = ImRaii.PushColor(ImGuiCol.Button, color * new Vector4(1, 1, 1, 0.18f));
+        using var h = ImRaii.PushColor(ImGuiCol.ButtonHovered, color * new Vector4(1, 1, 1, 0.18f));
+        using var a = ImRaii.PushColor(ImGuiCol.ButtonActive, color * new Vector4(1, 1, 1, 0.18f));
+        using var t = ImRaii.PushColor(ImGuiCol.Text, color);
+        using var r = ImRaii.PushStyle(ImGuiStyleVar.FrameRounding, 10f * Scale);
+        using var p = ImRaii.PushStyle(ImGuiStyleVar.FramePadding, new Vector2(8f * Scale, 1f * Scale));
+        ImGui.Button(text, new Vector2(0, 0));
     }
 
     public static bool InputText(string label, string hint, ref string value, int maxLength = 128) =>
@@ -83,26 +129,40 @@ internal static class Ui
         return true;
     }
 
+    /// <summary>A row of mutually exclusive options drawn as adjoining buttons; the selected one is filled.</summary>
+    public static bool Segmented<T>(string id, ref T value, IReadOnlyList<(T Value, string Label)> options) where T : struct
+    {
+        var changed = false;
+        using var _ = ImRaii.PushId(id);
+        using var sp = ImRaii.PushStyle(ImGuiStyleVar.ItemSpacing, new Vector2(2f * Scale, 0));
+        for (var i = 0; i < options.Count; i++)
+        {
+            var (v, label) = options[i];
+            var selected = EqualityComparer<T>.Default.Equals(v, value);
+            var buttonColor = selected ? ImGui.GetColorU32(Accent * new Vector4(1, 1, 1, 0.75f)) : ImGui.GetColorU32(ImGuiCol.FrameBg);
+            var textColor = selected ? ImGui.GetColorU32(new Vector4(0.08f, 0.08f, 0.08f, 1f)) : ImGui.GetColorU32(ImGuiCol.Text);
+            using var b = ImRaii.PushColor(ImGuiCol.Button, buttonColor, true);
+            using var t = ImRaii.PushColor(ImGuiCol.Text, textColor, true);
+            if (ImGui.Button(label, new Vector2(0, 0)) && !selected) { value = v; changed = true; }
+            if (i < options.Count - 1) ImGui.SameLine();
+        }
+        return changed;
+    }
+
     public static void Tooltip(string text)
     {
-        if (!ImGui.IsItemHovered()) return;
+        if (string.IsNullOrEmpty(text) || !ImGui.IsItemHovered()) return;
         using var t = ImRaii.Tooltip();
-        using var w = ImRaii.TextWrapPos(400f * Scale);
+        using var w = ImRaii.TextWrapPos(380f * Scale);
         ImGui.TextUnformatted(text);
     }
 
-    public static void HelpMarker(string text)
+    /// <summary>A setting row: label on the left, control on the right, optional one-line hint under the label.</summary>
+    public static void SettingLabel(string label, string? hint = null)
     {
-        ImGui.SameLine();
-        ImGui.TextDisabled("(?)");
-        Tooltip(text);
-    }
-
-    public static void Header(string text)
-    {
-        ImGui.Spacing();
-        TextColored(Gold, text.ToUpperInvariant());
-        ImGui.Separator();
+        ImGui.AlignTextToFramePadding();
+        Text(label);
+        if (hint is not null) Tooltip(hint);
     }
 
     public static Vector4 ActionColor(ActionKind action) => action switch
@@ -114,14 +174,6 @@ internal static class Ui
         _ => Muted,
     };
 
-    public static Vector4 ConfidenceColor(Confidence c) => c switch
-    {
-        Confidence.User => Gold,
-        Confidence.High => Ok,
-        Confidence.Medium => Warn,
-        _ => Muted,
-    };
-
     public static string Gil(long v) => v <= 0 ? "—" : $"{v:N0}g";
 
     public static void OpenLink(string url) => Dalamud.Utility.Util.OpenLink(url);
@@ -129,4 +181,8 @@ internal static class Ui
     public static string GarlandUrl(uint id) => $"https://www.garlandtools.org/db/#item/{id}";
     public static string UniversalisUrl(uint id) => $"https://universalis.app/market/{id}";
     public static string WikiUrl(string name) => $"https://ffxiv.consolegameswiki.com/wiki/{Uri.EscapeDataString(name.Replace(' ', '_'))}";
+
+    /// <summary>Right-aligns the next item of the given width within the current window.</summary>
+    public static void RightAlign(float width) =>
+        ImGui.SetCursorPosX(Math.Max(ImGui.GetCursorPosX(), ImGui.GetWindowWidth() - width - ImGui.GetStyle().WindowPadding.X));
 }
