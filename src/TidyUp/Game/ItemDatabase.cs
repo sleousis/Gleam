@@ -80,7 +80,8 @@ public sealed class ItemDatabase
             row.StackSize,
             row.DyeCount > 0,
             marketable,
-            VendorBuyable.Contains(itemId));
+            VendorBuyable.Contains(itemId),
+            row.ItemAction.RowId != 0);
     }
 
     /// <summary>Ingredient item id → recipes using it, reduced to (craft job id, required level).</summary>

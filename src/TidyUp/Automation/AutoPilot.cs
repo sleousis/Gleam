@@ -266,8 +266,12 @@ public sealed class AutoPilot
 
     private async Task WalkToAndInteractAsync(string objectName, string expectAddon, CancellationToken ct)
     {
-        var target = await OnFramework(() => FindNearest(objectName)).ConfigureAwait(false)
-                     ?? throw new AutoPilotException($"No object named '{objectName}' nearby. Set the name for your client language in Settings › Automation.");
+        var target = await OnFramework(() => FindNearest(objectName)).ConfigureAwait(false);
+        if (target is null)
+        {
+            var nearby = await OnFramework(NearbyObjectNames).ConfigureAwait(false);
+            throw new AutoPilotException($"No object named '{objectName}' nearby. Set the name in Settings › Automation. Nearby: {string.Join(", ", nearby.Take(8))}");
+        }
 
         await Step($"Walking to the {objectName.ToLowerInvariant()}", async () =>
         {
@@ -302,10 +306,26 @@ public sealed class AutoPilot
     private IGameObject? FindNearest(string name)
     {
         var me = objects.LocalPlayer?.Position ?? Vector3.Zero;
-        return objects.EventObjects
-            .Where(o => o.Address != 0 && string.Equals(o.Name.TextValue, name, StringComparison.OrdinalIgnoreCase))
+        // The whole table, not one partition: inn fixtures are EventObj entries that can sit anywhere in it.
+        return objects
+            .Where(o => o.Address != 0 && o.ObjectKind is Dalamud.Game.ClientState.Objects.Enums.ObjectKind.EventObj
+                                                        or Dalamud.Game.ClientState.Objects.Enums.ObjectKind.HousingEventObject
+                                                        or Dalamud.Game.ClientState.Objects.Enums.ObjectKind.EventNpc)
+            .Where(o => string.Equals(o.Name.TextValue.Trim(), name.Trim(), StringComparison.OrdinalIgnoreCase))
             .OrderBy(o => Vector3.Distance(o.Position, me))
             .FirstOrDefault();
+    }
+
+    /// <summary>Names of interactable objects within 30y, for the verification window when a lookup fails.</summary>
+    public IReadOnlyList<string> NearbyObjectNames()
+    {
+        var me = objects.LocalPlayer?.Position ?? Vector3.Zero;
+        return objects
+            .Where(o => o.Address != 0 && o.ObjectKind is not Dalamud.Game.ClientState.Objects.Enums.ObjectKind.Pc && Vector3.Distance(o.Position, me) < 30)
+            .Select(o => $"{o.Name.TextValue} ({o.ObjectKind}, {Vector3.Distance(o.Position, me):0.0}y)")
+            .Where(s => !s.StartsWith(" ("))
+            .Distinct()
+            .ToList();
     }
 
     private float Distance(Vector3 to)
