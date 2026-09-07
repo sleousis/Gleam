@@ -197,6 +197,18 @@ public sealed class Configuration : IPluginConfiguration
             Version = 4;
             changed = true;
         }
+        if (Version < 5)
+        {
+            // These stopped being settings; make sure nobody is stuck with an old "off".
+            UseUniversalis = true;
+            UseAllaganTools = true;
+            ActWhenMateriaFails = false;
+            Automation.OpenSaddlebag = Automation.VisitRetainers = Automation.VisitDresser = Automation.SellAtVendor = Automation.VisitGrandCompany = true;
+            Automation.VisitContainersWithoutRows = false;
+            Profiles.Account.EnabledRules.Add(Core.Rules.MarketPricePostProcessor.RuleId);
+            Version = 5;
+            changed = true;
+        }
         return changed;
     }
 

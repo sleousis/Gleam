@@ -129,6 +129,12 @@ public sealed partial class SettingsWindow : StyledWindow
             ImGui.SameLine();
             if (Travel is null || !Travel.IsInstalled) Ui.Pill("needs the Lifestream plugin", Ui.Warn); else Ui.Pill("Lifestream", Ui.Ok, Dalamud.Interface.FontAwesomeIcon.Check);
             Ui.HintWrapped("Opens the saddlebag, teleports to an inn for the retainers and the dresser, then visits a merchant and your Grand Company as needed. Gameplay automation; use at your own risk.");
+            using (ImRaii.Disabled(!auto))
+            {
+                var cleanUnseen = a.UnseenRows != UnseenRowsMode.Skip;
+                if (ImGui.Checkbox("Also clean items discovered along the way", ref cleanUnseen)) { a.UnseenRows = cleanUnseen ? UnseenRowsMode.Clean : UnseenRowsMode.Skip; dirty = true; }
+                Ui.Tooltip("Retainers and the dresser only show their contents once open. On: they are cleaned by the same rules on the spot. Off: they wait for your next review.");
+            }
         }
 
         using (Ui.Card("protect")) protectEditor.Draw();
@@ -141,10 +147,9 @@ public sealed partial class SettingsWindow : StyledWindow
     {
         Ui.Gap(0.5f);
         Fold("What counts as junk", DrawRules);
-        Fold("Hands-free route", DrawAutomation);
         Fold("Retainers", DrawContainers);
         Fold("Notifications", DrawNotifications);
-        Fold("Prices and other characters", DrawIntegrations);
+        Fold("Other characters", DrawIntegrations);
 
         Ui.Gap(0.5f);
         if (Ui.LinkButton("Troubleshooting")) openDebug();

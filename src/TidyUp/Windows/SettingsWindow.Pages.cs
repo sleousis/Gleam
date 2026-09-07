@@ -21,46 +21,6 @@ public sealed partial class SettingsWindow
             if (ImGui.Checkbox(rule.Name, ref on)) { if (on) p.EnabledRules.Add(rule.Id); else p.EnabledRules.Remove(rule.Id); dirty = true; }
             Ui.Tooltip(rule.Description);
         }
-        {
-            using var id = ImRaii.PushId(MarketPricePostProcessor.RuleId);
-            var on = p.EnabledRules.Contains(MarketPricePostProcessor.RuleId);
-            if (ImGui.Checkbox("Warn when the market pays far more than a vendor", ref on))
-            {
-                if (on) p.EnabledRules.Add(MarketPricePostProcessor.RuleId); else p.EnabledRules.Remove(MarketPricePostProcessor.RuleId);
-                dirty = true;
-            }
-            Ui.Tooltip("Such items start unticked so you can decide.");
-        }
-
-        Ui.Gap(0.4f);
-        var act = config.ActWhenMateriaFails;
-        if (ImGui.Checkbox("If materia cannot be removed, clean the item anyway", ref act)) { config.ActWhenMateriaFails = act; dirty = true; }
-        Ui.Tooltip("Off: the item is left alone and the list tells you why.");
-    }
-
-    // ---------- Hands-free ----------
-
-    private void DrawAutomation()
-    {
-        var a = config.Automation;
-        Ui.Hint("Where a run may go");
-        var v = a.OpenSaddlebag; if (ImGui.Checkbox("Chocobo saddlebag", ref v)) { a.OpenSaddlebag = v; dirty = true; }
-        v = a.VisitRetainers; if (ImGui.Checkbox("Retainers, at an inn", ref v)) { a.VisitRetainers = v; dirty = true; }
-        v = a.VisitDresser; if (ImGui.Checkbox("Glamour dresser", ref v)) { a.VisitDresser = v; dirty = true; }
-        v = a.SellAtVendor; if (ImGui.Checkbox("A merchant, to sell", ref v)) { a.SellAtVendor = v; dirty = true; }
-        v = a.VisitGrandCompany; if (ImGui.Checkbox("Your Grand Company, for Expert Delivery", ref v)) { a.VisitGrandCompany = v; dirty = true; }
-
-        Ui.Gap(0.4f);
-        var cleanUnseen = a.UnseenRows != UnseenRowsMode.Skip;
-        if (ImGui.Checkbox("Clean items discovered along the way", ref cleanUnseen)) { a.UnseenRows = cleanUnseen ? UnseenRowsMode.Clean : UnseenRowsMode.Skip; dirty = true; }
-        Ui.Tooltip("Retainers and the dresser only show their contents once open. On: they are cleaned by the same rules on the spot. Off: they wait for your next review.");
-        v = a.VisitContainersWithoutRows; if (ImGui.Checkbox("Look inside every container, even with nothing ticked", ref v)) { a.VisitContainersWithoutRows = v; dirty = true; }
-
-        Ui.Gap(0.4f);
-        var s = a.VendorAetheryte;
-        ImGui.SetNextItemWidth(220 * Ui.Scale);
-        if (Ui.InputText("Merchant to teleport to", "", ref s, 64)) { a.VendorAetheryte = s; dirty = true; }
-        Ui.Tooltip("An aetheryte with a merchant right beside it, used when none is in reach.");
     }
 
     // ---------- Retainers ----------
@@ -108,21 +68,14 @@ public sealed partial class SettingsWindow
 
     private void DrawIntegrations()
     {
-        var uni = config.UseUniversalis;
-        if (ImGui.Checkbox("Show market board prices", ref uni)) { config.UseUniversalis = uni; dirty = true; }
-        Ui.Tooltip("Lowest listing on your home world, from Universalis. Needed for the Sell on marketboard preset.");
-
-        var at = config.UseAllaganTools;
-        if (ImGui.Checkbox("Include closed containers and other characters", ref at)) { config.UseAllaganTools = at; allagan.Enabled = at; dirty = true; }
-        ImGui.SameLine();
-        if (!allagan.IsInstalled) Ui.Pill("needs the Allagan Tools plugin", Ui.Warn);
-        else if (allagan.IsAvailable) Ui.Pill("Allagan Tools", Ui.Ok, Dalamud.Interface.FontAwesomeIcon.Check);
-        else Ui.Pill("Allagan Tools starting", Ui.Warn);
-        using (ImRaii.Disabled(!at))
+        using (ImRaii.Disabled(!allagan.IsInstalled))
         {
             var alts = config.ShowAltSections;
             if (ImGui.Checkbox("Show other characters in the review", ref alts)) { config.ShowAltSections = alts; dirty = true; }
         }
+        ImGui.SameLine();
+        if (!allagan.IsInstalled) Ui.Pill("needs the Allagan Tools plugin", Ui.Warn);
+        else Ui.Pill("Allagan Tools", Ui.Ok, Dalamud.Interface.FontAwesomeIcon.Check);
 
         Ui.Gap(0.4f);
         Ui.Hint("Bring in a Discard Helper list");
