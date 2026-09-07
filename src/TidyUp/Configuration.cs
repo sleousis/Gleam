@@ -28,7 +28,7 @@ public sealed class CallbackSettings
     public string RetrieveMateriaLabel { get; set; } = "Retrieve Materia";
 
     /// <summary>How long to wait for the game to confirm one action before treating it as failed.</summary>
-    public int ActionTimeoutMs { get; set; } = 4000;
+    public int ActionTimeoutMs { get; set; } = 8000;
 
     public int RateLimitMs { get; set; } = 250;
 }
@@ -45,7 +45,14 @@ public sealed class AutomationSettings
     public int? InnIndex { get; set; } = null;
 
     public bool VisitRetainers { get; set; } = true;
-    public bool SellAtRetainer { get; set; } = true;
+    /// <summary>Sell vendor rows at a merchant NPC found nearby after the other legs.</summary>
+    public bool SellAtVendor { get; set; } = true;
+
+    /// <summary>Client-language name of a merchant NPC whose shop window allows selling.</summary>
+    public string VendorNpcName { get; set; } = "Merchant & Mender";
+
+    /// <summary>If the vendor shows a menu first, the entry that opens the shop window.</summary>
+    public string VendorMenuText { get; set; } = "Purchase";
     public bool VisitDresser { get; set; } = true;
     public bool OpenSaddlebag { get; set; } = true;
 
@@ -55,7 +62,6 @@ public sealed class AutomationSettings
 
     /// <summary>Substrings matched against the retainer menu entries.</summary>
     public string EntrustMenuText { get; set; } = "Entrust";
-    public string SellMenuText { get; set; } = "Sell items";
     public string QuitMenuText { get; set; } = "Quit";
 
     /// <summary>English MainCommand name that opens the saddlebag.</summary>

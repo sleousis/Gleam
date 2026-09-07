@@ -59,7 +59,7 @@ public sealed class GameActions : IGameActions
     {
         ActionKind.Discard => true,
         // A retainer's *inventory* window offers no Sell entry; only a vendor shop or the retainer's sell list does.
-        ActionKind.VendorSell => AddonDriver.IsAddonVisible("Shop") || AddonDriver.IsAddonVisible("RetainerSellList"),
+        ActionKind.VendorSell => AddonDriver.IsAddonVisible("Shop"),
         ActionKind.ExpertDelivery => AddonDriver.IsAddonVisible("GrandCompanySupplyList"),
         ActionKind.Desynth => true,
         _ => false,
@@ -67,7 +67,7 @@ public sealed class GameActions : IGameActions
 
     public string ActionRequirement(ActionKind action) => action switch
     {
-        ActionKind.VendorSell => "talk to a vendor or summon a retainer",
+        ActionKind.VendorSell => "talk to a merchant NPC",
         ActionKind.ExpertDelivery => "open Expert Delivery at a Grand Company personnel officer",
         _ => string.Empty,
     };
@@ -75,7 +75,7 @@ public sealed class GameActions : IGameActions
     // ---------- discard ----------
 
     public Task<bool> DiscardAsync(SlotRef slot, uint itemId, CancellationToken ct) =>
-        RunAndAwaitRemoval(slot, ct,
+        RunAndAwaitRemoval(slot, itemId, ct,
             () => framework.RunOnFrameworkThread(() => Native.Discard(slot)),
             expectDialog: ("SelectYesno", config.Callbacks.YesNoConfirm, db.Get(itemId)?.Name));
 
@@ -122,7 +122,7 @@ public sealed class GameActions : IGameActions
     // ---------- sell ----------
 
     public Task<bool> VendorSellAsync(SlotRef slot, uint itemId, CancellationToken ct) =>
-        RunAndAwaitRemoval(slot, ct,
+        RunAndAwaitRemoval(slot, itemId, ct,
             async () =>
             {
                 var ok = await context.InvokeAsync(slot, config.Callbacks.SellLabel, ct).ConfigureAwait(false);
@@ -151,13 +151,13 @@ public sealed class GameActions : IGameActions
     // ---------- desynth ----------
 
     public Task<bool> DesynthAsync(SlotRef slot, uint itemId, CancellationToken ct) =>
-        RunAndAwaitRemoval(slot, ct,
+        RunAndAwaitRemoval(slot, itemId, ct,
             () => framework.RunOnFrameworkThread(() => Native.Desynth(slot)),
             expectDialog: ("SalvageDialog", config.Callbacks.SalvageConfirm, null));
 
     // ---------- plumbing ----------
 
-    private async Task<bool> RunAndAwaitRemoval(SlotRef slot, CancellationToken ct, Func<Task<bool>> start,
+    private async Task<bool> RunAndAwaitRemoval(SlotRef slot, uint expectedItemId, CancellationToken ct, Func<Task<bool>> start,
         (string Addon, int Callback, string? Expect)? expectDialog, bool dialogOptional = false)
     {
         LastFailure = null;
@@ -202,8 +202,13 @@ public sealed class GameActions : IGameActions
         var confirmedByEvent = done == removed
             ? await removed.ConfigureAwait(false) is not null
             : await changed.ConfigureAwait(false) is not null;
-        if (!confirmedByEvent) LastFailure = "Dialog answered but the slot did not empty before the timeout";
-        return confirmedByEvent;
+        if (confirmedByEvent) return true;
+
+        // Events can lag the server round-trip; the slot itself is the ground truth.
+        var after = await framework.RunOnFrameworkThread(() => scanner.ReadSlot(slot)).ConfigureAwait(false);
+        if (after is null || after.ItemId != expectedItemId) return true;
+        LastFailure = "Dialog answered but the slot still holds the item";
+        return false;
     }
 
     /// <summary>Resolves with the first matching inventory event, or null on timeout.</summary>
