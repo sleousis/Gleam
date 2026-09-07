@@ -9,42 +9,6 @@ namespace TidyUp.Windows;
 
 public sealed partial class SettingsWindow
 {
-    private static readonly IReadOnlyList<(PresetName, string)> PresetOptions =
-    [
-        (PresetName.Cautious, "Cautious"), (PresetName.Balanced, "Balanced"), (PresetName.Aggressive, "Aggressive"),
-    ];
-
-    // ---------- General ----------
-
-    private void DrawGeneral()
-    {
-        var p = Editing;
-
-        Ui.Section("How much to propose");
-        var live = Override(nameof(Profile.Thresholds));
-        using (ImRaii.Disabled(!live))
-        {
-            var preset = Presets.Detect(p.Thresholds);
-            if (Ui.Segmented("##preset", ref preset, PresetOptions)) { p.ApplyPreset(preset); dirty = true; }
-            if (preset == PresetName.Custom) { ImGui.SameLine(); Ui.Hint("custom"); }
-        }
-        Ui.TextColored(Ui.Accent, p.Thresholds.Policy.Describe());
-        Ui.Gap(0.3f);
-        Ui.Hint("Cautious   only sells tradeable items; never discards.");
-        Ui.Hint("Balanced   discards untradeable items, sells tradeable ones.");
-        Ui.Hint("Aggressive discards everything it proposes.");
-        Ui.Hint("Every row can still be switched to seals, desynth or another action before you clean.");
-
-        Ui.Section("Runs");
-        Toggle("Merge split stacks before each scan", nameof(Profile.StackMergeBeforeScan), p.StackMergeBeforeScan, v => p.StackMergeBeforeScan = v,
-            "Non-destructive. Combines split stacks of the same item and reports how many in chat.");
-        var chatSummary = config.ChatSummaryAfterRun;
-        if (ImGui.Checkbox("Summarise each run in chat", ref chatSummary)) { config.ChatSummaryAfterRun = chatSummary; dirty = true; }
-        var pad = config.GamepadNavigation;
-        if (ImGui.Checkbox("Gamepad navigation in the review window", ref pad)) { config.GamepadNavigation = pad; dirty = true; }
-        Ui.Tooltip("D-pad moves, A toggles a row, X cleans, B closes.");
-    }
-
     private void Toggle(string label, string prop, bool value, Action<bool> set, string? hint = null)
     {
         var live = Override(prop);
@@ -166,31 +130,11 @@ public sealed partial class SettingsWindow
         return changed;
     }
 
-    // ---------- Lists ----------
-
-    private void DrawLists()
-    {
-        Ui.Hint("Always excluded: items the game cannot discard, unique untradeables, untradeable items with no vendor value, anything in a gearset or glamour plate, currencies, crystals, minions, mounts, orchestrion rolls, housing items.");
-        protectEditor.Draw();
-        alwaysEditor.Draw();
-    }
-
     // ---------- Containers ----------
 
     private void DrawContainers()
     {
         var p = Editing;
-        Ui.Section("Scan");
-        var en = Override(nameof(Profile.ContainerEnabled));
-        using (ImRaii.Disabled(!en))
-        {
-            foreach (var kind in Enum.GetValues<ContainerKind>())
-            {
-                var on = p.IsContainerEnabled(kind);
-                if (ImGui.Checkbox($"{kind.DisplayName()}##en{kind}", ref on)) { p.ContainerEnabled[kind] = on; dirty = true; }
-            }
-        }
-
         Ui.Section("Open the review automatically");
         var ao = Override(nameof(Profile.AutoOpenOnContainer));
         using (ImRaii.Disabled(!ao))
@@ -224,16 +168,6 @@ public sealed partial class SettingsWindow
     private void DrawAutomation()
     {
         var a = config.Automation;
-        Ui.Section("Hands-free mode");
-        var on = a.Enabled;
-        if (ImGui.Checkbox("Enable", ref on)) { a.Enabled = on; dirty = true; }
-        ImGui.SameLine();
-        if (Nav is null || !Nav.IsInstalled) Ui.Pill("vnavmesh missing", Ui.Warn); else Ui.Pill("vnavmesh", Ui.Ok);
-        ImGui.SameLine();
-        if (Travel is null || !Travel.IsInstalled) Ui.Pill("Lifestream missing", Ui.Warn); else Ui.Pill("Lifestream", Ui.Ok);
-        Ui.HintWrapped("Moves your character and drives NPC menus: opens the saddlebag, travels to an inn, summons each retainer, sells, then visits the glamour dresser. This is gameplay automation and is against the game's terms of service. Never use it while people are watching.");
-
-        if (!on) return;
         Ui.Section("Steps");
         var v = a.OpenSaddlebag; if (ImGui.Checkbox("Open the saddlebag", ref v)) { a.OpenSaddlebag = v; dirty = true; }
         v = a.TravelToInn; if (ImGui.Checkbox("Travel to an inn with Lifestream", ref v)) { a.TravelToInn = v; dirty = true; }
