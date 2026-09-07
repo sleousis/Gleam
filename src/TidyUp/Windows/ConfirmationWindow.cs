@@ -571,7 +571,8 @@ public sealed class ConfirmationWindow : StyledWindow
         else pills.Add(("Tradeable", Ui.Muted));
         if (info.IsUnique) pills.Add(("Unique", Ui.Danger));
         if (info.IsIndisposable) pills.Add(("Cannot be discarded", Ui.Danger));
-        if (info.IsUsable) pills.Add(("Usable", Ui.Info));
+        if (row.Proposal.Registered is { } registered) pills.Add(registered ? ("Registered", Ui.Ok) : ("Not registered", Ui.Warn));
+        if (info.IsUsable && row.Proposal.Registered is null) pills.Add(("Usable", Ui.Info));
         if (item.IsHq) pills.Add(("HQ", Ui.AccentSoft));
         if (item.HasMateria) pills.Add(($"{item.MateriaCount} materia", Ui.Accent));
         if (item.IsDyed) pills.Add((db.StainName(item.Stain0), Ui.Muted));

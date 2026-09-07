@@ -54,6 +54,9 @@ public sealed record Proposal
 
     /// <summary>Lowest current home-world listing per unit for this item's quality, 0 when unknown or unmarketable.</summary>
     public long MarketUnitPrice { get; init; }
+
+    /// <summary>For registrable items: true when already registered on this character. Null for everything else.</summary>
+    public bool? Registered { get; init; }
     public IReadOnlyList<string> Warnings { get; init; } = Array.Empty<string>();
 
     /// <summary>High-confidence rows start checked; anything with a warning or low confidence starts unchecked.</summary>

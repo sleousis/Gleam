@@ -149,6 +149,8 @@ public sealed class RunPlanner
             var p = raw;
             if (p.Info.IsMarketable && ctx.MarketPrices.TryGetValue(p.Info.ItemId, out var mp))
                 p = p with { MarketUnitPrice = mp.MinFor(p.Item.IsHq) };
+            if (ctx.Registered.TryGetValue(p.Info.ItemId, out var registered))
+                p = p with { Registered = registered };
 
             // Preset policy first (the headline promise), then the user's finer per-rule override, then physics.
             // Hand-picked rows follow the preset too (Discard all means discard everywhere), but are never dropped:

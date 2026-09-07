@@ -234,36 +234,52 @@ public sealed class RunCoordinator : IDisposable
 
     private async Task<ItemContext> AddMarketPricesAsync(IReadOnlyList<ScannedItem> items, ItemContext ctx, Profile profile)
     {
-        if (!config.UseUniversalis) return ctx;
-        // Listings are placed on the home world's board, so that is the price that matters.
-        var world = player.HomeWorld.ValueNullable?.Name.ExtractText();
-        if (string.IsNullOrEmpty(world)) world = player.CurrentWorld.ValueNullable?.Name.ExtractText();
-        if (string.IsNullOrEmpty(world)) return ctx;
-        MarketScope = world;
-        var ids = items.Select(i => i.ItemId).Distinct().Where(id => db.Get(id)?.IsMarketable == true).ToList();
-        if (ids.Count == 0) return ctx;
+        var distinct = items.Select(i => i.ItemId).Distinct().ToList();
+
+        // Registration: which collectibles this character already has.
+        var registered = await framework.RunOnFrameworkThread(() =>
+        {
+            var map = new Dictionary<uint, bool>();
+            foreach (var id in distinct)
+                if (UnlockState.Of(id) is { } state) map[id] = state;
+            return map;
+        }).ConfigureAwait(false);
+
+        // Prices: lowest listing on the home world, where the retainers will list.
         IReadOnlyDictionary<uint, MarketPrice> prices = new Dictionary<uint, MarketPrice>();
-        try
+        var lookedUp = false;
+        if (config.UseUniversalis)
         {
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(12));
-            prices = await market.GetPricesAsync(ids, world, cts.Token).ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            log.Debug(ex, "Market prices unavailable; rows will say so");
-        }
-        {
-            return new ItemContext
+            var world = player.HomeWorld.ValueNullable?.Name.ExtractText();
+            if (string.IsNullOrEmpty(world)) world = player.CurrentWorld.ValueNullable?.Name.ExtractText();
+            var ids = distinct.Where(id => db.Get(id)?.IsMarketable == true).ToList();
+            if (!string.IsNullOrEmpty(world) && ids.Count > 0)
             {
-                CharacterId = ctx.CharacterId, CharacterName = ctx.CharacterName,
-                GearsetItemIds = ctx.GearsetItemIds, PlateItemIds = ctx.PlateItemIds, PlatesLoaded = ctx.PlatesLoaded,
-                JobLevels = ctx.JobLevels, ClassJobCategoryJobs = ctx.ClassJobCategoryJobs,
-                MaxGearsetItemLevel = ctx.MaxGearsetItemLevel, RecipesUsing = ctx.RecipesUsing,
-                SeasonalItemIds = ctx.SeasonalItemIds, RetiredCurrencyGearIds = ctx.RetiredCurrencyGearIds,
-                MarketPrices = prices,
-                MarketLookupAttempted = true,
-            };
+                MarketScope = world;
+                lookedUp = true;
+                try
+                {
+                    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(12));
+                    prices = await market.GetPricesAsync(ids, world, cts.Token).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    log.Debug(ex, "Market prices unavailable; rows will say so");
+                }
+            }
         }
+
+        return new ItemContext
+        {
+            CharacterId = ctx.CharacterId, CharacterName = ctx.CharacterName,
+            GearsetItemIds = ctx.GearsetItemIds, PlateItemIds = ctx.PlateItemIds, PlatesLoaded = ctx.PlatesLoaded,
+            JobLevels = ctx.JobLevels, ClassJobCategoryJobs = ctx.ClassJobCategoryJobs,
+            MaxGearsetItemLevel = ctx.MaxGearsetItemLevel, RecipesUsing = ctx.RecipesUsing,
+            SeasonalItemIds = ctx.SeasonalItemIds, RetiredCurrencyGearIds = ctx.RetiredCurrencyGearIds,
+            MarketPrices = prices,
+            MarketLookupAttempted = lookedUp,
+            Registered = registered,
+        };
     }
 
     public async Task<int> CountCleanableAsync()
