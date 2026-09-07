@@ -170,8 +170,7 @@ public sealed class ConfirmationWindow : StyledWindow
                 _ = coordinator.RefreshPlanAsync(openWindow: false, coordinator.FocusContainer);
             }
             Ui.Tooltip("Aggressive discards everything proposed. Balanced discards untradeable and sells tradeable. Cautious only sells tradeable.");
-        });
-        Ui.TextColored(Ui.Accent * new Vector4(1, 1, 1, 0.9f), profile.Thresholds.Policy.Describe());
+        }, profile.Thresholds.Policy.Describe());
 
         Ui.Gap(0.4f);
 
@@ -366,13 +365,19 @@ public sealed class ConfirmationWindow : StyledWindow
         ImGui.SetCursorPosY(ImGui.GetCursorPosY() + pillDrop);
         Ui.Pill(checkedHere > 0 ? $"{checkedHere} / {rows.Count}" : $"{rows.Count}", checkedHere > 0 ? Ui.AccentSoft : Ui.Muted);
 
-        // Status chip on the same line, right-aligned.
-        var chip = section.IsAvailableNow ? "ready" : $"needs: {section.Requirement}";
-        if (!section.IsAvailableNow && section.Kind == ContainerKind.GlamourDresser) chip += $" · {section.FreeSlotsNeeded} free bag slots";
-        ImGui.SameLine();
-        Ui.RightAlign(ImGui.CalcTextSize(chip, false, 0).X + 46 * Ui.Scale);
-        ImGui.SetCursorPosY(ImGui.GetCursorPosY() + pillDrop);
-        Ui.Pill(chip, section.IsAvailableNow ? Ui.Ok : Ui.Warn, section.IsAvailableNow ? FontAwesomeIcon.Check : FontAwesomeIcon.MapMarkerAlt);
+        // Only containers that are not reachable right now say so; "ready" is the default and stays silent.
+        if (!section.IsAvailableNow)
+        {
+            var chip = section.Requirement;
+            if (section.Kind == ContainerKind.GlamourDresser) chip += $" · {section.FreeSlotsNeeded} free bag slots";
+            ImGui.SameLine();
+            Ui.RightAlign(ImGui.CalcTextSize(chip, false, 0).X + 46 * Ui.Scale);
+            ImGui.SetCursorPosY(ImGui.GetCursorPosY() + pillDrop);
+            Ui.Pill(chip, Ui.Muted, FontAwesomeIcon.MapMarkerAlt);
+            Ui.Tooltip(Pilot is not null && config.Automation.Enabled
+                ? "Not open right now. A hands-free run goes there for you."
+                : "Not open right now. Open it, or accept and the rows wait until you do.");
+        }
         if (!expanded) { Ui.Gap(0.2f); return; }
 
         using var table = ImRaii.Table($"##t{key}", 5, ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingFixedFit | ImGuiTableFlags.NoSavedSettings | ImGuiTableFlags.PadOuterX);
@@ -455,7 +460,8 @@ public sealed class ConfirmationWindow : StyledWindow
         if (!options.Contains(row.ChosenAction)) options.Insert(0, row.ChosenAction);
         var labels = options.Select(a => a == row.ChosenAction && row.Proposal.ValueLabel != "—" ? $"{a.Label()} · {row.Proposal.ValueLabel}" : a.Label()).ToList();
         var idx = options.IndexOf(row.ChosenAction);
-        ImGui.SetNextItemWidth(-1);
+        var widest = labels.Max(l => ImGui.CalcTextSize(l, false, 0).X);
+        ImGui.SetNextItemWidth(Math.Min(ImGui.GetContentRegionAvail().X, widest + ImGui.GetFrameHeight() + ImGui.GetStyle().FramePadding.X * 2));
         using var c = ImRaii.PushColor(ImGuiCol.Text, Ui.ActionColor(row.ChosenAction));
         using var bg = ImRaii.PushColor(ImGuiCol.FrameBg, Vector4.Zero);
         if (Ui.Combo("##act", ref idx, labels))
