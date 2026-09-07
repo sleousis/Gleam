@@ -90,11 +90,6 @@ public sealed class GameActions : IGameActions
         if (unitPrice <= 0) { LastFailure = "no market price known"; return false; }
         if (!AddonDriver.IsAddonVisible("RetainerSellList")) { LastFailure = "the retainer's sell list is not open"; return false; }
 
-        var removed = WaitForEvent<InventoryItemRemovedArgs>(
-            e => (uint)e.Item.ContainerType == slot.ContainerId && e.Item.InventorySlot == (uint)slot.Slot, ct);
-        var changed = WaitForEvent<InventoryItemChangedArgs>(
-            e => (uint)e.Item.ContainerType == slot.ContainerId && e.Item.InventorySlot == (uint)slot.Slot && e.Item.IsEmpty, ct);
-
         var opened = await context.InvokeAsync(slot, config.Callbacks.PutUpForSaleLabel, ct).ConfigureAwait(false);
         if (!opened) { LastFailure = context.LastFailure; return false; }
 
@@ -110,10 +105,15 @@ public sealed class GameActions : IGameActions
         var filled = await framework.RunOnFrameworkThread(() => Native.FillRetainerSell(price, quantity, config.Callbacks.RetainerSellConfirm)).ConfigureAwait(false);
         if (!filled) { LastFailure = "could not fill price and quantity into the RetainerSell window"; await framework.RunOnFrameworkThread(() => AddonDriver.CloseAddon("RetainerSell")).ConfigureAwait(false); return false; }
 
-        var first = await Task.WhenAny(removed, changed).ConfigureAwait(false);
-        var gone = first == removed ? removed.Result is not null : changed.Result is not null;
-        if (!gone) gone = first == removed ? await changed.ConfigureAwait(false) is not null : await removed.ConfigureAwait(false) is not null;
-        if (gone) return true;
+        // A listing shows up as a *move* into the retainer's market container rather than a removal, so
+        // instead of waiting on a particular inventory event, watch the slot itself empty out.
+        deadline = DateTime.UtcNow + Timeout;
+        while (DateTime.UtcNow < deadline)
+        {
+            var live = scanner.ReadSlot(slot);
+            if (live is null || live.ItemId != itemId || live.Quantity < quantity) return true;
+            await Task.Delay(100, ct).ConfigureAwait(false);
+        }
 
         LastFailure = "the listing was confirmed but the item stayed in its slot";
         await framework.RunOnFrameworkThread(() => AddonDriver.CloseAddon("RetainerSell")).ConfigureAwait(false);
