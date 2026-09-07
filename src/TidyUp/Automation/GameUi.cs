@@ -35,27 +35,28 @@ public static unsafe class GameUi
         return true;
     }
 
-    /// <summary>Which menu addon is currently open, or null.</summary>
-    private static (AtkUnitBase* Addon, PopupMenu* Menu)? OpenMenu()
+    /// <summary>Which menu addon is currently open, with its popup list.</summary>
+    private static bool TryOpenMenu(out AtkUnitBase* addon, out PopupMenu* menu)
     {
         foreach (var name in MenuAddons)
         {
-            var addon = AddonDriver.GetAddon(name);
-            if (addon == null || !addon->IsVisible) continue;
-            PopupMenu* menu = name == "SelectString"
-                ? &((AddonSelectString*)addon)->PopupMenu.PopupMenu
-                : &((AddonSelectIconString*)addon)->PopupMenu.PopupMenu;
-            return (addon, menu);
+            var a = AddonDriver.GetAddon(name);
+            if (a == null || !a->IsVisible) continue;
+            addon = a;
+            menu = name == "SelectString"
+                ? &((AddonSelectString*)a)->PopupMenu.PopupMenu
+                : &((AddonSelectIconString*)a)->PopupMenu.PopupMenu;
+            return true;
         }
-        return null;
+        addon = null;
+        menu = null;
+        return false;
     }
 
     /// <summary>Visible *and* populated: menus appear a frame or two before their entries exist.</summary>
     public static bool SelectStringReady()
     {
-        var open = OpenMenu();
-        if (open is null) return false;
-        var (addon, menu) = open.Value;
+        if (!TryOpenMenu(out var addon, out var menu)) return false;
         return addon->IsReady && menu->EntryNames != null && menu->EntryCount > 0;
     }
 
@@ -63,9 +64,7 @@ public static unsafe class GameUi
     public static IReadOnlyList<string> SelectStringEntries()
     {
         var list = new List<string>();
-        var open = OpenMenu();
-        if (open is null) return list;
-        var menu = open.Value.Menu;
+        if (!TryOpenMenu(out _, out var menu)) return list;
         if (menu->EntryNames == null) return list;
         for (var i = 0; i < menu->EntryCount; i++)
         {
@@ -78,13 +77,12 @@ public static unsafe class GameUi
     /// <summary>Picks the first entry containing the text. Returns the index chosen, or -1.</summary>
     public static int SelectStringChoose(string containing)
     {
-        var open = OpenMenu();
-        if (open is null) return -1;
+        if (!TryOpenMenu(out var addon, out _)) return -1;
         var entries = SelectStringEntries();
         for (var i = 0; i < entries.Count; i++)
         {
             if (!entries[i].Contains(containing, StringComparison.OrdinalIgnoreCase)) continue;
-            return open.Value.Addon->FireCallbackInt(i) ? i : -1;
+            return addon->FireCallbackInt(i) ? i : -1;
         }
         return -1;
     }
