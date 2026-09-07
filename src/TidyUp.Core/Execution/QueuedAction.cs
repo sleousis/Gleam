@@ -14,7 +14,8 @@ public sealed record QueuedAction(
     string ItemName,
     long ValueGil,
     string RuleId,
-    long UnitPrice = 0)
+    long UnitPrice = 0,
+    bool BroughtHome = false)
 {
     public static QueuedAction FromRow(PlanRow row) => new(
         row.Item.Slot,

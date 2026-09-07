@@ -125,8 +125,8 @@ public sealed class AutoPilot
                 }
             }
 
-            // Items pulled out of retainers for materia retrieval finish in the bags, retainer closed.
-            var broughtBack = coordinator.PendingActions.Where(p => p.Kind.IsAlwaysLoaded() && p.RetrieveMateriaFirst).ToList();
+            // Items pulled out of retainers (for materia, a vendor, or seals) finish from the bags, retainer closed.
+            var broughtBack = coordinator.PendingActions.Where(p => p.Kind.IsAlwaysLoaded() && p.BroughtHome).ToList();
             if (broughtBack.Count > 0)
             {
                 coordinator.PendingActions.RemoveAll(broughtBack.Contains);
@@ -134,7 +134,7 @@ public sealed class AutoPilot
                 sells.AddRange(broughtBack.Where(b => b.Action == ActionKind.VendorSell));
                 seals.AddRange(broughtBack.Where(b => b.Action == ActionKind.ExpertDelivery));
                 var here2 = broughtBack.Where(b => b.Action is not ActionKind.VendorSell and not ActionKind.ExpertDelivery and not ActionKind.MarketList).ToList();
-                if (here2.Count > 0) await Leg("brought back", () => Step("Stripping materia from items brought back", () => Execute(here2), ct), ct);
+                if (here2.Count > 0) await Leg("brought back", () => Step("Finishing items brought back from retainers", () => Execute(here2), ct), ct);
             }
 
             if (S.VisitGrandCompany && seals.Count > 0) await Leg("Grand Company", () => GrandCompanyAsync(seals, ct), ct);

@@ -164,22 +164,22 @@ public class PlannerTests
     }
 
     [Fact]
-    public void Items_outside_the_players_bags_can_only_be_discarded()
+    public void Saddlebag_items_can_only_be_discarded_but_retainer_items_can_come_home_to_sell()
     {
-        // Same vendor-priced junk: sell in the inventory, discard-only in a retainer or the saddlebag.
+        // Same vendor-priced junk: sell in the inventory, sell (via a trip home) from a retainer, discard-only in the saddlebag.
         var items = new[] { ScannedItem.Simple(Inv(0), 1, 5), ScannedItem.Simple(Ret(0), 1, 5), ScannedItem.Simple(Saddle(0), 1, 5) };
         var plan = new RunPlanner().Build(items, Inputs());
         var rows = plan.AllRows.ToDictionary(r => r.Item.Slot.Kind);
 
         Assert.Equal(ActionKind.VendorSell, rows[ContainerKind.Inventory].ChosenAction);
-        Assert.Equal(ActionKind.Discard, rows[ContainerKind.Retainer].ChosenAction);
-        Assert.Empty(rows[ContainerKind.Retainer].Proposal.Alternatives);
-        Assert.Contains("withdraw", rows[ContainerKind.Retainer].Proposal.Reason);
+        Assert.Equal(ActionKind.VendorSell, rows[ContainerKind.Retainer].ChosenAction);
+        Assert.Contains(ActionKind.Discard, rows[ContainerKind.Retainer].Proposal.Alternatives);
         Assert.Equal(ActionKind.Discard, rows[ContainerKind.Saddlebag].ChosenAction);
+        Assert.Contains("withdraw", rows[ContainerKind.Saddlebag].Proposal.Reason);
 
         // The always-discard list follows the same physics.
         var always = new ItemList(); always.Add(15);
-        var forced = new RunPlanner().Build([ScannedItem.Simple(Ret(0), 15, 1)], Inputs(always: always));
+        var forced = new RunPlanner().Build([ScannedItem.Simple(Saddle(0), 15, 1)], Inputs(always: always));
         Assert.Equal(ActionKind.Discard, Assert.Single(forced.AllRows).ChosenAction);
     }
 
@@ -241,7 +241,8 @@ public class PlannerTests
         Assert.Equal(3, manual.Count);
         Assert.All(manual, r => Assert.False(r.Checked));
         Assert.Equal(ActionKind.VendorSell, manual.Single(r => r.Item.ItemId == 12 && r.Item.Slot.Kind == ContainerKind.Inventory).ChosenAction);
-        Assert.Equal(ActionKind.Discard, manual.Single(r => r.Item.Slot.Kind == ContainerKind.Retainer).ChosenAction);
+        // A retainer's potion can come home and be sold too.
+        Assert.Equal(ActionKind.VendorSell, manual.Single(r => r.Item.Slot.Kind == ContainerKind.Retainer).ChosenAction);
         var fantasia = Assert.Single(everything.AllRows, r => r.Item.ItemId == 16);
         Assert.False(fantasia.Checked);
         Assert.Equal(ActionKind.Discard, fantasia.ChosenAction);
