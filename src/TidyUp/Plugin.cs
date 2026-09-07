@@ -80,8 +80,8 @@ public sealed class Plugin : IDalamudPlugin
         var icons = new IconCache(textures);
         debugWindow = new DebugWindow(framework, actions, scanner, contextDriver, db, allagan, market, player, config);
         settingsWindow = new SettingsWindow(config, player, db, icons, allagan, coordinator, () => debugWindow.IsOpen = true);
-        confirmWindow = new ConfirmationWindow(coordinator, icons, db, config, gamepad, () => settingsWindow.IsOpen = true);
         historyWindow = new HistoryWindow(runLog, db, icons);
+        confirmWindow = new ConfirmationWindow(coordinator, icons, db, config, gamepad, () => settingsWindow.IsOpen = true, () => historyWindow.IsOpen = true);
         windows.AddWindow(confirmWindow);
         windows.AddWindow(settingsWindow);
         windows.AddWindow(historyWindow);
