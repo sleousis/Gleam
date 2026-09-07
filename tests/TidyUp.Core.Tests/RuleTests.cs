@@ -1,3 +1,5 @@
+using TidyUp.Core.Lists;
+using TidyUp.Core.Planning;
 using TidyUp.Core.Model;
 using TidyUp.Core.Rules;
 using static TidyUp.Core.Tests.TestData;
@@ -267,6 +269,39 @@ public class RuleTests
         var items = new[] { ScannedItem.Simple(Inv(0), 1, 14) };
         Assert.Single(engine.Evaluate(items, Lookup, Context(), t));
         Assert.Empty(engine.Evaluate(items, Lookup, Context(), t, new HashSet<string> { ObsoleteGearRule.RuleId }));
+    }
+
+    [Fact]
+    public void Registered_collectibles_are_proposed_and_unregistered_ones_are_not()
+    {
+        var ctx = Context(registered: new Dictionary<uint, bool> { [20] = true, [21] = false });
+        var rule = new RegisteredDuplicateRule();
+
+        var spare = rule.Evaluate(ScannedItem.Simple(Inv(0), 20, 1), Items[20], ctx, t);
+        Assert.NotNull(spare);
+        Assert.Equal(ActionKind.Discard, spare!.Action);
+        Assert.Equal(Confidence.High, spare.Confidence);
+
+        Assert.Null(rule.Evaluate(ScannedItem.Simple(Inv(1), 21, 2), Items[21], ctx, t));
+
+        // The hard blocks step aside for a registered spare, even a unique untradeable minion.
+        Assert.Equal(HardBlockReason.None, HardBlocks.Check(ScannedItem.Simple(Inv(0), 20, 1), Items[20], ctx));
+        Assert.Equal(HardBlockReason.NeverProposedCategory, HardBlocks.Check(ScannedItem.Simple(Inv(1), 21, 2), Items[21], ctx));
+
+        // Through the planner: the spare shows up ticked, the unregistered roll stays a guarded hand-pick.
+        var plan = new RunPlanner().Build(
+            [ScannedItem.Simple(Inv(0), 20, 1), ScannedItem.Simple(Inv(1), 21, 2)],
+            new PlannerInputs
+            {
+                Context = ctx, Profile = MakeProfile(), InfoLookup = Lookup, ProtectList = new ItemList(), AlwaysDiscardList = new ItemList(),
+                SessionSkips = new HashSet<string>(), IsAvailable = (k, _) => true, RetainerNames = new Dictionary<ulong, string>(), IncludeUnproposed = true,
+            });
+        var spareRow = plan.AllRows.Single(r => r.Item.ItemId == 20);
+        Assert.True(spareRow.Checked);
+        Assert.Equal(RegisteredDuplicateRule.RuleId, spareRow.Proposal.RuleId);
+        var rollRow = plan.AllRows.Single(r => r.Item.ItemId == 21);
+        Assert.False(rollRow.Checked);
+        Assert.Equal("manual", rollRow.Proposal.RuleId);
     }
 
     [Fact]
