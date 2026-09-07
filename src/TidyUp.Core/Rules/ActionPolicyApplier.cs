@@ -4,8 +4,8 @@ namespace TidyUp.Core.Rules;
 
 /// <summary>
 /// Turns a preset's one-sentence promise into the action on each row. Runs after the rules and the
-/// container constraints, before the user's per-rule overrides. Returns null when the policy says the
-/// item should not be proposed at all (Cautious never discards).
+/// container constraints, before the user's per-rule overrides. Returns null when a retired sell-only
+/// policy says the item should not be proposed at all.
 /// </summary>
 public static class ActionPolicyApplier
 {
@@ -51,7 +51,7 @@ public static class ActionPolicyApplier
 
     public static string DropReason(ActionPolicy policy) => policy switch
     {
-        ActionPolicy.SellOnly => "Cautious preset: only tradeable items with a vendor price are proposed",
+        ActionPolicy.SellOnly => "Sell-only policy: only tradeable items with a vendor price are proposed",
         _ => string.Empty,
     };
 }

@@ -152,11 +152,6 @@ public class PlannerTests
         // item 1: tradeable, vendor 28 · item 2: untradeable, 0g (hard-blocked) · item 3: untradeable medicine, vendor 45 · item 4: tradeable gear, vendor 100
         var items = new[] { ScannedItem.Simple(Inv(0), 1, 5), ScannedItem.Simple(Inv(1), 3, 9), ScannedItem.Simple(Arm(0), 4, 1) };
 
-        var cautious = new RunPlanner().Build(items, Inputs(profile: MakeProfile(PresetName.Cautious)));
-        Assert.All(cautious.AllRows, r => Assert.Equal(ActionKind.VendorSell, r.ChosenAction));
-        Assert.DoesNotContain(cautious.AllRows, r => r.Info.IsUntradable);
-        Assert.Contains(cautious.Excluded, e => e.Item.ItemId == 3 && e.Reason.Contains("Cautious"));
-
         var balanced = new RunPlanner().Build(items, Inputs(profile: MakeProfile(PresetName.Balanced)));
         Assert.Equal(ActionKind.VendorSell, balanced.AllRows.Single(r => r.Item.ItemId == 1).ChosenAction);
         Assert.Equal(ActionKind.Discard, balanced.AllRows.Single(r => r.Item.ItemId == 3).ChosenAction);

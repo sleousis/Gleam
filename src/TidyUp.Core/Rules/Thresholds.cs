@@ -5,7 +5,7 @@ public enum ActionPolicy
 {
     /// <summary>Each rule picks the action it thinks best (seals, desynth, sell, discard).</summary>
     RuleDecides,
-    /// <summary>Only tradeable items with a vendor price are proposed, and they are sold. Nothing is ever discarded.</summary>
+    /// <summary>Retired: the old Cautious preset. Kept so saved configs still load; migrated to Balanced on startup.</summary>
     SellOnly,
     /// <summary>Untradeable items are discarded; tradeable items are sold.</summary>
     DiscardUntradeableSellTradeable,
@@ -65,7 +65,6 @@ public sealed class Thresholds
 
 public enum PresetName
 {
-    Cautious,
     Balanced,
     Aggressive,
     Custom,
@@ -75,20 +74,6 @@ public static class Presets
 {
     public static Thresholds For(PresetName preset) => preset switch
     {
-        PresetName.Cautious => new Thresholds
-        {
-            Policy = ActionPolicy.SellOnly,
-            ObsoleteGearLevelGap = 20,
-            IncludeGearForUnplayedJobs = false,
-            ConsumableItemLevelGap = 300,
-            CraftingMatMaxRecipeLevel = 30,
-            CraftingMatCrafterLeadLevels = 20,
-            VendorOnlyMaxUnitPrice = 100,
-            MarketPremiumFactor = 1.2,
-            MarketMinStackValueGil = 2000,
-            SoftCapItems = 30,
-            SoftCapGil = 20_000,
-        },
         PresetName.Aggressive => new Thresholds
         {
             Policy = ActionPolicy.DiscardAll,
@@ -109,7 +94,7 @@ public static class Presets
     /// <summary>Which preset a threshold set matches exactly, or Custom.</summary>
     public static PresetName Detect(Thresholds t)
     {
-        foreach (var p in new[] { PresetName.Cautious, PresetName.Balanced, PresetName.Aggressive })
+        foreach (var p in new[] { PresetName.Balanced, PresetName.Aggressive })
             if (Equal(For(p), t)) return p;
         return PresetName.Custom;
     }

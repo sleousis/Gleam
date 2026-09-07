@@ -272,7 +272,6 @@ public class RuleTests
     [Fact]
     public void Presets_are_distinct_and_detectable()
     {
-        Assert.Equal(PresetName.Cautious, Presets.Detect(Presets.For(PresetName.Cautious)));
         Assert.Equal(PresetName.Balanced, Presets.Detect(Presets.For(PresetName.Balanced)));
         Assert.Equal(PresetName.Aggressive, Presets.Detect(Presets.For(PresetName.Aggressive)));
         var custom = Presets.For(PresetName.Balanced);
