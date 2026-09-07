@@ -221,6 +221,23 @@ public class RuleTests
     }
 
     [Fact]
+    public void MarketPostProcessor_flags_marketable_items_whose_price_could_not_be_fetched()
+    {
+        var ctx = new ItemContext { MarketLookupAttempted = true, JobLevels = Context().JobLevels, MaxGearsetItemLevel = 700 };
+        var proposal = new Proposal
+        {
+            Item = ScannedItem.Simple(Inv(0), 15, 1), Info = Items[15], Action = ActionKind.VendorSell,
+            Confidence = Confidence.High, RuleId = "x", Reason = "r",
+        };
+        var flagged = MarketPricePostProcessor.Apply(proposal, ctx, t);
+        Assert.Contains("Market price unavailable", flagged.Warnings);
+        Assert.False(flagged.DefaultChecked);
+
+        var notAttempted = MarketPricePostProcessor.Apply(proposal, Context(), t);
+        Assert.Empty(notAttempted.Warnings);
+    }
+
+    [Fact]
     public void MarketPostProcessor_leaves_user_forced_rows_alone()
     {
         var market = new Dictionary<uint, MarketPrice> { [12] = new(12, 1_000_000, 0, DateTimeOffset.UtcNow) };

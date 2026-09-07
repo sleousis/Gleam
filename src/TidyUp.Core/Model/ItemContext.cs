@@ -43,6 +43,9 @@ public sealed class ItemContext
 
     public IReadOnlyDictionary<uint, MarketPrice> MarketPrices { get; init; } = new Dictionary<uint, MarketPrice>();
 
+    /// <summary>True when a market lookup was attempted this scan; a marketable item with no price then means "unknown", not "worthless".</summary>
+    public bool MarketLookupAttempted { get; init; }
+
     /// <summary>Highest level of any combat, crafting, or gathering job.</summary>
     public short MaxJobLevel => JobLevels.Count == 0 ? (short)0 : JobLevels.Values.Max();
 

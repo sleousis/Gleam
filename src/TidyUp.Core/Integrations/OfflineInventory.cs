@@ -30,7 +30,7 @@ public static class AllaganItemRecord
     private const ulong FlagHq = 1;
     private const ulong FlagCollectable = 8;
 
-    public static ScannedItem? Parse(ulong[] rec, string ownerName)
+    public static ScannedItem? Parse(ulong[] rec, string ownerName, ulong ownerIdFallback = 0)
     {
         if (rec.Length < 24) return null;
         var container = (uint)rec[0];
@@ -46,7 +46,7 @@ public static class AllaganItemRecord
         var collectable = (flags & FlagCollectable) != 0;
         var materia = new ushort[5];
         for (var i = 0; i < 5; i++) materia[i] = (ushort)rec[7 + i];
-        var owner = kind == ContainerKind.Retainer ? rec[23] : 0;
+        var owner = kind == ContainerKind.Retainer ? (rec[23] != 0 ? rec[23] : ownerIdFallback) : 0;
 
         return new ScannedItem(
             new SlotRef(kind.Value, container, (int)rec[1], owner),

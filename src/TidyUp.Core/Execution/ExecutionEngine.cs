@@ -80,7 +80,17 @@ public sealed class ExecutionEngine
                 continue;
             }
 
-            if (!first) await delay.Wait(options.RateLimit, ct).ConfigureAwait(false);
+            if (!first)
+            {
+                try { await delay.Wait(options.RateLimit, ct).ConfigureAwait(false); }
+                catch (OperationCanceledException)
+                {
+                    Park(report, action, "the run was stopped before reaching it");
+                    report.Aborted = true;
+                    report.AbortReason = "cancelled";
+                    continue;
+                }
+            }
             first = false;
 
             ActionResult result;

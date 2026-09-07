@@ -112,7 +112,7 @@ public sealed class AutomationSettings
 
 public sealed class Configuration : IPluginConfiguration
 {
-    public int Version { get; set; } = 2;
+    public int Version { get; set; } = 3;
 
     public ProfileStore Profiles { get; set; } = new();
     public ItemList ProtectList { get; set; } = new();
@@ -145,6 +145,12 @@ public sealed class Configuration : IPluginConfiguration
             foreach (var o in Profiles.Overrides) o.Values.RetainerSectionsCollapsed = false;
             Automation.PauseForUnseenRows = false;
             Version = 2;
+            changed = true;
+        }
+        if (Version < 3)
+        {
+            if (Callbacks.ActionTimeoutMs < 8000) Callbacks.ActionTimeoutMs = 8000;
+            Version = 3;
             changed = true;
         }
         return changed;
