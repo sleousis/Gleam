@@ -20,9 +20,9 @@ public static class ActionPolicyExtensions
     public static string Describe(this ActionPolicy p) => p switch
     {
         ActionPolicy.SellOnly => "Only sells tradeable items. Never discards anything.",
-        ActionPolicy.DiscardUntradeableSellTradeable => "Discards untradeable items, sells tradeable ones.",
-        ActionPolicy.DiscardAll => "Discards everything it proposes.",
-        ActionPolicy.MarketListTradeable => "Lists marketable items on the market board at the lowest price on your home world, vendors the rest, discards untradeable items.",
+        ActionPolicy.DiscardUntradeableSellTradeable => "Vendor tradeable, discard untradeable.",
+        ActionPolicy.DiscardAll => "Discard everything.",
+        ActionPolicy.MarketListTradeable => "Market for marketable, vendor the rest, discard untradeable.",
         _ => "Each rule picks its own action.",
     };
 }
