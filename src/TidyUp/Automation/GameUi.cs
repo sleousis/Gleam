@@ -48,6 +48,15 @@ public static unsafe class GameUi
         return list;
     }
 
+    /// <summary>Visible *and* populated: the menu appears a frame or two before its entries exist.</summary>
+    public static bool SelectStringReady()
+    {
+        var addon = (AddonSelectString*)AddonDriver.GetAddon("SelectString");
+        if (addon == null || !addon->AtkUnitBase.IsVisible || !addon->AtkUnitBase.IsReady) return false;
+        var menu = &addon->PopupMenu.PopupMenu;
+        return menu->EntryNames != null && menu->EntryCount > 0;
+    }
+
     /// <summary>Picks the first SelectString entry containing the text. Returns the index chosen, or -1.</summary>
     public static int SelectStringChoose(string containing)
     {
