@@ -350,6 +350,17 @@ public sealed class RunCoordinator : IDisposable
             PendingActions.AddRange(report.Pending);
             Status = report.Summary();
 
+            // "Skipped because it changed" is only useful if we can see *what* changed.
+            var skipped = report.Results.Where(r => r.Outcome == ActionOutcome.SkippedChanged).ToList();
+            foreach (var r in skipped)
+                log.Information("Skipped {Item} at {Slot} (owner {Owner:X}): {Why}", r.Action.ItemName, r.Action.Slot, r.Action.Slot.OwnerId, r.Message);
+            if (skipped.Count >= 3)
+            {
+                chat.Print($"Tidy Up: {skipped.Count} rows did not match their slot. First few:", "Tidy Up");
+                foreach (var r in skipped.Take(3))
+                    chat.Print($"  {r.Action.ItemName} @ {r.Action.Slot}: {r.Message}", "Tidy Up");
+            }
+
             if (config.ChatSummaryAfterRun && !SuppressChatSummary)
             {
                 chat.Print($"Tidy Up: {report.Summary()}.", "Tidy Up");

@@ -335,20 +335,30 @@ public sealed class AutoPilot
             await Step($"Opening {name}", async () =>
             {
                 var i = index;
-                for (var attempt = 0; attempt < 3; attempt++)
+                await WaitUntil(() => GameUi.IsVisible("RetainerList") && !GameUi.SelectStringReady(), StepTimeout, "the retainer list", ct).ConfigureAwait(false);
+                await Task.Delay(1000, ct).ConfigureAwait(false);
+                for (var attempt = 0; attempt < 4; attempt++)
                 {
+                    if (attempt == 2)
+                    {
+                        // The list can go unresponsive after a session; reopen it from the bell once.
+                        await framework.RunOnFrameworkThread(() => GameUi.Close("RetainerList")).ConfigureAwait(false);
+                        await Task.Delay(1000, ct).ConfigureAwait(false);
+                        await EnsureRetainerListAsync(ct).ConfigureAwait(false);
+                        await Task.Delay(1000, ct).ConfigureAwait(false);
+                    }
                     await framework.RunOnFrameworkThread(() => GameUi.RetainerListSelect(S.RetainerListSelect, i)).ConfigureAwait(false);
                     try
                     {
                         await WaitUntil(() => GameUi.SelectStringReady(), TimeSpan.FromSeconds(6), $"{name}'s menu", ct).ConfigureAwait(false);
                         return;
                     }
-                    catch (AutoPilotException) when (attempt < 2)
+                    catch (AutoPilotException) when (attempt < 3)
                     {
                         await Task.Delay(800, ct).ConfigureAwait(false);
                     }
                 }
-                throw new AutoPilotException($"{name}'s menu did not open after selecting row {i} three times. Try another 'Retainer list callback' value in Settings › Automation.");
+                throw new AutoPilotException($"{name}'s menu did not open after selecting row {i} four times. Try another 'Retainer list callback' value in Settings › Advanced.");
             }, ct);
 
             if (rows.Count > 0 || S.PauseForUnseenRows)

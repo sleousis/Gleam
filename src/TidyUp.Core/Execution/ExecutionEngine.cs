@@ -147,7 +147,7 @@ public sealed class ExecutionEngine
             return new ActionResult(action, ActionOutcome.SkippedChanged, "Slot is now empty");
         if (live.ItemId != action.ItemId || live.Quantity != action.Quantity || live.IsHq != action.IsHq)
             return new ActionResult(action, ActionOutcome.SkippedChanged,
-                $"Slot now holds {live.ItemId} ×{live.Quantity}{(live.IsHq ? " HQ" : "")}, expected {action.ItemId} ×{action.Quantity}{(action.IsHq ? " HQ" : "")}");
+                $"slot holds item {live.ItemId} ×{live.Quantity}{(live.IsHq ? " HQ" : "")} (owner {live.Slot.OwnerId:X}), plan expected item {action.ItemId} ×{action.Quantity}{(action.IsHq ? " HQ" : "")} (owner {action.Slot.OwnerId:X})");
 
         var target = action.Slot;
 
