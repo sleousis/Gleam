@@ -524,17 +524,63 @@ public sealed class ConfirmationWindow : StyledWindow
 
     private void DrawRowTooltip(PlanRow row)
     {
-        using var t = ImRaii.Tooltip();
-        Ui.TextColored(Ui.Accent, row.Info.Name);
-        Ui.Hint($"{row.Info.UiCategory} · iL{row.Info.ItemLevel} · lv{row.Info.LevelEquip} · id {row.Info.ItemId}");
-        Ui.Gap(0.3f);
-        Ui.Text(row.Proposal.Reason);
-        foreach (var w in row.Proposal.Warnings) Ui.TextColored(Ui.Warn, w);
-        Ui.Gap(0.3f);
-        Ui.Hint($"Vendor {Ui.Gil(row.Info.VendorPrice)} each · {(row.Info.IsMarketable ? "marketable" : "not marketable")}{(row.Info.IsUntradable ? " · untradeable" : "")}");
-        Ui.Hint($"Slot {row.Item.Slot} · {row.Proposal.RuleId}");
-        if (row.Proposal.Alternatives.Count > 0) Ui.Hint($"Also possible: {string.Join(", ", row.Proposal.Alternatives.Select(a => a.Label()))}");
-        Ui.Gap(0.3f);
+        using var tip = Ui.RichTooltip();
+        var info = row.Info;
+        var item = row.Item;
+
+        // Identity: icon, name, category line.
+        var iconSize = 40 * Ui.Scale;
+        Ui.ImageRounded(icons.Get(info.IconId, item.IsHq), new Vector2(iconSize, iconSize), 6 * Ui.Scale);
+        ImGui.SameLine(0, 10 * Ui.Scale);
+        using (ImRaii.Group())
+        {
+            Ui.TextColored(Ui.AccentSoft, info.Name + (item.IsHq ? " (HQ)" : string.Empty));
+            var sub = info.UiCategory;
+            if (info.IsEquipment) sub += $" · iL{info.ItemLevel} · Lv{info.LevelEquip}";
+            sub += $" · ×{item.Quantity}";
+            Ui.Hint(sub);
+        }
+
+        Ui.Gap(0.4f);
+        Ui.Rule();
+        Ui.Gap(0.4f);
+
+        // What Tidy Up will do and why.
+        Ui.KeyValue("Action", row.ChosenAction.Label(), Ui.ActionColor(row.ChosenAction));
+        Ui.KeyValue("Reason", row.Proposal.RuleId == "manual" ? "Hand-picked, no rule proposed it" : row.Proposal.Reason);
+        if (row.Proposal.Alternatives.Count > 0)
+            Ui.KeyValue("Also possible", string.Join(", ", row.Proposal.Alternatives.Select(a => a.Label())));
+
+        var notes = row.Proposal.Warnings.Where(w => w != "Not proposed by any rule").ToList();
+        if (notes.Count > 0)
+        {
+            Ui.Gap(0.3f);
+            foreach (var w in notes)
+            {
+                var severe = w.Contains("never be reacquired", StringComparison.Ordinal) || w.Contains("cannot be bought back", StringComparison.Ordinal);
+                Ui.Icon(FontAwesomeIcon.ExclamationTriangle, severe ? Ui.Danger : Ui.Warn);
+                ImGui.SameLine(0, 6 * Ui.Scale);
+                using (ImRaii.TextWrapPos(0))
+                    Ui.TextColored(severe ? Ui.Danger : Ui.Warn, w);
+            }
+        }
+
+        Ui.Gap(0.4f);
+        Ui.Rule();
+        Ui.Gap(0.4f);
+
+        // Worth and whereabouts.
+        Ui.KeyValue("Vendor", info.VendorPrice > 0 ? $"{info.VendorPrice:N0}g each · {(long)info.VendorPrice * item.Quantity:N0}g stack" : "no vendor value");
+        if (info.IsMarketable)
+        {
+            var mkt = row.Proposal.MarketUnitPrice;
+            var scope = string.IsNullOrEmpty(coordinator.MarketScope) ? "home world" : coordinator.MarketScope;
+            Ui.KeyValue("Market", mkt > 0 ? $"{mkt:N0}g each on {scope} · {mkt * item.Quantity:N0}g stack" : "no current listings", mkt > 0 ? Ui.Market : null);
+        }
+        Ui.KeyValue("Where", $"{item.Slot.Kind.DisplayName()} · slot {item.Slot.Slot + 1}{(string.IsNullOrEmpty(item.OwnerName) ? string.Empty : $" · {item.OwnerName}")}");
+        Ui.KeyValue("Item id", info.ItemId.ToString());
+
+        Ui.Gap(0.5f);
         Ui.Hint("Right-click for options");
     }
 
