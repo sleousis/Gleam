@@ -355,13 +355,17 @@ public sealed class ConfirmationWindow : StyledWindow
         var checkedHere = rows.Count(r => r.Checked);
         var x0 = ImGui.GetCursorPosX();
         bool expanded;
+        float labelStart;
         using (ImRaii.PushStyle(ImGuiStyleVar.FramePadding, new Vector2(10 * Ui.Scale, 6 * Ui.Scale)))
+        {
+            labelStart = ImGui.GetTreeNodeToLabelSpacing();
             expanded = ImGui.CollapsingHeader($"{section.Title}###{key}", ImGuiTreeNodeFlags.None);
+        }
         sectionOpen[key] = expanded;
         var pillDrop = 5 * Ui.Scale; // pills are shorter than the padded header; centre them on it
 
         ImGui.SameLine();
-        ImGui.SetCursorPosX(x0 + ImGui.CalcTextSize(section.Title, false, 0).X + 40 * Ui.Scale);
+        ImGui.SetCursorPosX(x0 + labelStart + ImGui.CalcTextSize(section.Title, false, 0).X + 10 * Ui.Scale);
         ImGui.SetCursorPosY(ImGui.GetCursorPosY() + pillDrop);
         Ui.Pill(checkedHere > 0 ? $"{checkedHere} / {rows.Count}" : $"{rows.Count}", checkedHere > 0 ? Ui.AccentSoft : Ui.Muted);
 
