@@ -295,6 +295,11 @@ public sealed partial class SettingsWindow
         ImGui.SetNextItemWidth(120 * Ui.Scale);
         if (Ui.InputInt("Give up on an action after (ms)", ref to, 500)) { cb.ActionTimeoutMs = Math.Clamp(to, 1000, 30000); dirty = true; }
 
+        Ui.Section("Materia");
+        var act = config.ActWhenMateriaFails;
+        if (ImGui.Checkbox("If materia cannot be retrieved, act anyway and lose it", ref act)) { config.ActWhenMateriaFails = act; dirty = true; }
+        Ui.Tooltip("Off: the item is left in place with the reason, so you can remove the materia by hand. Retrieval needs the materia-retrieval quest and free bag slots.");
+
         Ui.Section("Verification");
         ImGui.SameLine(0, 0);
         if (Ui.Button("Open the spike window")) openDebug();

@@ -11,6 +11,9 @@ public interface IGameActions
 {
     bool IsContainerAvailable(ContainerKind kind, ulong ownerId);
 
+    /// <summary>Why the most recent action returned false, if the implementation knows.</summary>
+    string? LastFailure { get; }
+
     /// <summary>Live re-read of a slot. Null when empty or unreadable.</summary>
     ScannedItem? ReadSlot(SlotRef slot);
 

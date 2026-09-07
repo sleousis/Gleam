@@ -138,6 +138,9 @@ public sealed class Configuration : IPluginConfiguration
     public CallbackSettings Callbacks { get; set; } = new();
     public AutomationSettings Automation { get; set; } = new();
 
+    /// <summary>When materia cannot be retrieved from an item: leave the item, or act and lose the materia.</summary>
+    public bool ActWhenMateriaFails { get; set; } = false;
+
     public bool UseUniversalis { get; set; } = true;
     public bool UseAllaganTools { get; set; } = true;
     public bool ShowAltSections { get; set; } = true;
