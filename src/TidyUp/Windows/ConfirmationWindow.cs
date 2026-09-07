@@ -498,8 +498,8 @@ public sealed class ConfirmationWindow : StyledWindow
         var options = new List<ActionKind> { row.Proposal.Action };
         options.AddRange(row.Proposal.Alternatives.Where(a => a != row.Proposal.Action));
         if (!options.Contains(row.ChosenAction)) options.Insert(0, row.ChosenAction);
-        // The market column already carries the price; the action reads just "market".
-        var labels = options.Select(a => a == row.ChosenAction && a != ActionKind.MarketList && row.Proposal.ValueLabel != "—" ? $"{a.Label()} · {row.Proposal.ValueLabel}" : a.Label()).ToList();
+        // Just the verb; prices live in the market column and the tooltip.
+        var labels = options.Select(a => a.Label()).ToList();
         var idx = options.IndexOf(row.ChosenAction);
         if (options.Count == 1)
         {
