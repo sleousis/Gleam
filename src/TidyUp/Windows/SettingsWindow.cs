@@ -115,6 +115,10 @@ public sealed partial class SettingsWindow : StyledWindow
                 if (ImGui.Checkbox($"{kind.DisplayName()}##en{kind}", ref on)) { p.ContainerEnabled[kind] = on; dirty = true; }
                 if (i < kinds.Length - 1 && i != 2) ImGui.SameLine();
             }
+            Ui.Gap(0.3f);
+            var sortAfter = config.SortAfterRun;
+            if (ImGui.Checkbox("Sort containers after cleaning", ref sortAfter)) { config.SortAfterRun = sortAfter; dirty = true; }
+            Ui.Tooltip("Runs the game's own sort on each container that was cleaned.");
         }
 
         using (Ui.Card("auto"))

@@ -156,6 +156,9 @@ public sealed class Configuration : IPluginConfiguration
     /// <summary>When materia cannot be retrieved from an item: leave the item, or act and lose the materia.</summary>
     public bool ActWhenMateriaFails { get; set; } = false;
 
+    /// <summary>Run the game's own sort on each container that was cleaned, once the run is over.</summary>
+    public bool SortAfterRun { get; set; } = true;
+
     public bool UseUniversalis { get; set; } = true;
     public bool UseAllaganTools { get; set; } = true;
     public bool ShowAltSections { get; set; } = true;
