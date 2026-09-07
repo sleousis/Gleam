@@ -54,7 +54,6 @@ public sealed class RunCoordinator : IDisposable
     public ContainerKind? FocusContainer { get; private set; }
 
     /// <summary>Review mode: only what the rules propose, or every item with a default action to tick.</summary>
-    public bool ShowEverything { get; set; }
 
     public int LastCleanableCount { get; private set; }
     public IReadOnlyDictionary<ulong, string> RetainerNames { get; private set; } = new Dictionary<ulong, string>();
@@ -143,7 +142,7 @@ public sealed class RunCoordinator : IDisposable
                 SessionSkips = SessionSkips,
                 IsAvailable = actions.IsContainerAvailable,
                 RetainerNames = retainerNames,
-                IncludeUnproposed = ShowEverything,
+                IncludeUnproposed = true,
             });
 
             if (focus is null && config.ShowAltSections) AddAltPreviews(plan, withMarket, profile);
