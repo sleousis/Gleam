@@ -46,6 +46,7 @@ public sealed unsafe class AddonDriver : IDisposable
     /// <summary>Arms a one-shot answer for the next appearance of <paramref name="addonName"/>.</summary>
     public Task<bool> ExpectAsync(string addonName, int callbackValue, string? expectedSubstring, TimeSpan timeout, CancellationToken ct)
     {
+        LastRejection = null;
         var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         lock (gate)
         {
@@ -98,19 +99,34 @@ public sealed unsafe class AddonDriver : IDisposable
         if (addonName == "SelectYesno" && a.ExpectedSubstring is not null)
         {
             var prompt = ReadYesNoPrompt(addon);
-            if (prompt is not null && !prompt.Contains(a.ExpectedSubstring, StringComparison.OrdinalIgnoreCase))
+            // Item names carry soft hyphens and the prompt carries payload bytes; compare letters and digits only.
+            if (prompt is not null && !Normalize(prompt).Contains(Normalize(a.ExpectedSubstring), StringComparison.OrdinalIgnoreCase))
             {
-                log.Warning("SelectYesno prompt '{Prompt}' does not mention '{Expected}'; leaving it alone", prompt, a.ExpectedSubstring);
+                LastRejection = $"SelectYesno prompt '{prompt}' does not mention '{a.ExpectedSubstring}'; dialog left open";
+                log.Warning("{Rejection}", LastRejection);
                 lock (gate) { if (armed == a) armed = null; }
                 a.Completion.TrySetResult(false);
                 return;
             }
         }
 
+        LastRejection = null;
         log.Debug("Answering {Addon} with callback {Value}", addonName, a.CallbackValue);
         var ok = addon->FireCallbackInt(a.CallbackValue);
         lock (gate) { if (armed == a) armed = null; }
         a.Completion.TrySetResult(ok);
+    }
+
+    /// <summary>Why the last armed dialog was refused, for the spike window.</summary>
+    public string? LastRejection { get; private set; }
+
+    /// <summary>Letters and digits only, lower-cased: immune to soft hyphens, payload bytes, and punctuation.</summary>
+    public static string Normalize(string s)
+    {
+        var sb = new System.Text.StringBuilder(s.Length);
+        foreach (var ch in s)
+            if (char.IsLetterOrDigit(ch)) sb.Append(char.ToLowerInvariant(ch));
+        return sb.ToString();
     }
 
     private static string? ReadYesNoPrompt(AtkUnitBase* addon)

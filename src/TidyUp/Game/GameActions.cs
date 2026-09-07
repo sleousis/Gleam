@@ -37,6 +37,9 @@ public sealed class GameActions : IGameActions
         this.log = log;
     }
 
+    /// <summary>Why the most recent action returned false, for the spike window and the run log.</summary>
+    public string? LastFailure { get; private set; }
+
     private TimeSpan Timeout => TimeSpan.FromMilliseconds(config.Callbacks.ActionTimeoutMs);
 
     public bool IsContainerAvailable(ContainerKind kind, ulong ownerId) => kind switch
@@ -72,23 +75,30 @@ public sealed class GameActions : IGameActions
     // ---------- discard ----------
 
     public Task<bool> DiscardAsync(SlotRef slot, uint itemId, CancellationToken ct) =>
-        RunAndAwaitRemoval(slot, ct, () => Native.Discard(slot),
+        RunAndAwaitRemoval(slot, ct,
+            () => framework.RunOnFrameworkThread(() => Native.Discard(slot)),
             expectDialog: ("SelectYesno", config.Callbacks.YesNoConfirm, db.Get(itemId)?.Name));
 
     // ---------- dresser ----------
 
     public async Task<SlotRef?> RestoreFromDresserAsync(SlotRef dresserSlot, uint itemId, CancellationToken ct)
     {
+        LastFailure = null;
         var added = WaitForEvent<InventoryItemAddedArgs>(
             e => e.Item.BaseItemId == itemId && GameContainerIds.KindOf((uint)e.Item.ContainerType) == ContainerKind.Inventory, ct);
         var sent = await framework.RunOnFrameworkThread(() => Native.RestoreFromDresser(dresserSlot.Slot)).ConfigureAwait(false);
         if (!sent)
         {
-            log.Warning("RestorePrismBoxItem({Index}) refused (unique already owned, or no inventory space)", dresserSlot.Slot);
+            LastFailure = "RestorePrismBoxItem refused: dresser not loaded, unique item already owned, or no inventory space";
+            log.Warning("{Failure} (index {Index})", LastFailure, dresserSlot.Slot);
             return null;
         }
         var landed = await added.ConfigureAwait(false);
-        if (landed is null) return null;
+        if (landed is null)
+        {
+            LastFailure = "Restore was sent but no item arrived in the inventory before the timeout";
+            return null;
+        }
         return new SlotRef(ContainerKind.Inventory, (uint)landed.Item.ContainerType, (int)landed.Item.InventorySlot);
     }
 
@@ -96,54 +106,67 @@ public sealed class GameActions : IGameActions
 
     public async Task<bool> RetrieveMateriaAsync(SlotRef slot, uint itemId, CancellationToken ct)
     {
+        LastFailure = null;
         var changed = WaitForEvent<InventoryItemChangedArgs>(
             e => (uint)e.Item.ContainerType == slot.ContainerId && e.Item.InventorySlot == (uint)slot.Slot, ct);
-        var opened = await framework.RunOnFrameworkThread(() => context.Invoke(slot, config.Callbacks.RetrieveMateriaLabel)).ConfigureAwait(false);
-        if (!opened) return false;
+        var opened = await context.InvokeAsync(slot, config.Callbacks.RetrieveMateriaLabel, ct).ConfigureAwait(false);
+        if (!opened) { LastFailure = context.LastFailure; return false; }
         var confirmed = await dialogs.ExpectAsync("MateriaRetrieveDialog", config.Callbacks.MateriaRetrieveConfirm, null, Timeout, ct).ConfigureAwait(false);
-        if (!confirmed) return false;
-        return await changed.ConfigureAwait(false) is not null;
+        if (!confirmed) { LastFailure = dialogs.LastRejection ?? "MateriaRetrieveDialog did not appear"; return false; }
+        if (await changed.ConfigureAwait(false) is null) { LastFailure = "Materia dialog answered but the item did not change"; return false; }
+        return true;
     }
 
     // ---------- sell ----------
 
     public Task<bool> VendorSellAsync(SlotRef slot, uint itemId, CancellationToken ct) =>
-        RunAndAwaitRemoval(slot, ct, () => context.Invoke(slot, config.Callbacks.SellLabel),
+        RunAndAwaitRemoval(slot, ct,
+            async () =>
+            {
+                var ok = await context.InvokeAsync(slot, config.Callbacks.SellLabel, ct).ConfigureAwait(false);
+                if (!ok) LastFailure = context.LastFailure;
+                return ok;
+            },
             expectDialog: ("SelectYesno", config.Callbacks.YesNoConfirm, null), dialogOptional: true);
 
     // ---------- expert delivery ----------
 
     public async Task<bool> ExpertDeliveryAsync(SlotRef slot, uint itemId, CancellationToken ct)
     {
+        LastFailure = null;
         var removed = WaitForEvent<InventoryItemRemovedArgs>(
             e => (uint)e.Item.ContainerType == slot.ContainerId && e.Item.InventorySlot == (uint)slot.Slot, ct);
         var selected = await framework.RunOnFrameworkThread(() => Native.SelectExpertDelivery(itemId, config.Callbacks.ExpertDeliverySelect)).ConfigureAwait(false);
-        if (!selected) return false;
+        if (!selected) { LastFailure = "Item not in the Expert Delivery list, or the list window is not open"; return false; }
         var confirmed = await dialogs.ExpectAsync("GrandCompanySupplyReward", config.Callbacks.ExpertDeliveryConfirm, null, Timeout, ct).ConfigureAwait(false);
-        if (!confirmed) return false;
-        return await removed.ConfigureAwait(false) is not null;
+        if (!confirmed) { LastFailure = dialogs.LastRejection ?? "GrandCompanySupplyReward did not appear"; return false; }
+        if (await removed.ConfigureAwait(false) is null) { LastFailure = "Reward dialog answered but the item was not removed"; return false; }
+        return true;
     }
 
     // ---------- desynth ----------
 
     public Task<bool> DesynthAsync(SlotRef slot, uint itemId, CancellationToken ct) =>
-        RunAndAwaitRemoval(slot, ct, () => Native.Desynth(slot),
+        RunAndAwaitRemoval(slot, ct,
+            () => framework.RunOnFrameworkThread(() => Native.Desynth(slot)),
             expectDialog: ("SalvageDialog", config.Callbacks.SalvageConfirm, null));
 
     // ---------- plumbing ----------
 
-    private async Task<bool> RunAndAwaitRemoval(SlotRef slot, CancellationToken ct, Func<bool> nativeCall,
+    private async Task<bool> RunAndAwaitRemoval(SlotRef slot, CancellationToken ct, Func<Task<bool>> start,
         (string Addon, int Callback, string? Expect)? expectDialog, bool dialogOptional = false)
     {
+        LastFailure = null;
         var removed = WaitForEvent<InventoryItemRemovedArgs>(
             e => (uint)e.Item.ContainerType == slot.ContainerId && e.Item.InventorySlot == (uint)slot.Slot, ct);
         var changed = WaitForEvent<InventoryItemChangedArgs>(
             e => (uint)e.Item.ContainerType == slot.ContainerId && e.Item.InventorySlot == (uint)slot.Slot && e.Item.IsEmpty, ct);
 
-        var started = await framework.RunOnFrameworkThread(nativeCall).ConfigureAwait(false);
+        var started = await start().ConfigureAwait(false);
         if (!started)
         {
             dialogs.Disarm();
+            LastFailure ??= "The game call could not be started (empty slot or agent unavailable)";
             return false;
         }
 
@@ -152,14 +175,18 @@ public sealed class GameActions : IGameActions
             var answered = await dialogs.ExpectAsync(d.Addon, d.Callback, d.Expect, Timeout, ct).ConfigureAwait(false);
             if (!answered && !dialogOptional)
             {
-                log.Warning("{Addon} did not appear or was not answered for {Slot}", d.Addon, slot);
+                LastFailure = dialogs.LastRejection ?? $"{d.Addon} did not appear within {Timeout.TotalSeconds:0}s";
+                log.Warning("{Failure} for {Slot}", LastFailure, slot);
                 return false;
             }
         }
 
         var done = await Task.WhenAny(removed, changed).ConfigureAwait(false);
-        if (done == removed) return await removed.ConfigureAwait(false) is not null;
-        return await changed.ConfigureAwait(false) is not null;
+        var confirmedByEvent = done == removed
+            ? await removed.ConfigureAwait(false) is not null
+            : await changed.ConfigureAwait(false) is not null;
+        if (!confirmedByEvent) LastFailure = "Dialog answered but the slot did not empty before the timeout";
+        return confirmedByEvent;
     }
 
     /// <summary>Resolves with the first matching inventory event, or null on timeout.</summary>

@@ -68,7 +68,7 @@ public sealed class Plugin : IDalamudPlugin
         var scanner = new GameInventoryScanner(inventory, log);
         var contextBuilder = new ItemContextBuilder(player, data, db, config, log);
         dialogs = new AddonDriver(addonLifecycle, framework, log);
-        var contextDriver = new InventoryContextDriver(db, log);
+        var contextDriver = new InventoryContextDriver(framework, db, log);
         var actions = new GameActions(framework, inventory, scanner, dialogs, contextDriver, db, config, log);
         var merger = new StackMerger(framework, log);
         var runLog = new JsonLinesRunLog(new ReliableTextStorage(storage, pi.GetPluginConfigDirectory()), "tidyup-history.jsonl");
