@@ -792,7 +792,11 @@ public sealed class ConfirmationWindow : StyledWindow
             : handsFree && needsTravel ? $"Clean {cap.Items} everywhere" : $"Clean {cap.Items} item{(cap.Items == 1 ? "" : "s")}";
         var buttonWidth = 240 * Ui.Scale;
         ImGui.SameLine();
-        Ui.RightAlign(buttonWidth + (handsFree && needsTravel ? 170 : 70) * Ui.Scale);
+        Ui.RightAlign(buttonWidth + (handsFree && needsTravel ? 170 : 70) * Ui.Scale + 150 * Ui.Scale);
+        var sortAfter = config.SortAfterRun;
+        if (ImGui.Checkbox("Sort afterwards", ref sortAfter)) { config.SortAfterRun = sortAfter; config.Save(PluginServices.PluginInterface); }
+        Ui.Tooltip("Runs the game's own sort on each container that was cleaned.");
+        ImGui.SameLine();
         if (Ui.LinkButton("Close")) IsOpen = false;
         if (handsFree && needsTravel)
         {

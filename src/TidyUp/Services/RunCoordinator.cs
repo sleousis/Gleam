@@ -362,6 +362,7 @@ public sealed class RunCoordinator : IDisposable
             LastReport = report;
             PendingActions.AddRange(report.Pending);
             PendingActions.AddRange(report.Moved);
+            if (config.SortAfterRun) await SortTouchedAsync(report).ConfigureAwait(false);
             Status = report.Summary();
 
             // "Skipped because it changed" is only useful if we can see *what* changed.
@@ -402,6 +403,20 @@ public sealed class RunCoordinator : IDisposable
     }
 
     public void CancelRun() => runCts?.Cancel();
+
+    /// <summary>Runs the game's own sort on every container something was just removed from. Containers are still open at this point.</summary>
+    private async Task SortTouchedAsync(RunReport report)
+    {
+        var kinds = report.Results.Where(r => r.Outcome is ActionOutcome.Done or ActionOutcome.Moved).Select(r => r.Action.Kind).Distinct()
+            .Concat(report.Moved.Select(m => m.Kind)).Distinct().ToList();
+        if (kinds.Count == 0) return;
+        Status = "Sorting…";
+        foreach (var target in kinds.SelectMany(Automation.GameUi.SortTargets))
+        {
+            await framework.RunOnFrameworkThread(() => Automation.GameUi.SendCommand($"/isort execute {target}")).ConfigureAwait(false);
+            await Task.Delay(150).ConfigureAwait(false);
+        }
+    }
 
     // ---------- resume ----------
 
