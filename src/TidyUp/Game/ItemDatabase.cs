@@ -242,6 +242,21 @@ public sealed class ItemDatabase
         return null;
     }
 
+    /// <summary>MainCommand row id for an English command name (e.g. "Chocobo Saddlebag"), or null.</summary>
+    public uint? MainCommandIdForEnglishName(string englishName)
+    {
+        try
+        {
+            foreach (var row in data.GetExcelSheet<MainCommand>(ClientLanguage.English)!)
+                if (string.Equals(row.Name.ExtractText(), englishName, StringComparison.OrdinalIgnoreCase)) return row.RowId;
+        }
+        catch (Exception ex)
+        {
+            log.Warning(ex, "MainCommand lookup failed for {Name}", englishName);
+        }
+        return null;
+    }
+
     /// <summary>Text of an Addon sheet row in the client language, or null.</summary>
     public string? AddonText(uint rowId)
     {

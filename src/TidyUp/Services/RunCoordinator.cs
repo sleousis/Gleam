@@ -276,20 +276,30 @@ public sealed class RunCoordinator : IDisposable
 
     // ---------- execution ----------
 
+    /// <summary>Checked, executable rows of the current plan as a queue, optionally filtered.</summary>
+    public List<QueuedAction> BuildQueueFromPlan(Func<PlanRow, bool> filter) =>
+        CurrentPlan is null
+            ? new List<QueuedAction>()
+            : CurrentPlan.AllRows.Where(r => r.Checked && r.IsExecutable && filter(r)).Select(QueuedAction.FromRow).ToList();
+
+    public void RaiseOpenWindow() => RequestOpenWindow?.Invoke();
+
     public async Task AcceptAsync()
     {
         if (IsRunning || CurrentPlan is null) return;
-        var queue = CurrentPlan.AllRows.Where(r => r.Checked && r.IsExecutable).Select(QueuedAction.FromRow).ToList();
+        var queue = BuildQueueFromPlan(_ => true);
         if (queue.Count == 0) return;
 
         // Rows the user accepted earlier for still-closed containers stay queued alongside the new ones.
         var merged = PendingActions.Where(p => !queue.Any(q => q.Slot == p.Slot)).Concat(queue).ToList();
         PendingActions.Clear();
-        await ExecuteAsync(merged).ConfigureAwait(false);
+        await ExecuteQueueAsync(merged, refreshAfter: true).ConfigureAwait(false);
     }
 
-    private async Task ExecuteAsync(IReadOnlyList<QueuedAction> queue)
+    /// <summary>Runs a queue now. Used by Accept and by the hands-free pilot for one container at a time.</summary>
+    public async Task ExecuteQueueAsync(IReadOnlyList<QueuedAction> queue, bool refreshAfter)
     {
+        if (IsRunning || queue.Count == 0) return;
         IsRunning = true;
         RunTotal = queue.Count;
         RunDone = 0;
@@ -334,7 +344,7 @@ public sealed class RunCoordinator : IDisposable
             IsRunning = false;
             FocusContainer = null;
             // Re-plan so the window shows what is left rather than a stale list.
-            await RefreshPlanAsync(openWindow: false).ConfigureAwait(false);
+            if (refreshAfter) await RefreshPlanAsync(openWindow: false).ConfigureAwait(false);
         }
     }
 
@@ -343,9 +353,12 @@ public sealed class RunCoordinator : IDisposable
     // ---------- resume ----------
 
     /// <summary>A closed container just opened: re-evaluate it live and show its own confirmation.</summary>
+    /// <summary>True while the hands-free pilot owns the flow; container-open triggers stay quiet then.</summary>
+    public Func<bool> IsPilotRunning { get; set; } = () => false;
+
     public async Task OnContainerOpenedAsync(ContainerKind kind)
     {
-        if (IsRunning || !player.IsLoaded) return;
+        if (IsRunning || IsPilotRunning() || !player.IsLoaded) return;
         var profile = EffectiveProfile;
         if (!profile.IsContainerEnabled(kind)) return;
 
