@@ -541,20 +541,12 @@ public sealed class ConfirmationWindow : StyledWindow
             Ui.Hint(sub);
         }
 
-        Ui.Gap(0.4f);
-        Ui.Rule();
-        Ui.Gap(0.4f);
-
-        // What Tidy Up will do and why.
-        Ui.KeyValue("Action", row.ChosenAction.Label(), Ui.ActionColor(row.ChosenAction));
-        Ui.KeyValue("Reason", row.Proposal.RuleId == "manual" ? "Hand-picked, no rule proposed it" : row.Proposal.Reason);
-        if (row.Proposal.Alternatives.Count > 0)
-            Ui.KeyValue("Also possible", string.Join(", ", row.Proposal.Alternatives.Select(a => a.Label())));
-
         var notes = row.Proposal.Warnings.Where(w => w != "Not proposed by any rule").ToList();
         if (notes.Count > 0)
         {
-            Ui.Gap(0.3f);
+            Ui.Gap(0.4f);
+            Ui.Rule();
+            Ui.Gap(0.4f);
             foreach (var w in notes)
             {
                 var severe = w.Contains("never be reacquired", StringComparison.Ordinal) || w.Contains("cannot be bought back", StringComparison.Ordinal);
@@ -577,8 +569,7 @@ public sealed class ConfirmationWindow : StyledWindow
             var scope = string.IsNullOrEmpty(coordinator.MarketScope) ? "home world" : coordinator.MarketScope;
             Ui.KeyValue("Market", mkt > 0 ? $"{mkt:N0}g each on {scope} · {mkt * item.Quantity:N0}g stack" : "no current listings", mkt > 0 ? Ui.Market : null);
         }
-        Ui.KeyValue("Where", $"{item.Slot.Kind.DisplayName()} · slot {item.Slot.Slot + 1}{(string.IsNullOrEmpty(item.OwnerName) ? string.Empty : $" · {item.OwnerName}")}");
-        Ui.KeyValue("Item id", info.ItemId.ToString());
+        Ui.KeyValue("Where", string.IsNullOrEmpty(item.OwnerName) ? item.Slot.Kind.DisplayName() : $"{item.Slot.Kind.DisplayName()} · {item.OwnerName}");
 
         Ui.Gap(0.5f);
         Ui.Hint("Right-click for options");
