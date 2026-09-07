@@ -474,12 +474,22 @@ public sealed class ConfirmationWindow : StyledWindow
         }
         var widest = labels.Max(l => ImGui.CalcTextSize(l, false, 0).X);
         ImGui.SetNextItemWidth(Math.Min(ImGui.GetContentRegionAvail().X, widest + ImGui.GetFrameHeight() + ImGui.GetStyle().FramePadding.X * 2));
-        using var c = ImRaii.PushColor(ImGuiCol.Text, Ui.ActionColor(row.ChosenAction));
         using var bg = ImRaii.PushColor(ImGuiCol.FrameBg, Vector4.Zero);
-        if (Ui.Combo("##act", ref idx, labels))
+        var preview = ImRaii.PushColor(ImGuiCol.Text, Ui.ActionColor(row.ChosenAction));
+        using (var combo = ImRaii.Combo("##act", labels[idx]))
         {
-            row.ChosenAction = options[idx];
-            if (!row.IsExecutable) row.Checked = false;
+            preview.Dispose();
+            if (!combo) return;
+            // Each choice in its own action colour, so "discard" reads as red even under a green "sell".
+            for (var i = 0; i < options.Count; i++)
+            {
+                using var col = ImRaii.PushColor(ImGuiCol.Text, Ui.ActionColor(options[i]));
+                if (ImGui.Selectable(labels[i], i == idx, ImGuiSelectableFlags.None, Vector2.Zero))
+                {
+                    row.ChosenAction = options[i];
+                    if (!row.IsExecutable) row.Checked = false;
+                }
+            }
         }
     }
 
