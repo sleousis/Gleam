@@ -191,7 +191,8 @@ public class PlannerTests
     [Fact]
     public void Everything_mode_lists_unproposed_items_unchecked_with_a_default_action()
     {
-        // item 12 is a mid-level potion no rule fires on with a high gearset; item 16 is hard-blocked (Fantasia).
+        // item 12 is a mid-level potion no rule fires on with a high gearset; item 16 (Fantasia) is guarded
+        // from every rule but still discardable, so Everything lists it unchecked with the reason.
         var items = new[] { ScannedItem.Simple(Inv(0), 1, 5), ScannedItem.Simple(Inv(1), 12, 2), ScannedItem.Simple(Ret(0), 12, 2), ScannedItem.Simple(Inv(2), 16, 1) };
         var ctx = Context(maxGearsetIlvl: 100);
 
@@ -204,13 +205,16 @@ public class PlannerTests
             Context = inputs.Context, Profile = inputs.Profile, InfoLookup = inputs.InfoLookup, ProtectList = inputs.ProtectList,
             AlwaysDiscardList = inputs.AlwaysDiscardList, IsAvailable = inputs.IsAvailable, RetainerNames = inputs.RetainerNames, IncludeUnproposed = true,
         });
-        Assert.Equal(3, everything.AllRows.Count());
+        Assert.Equal(4, everything.AllRows.Count());
         var manual = everything.AllRows.Where(r => r.Proposal.RuleId == "manual").ToList();
-        Assert.Equal(2, manual.Count);
+        Assert.Equal(3, manual.Count);
         Assert.All(manual, r => Assert.False(r.Checked));
-        Assert.Equal(ActionKind.VendorSell, manual.Single(r => r.Item.Slot.Kind == ContainerKind.Inventory).ChosenAction);
+        Assert.Equal(ActionKind.VendorSell, manual.Single(r => r.Item.ItemId == 12 && r.Item.Slot.Kind == ContainerKind.Inventory).ChosenAction);
         Assert.Equal(ActionKind.Discard, manual.Single(r => r.Item.Slot.Kind == ContainerKind.Retainer).ChosenAction);
-        Assert.DoesNotContain(everything.AllRows, r => r.Item.ItemId == 16);
+        var fantasia = Assert.Single(everything.AllRows, r => r.Item.ItemId == 16);
+        Assert.False(fantasia.Checked);
+        Assert.Equal(ActionKind.Discard, fantasia.ChosenAction);
+        Assert.Contains("cannot be bought back", fantasia.Proposal.Warnings[0]);
 
         // Hand-picked rows follow the preset: Aggressive means discard everywhere.
         var aggressive = new RunPlanner().Build(items, new PlannerInputs
@@ -219,7 +223,7 @@ public class PlannerTests
             AlwaysDiscardList = inputs.AlwaysDiscardList, IsAvailable = inputs.IsAvailable, RetainerNames = inputs.RetainerNames, IncludeUnproposed = true,
         });
         Assert.All(aggressive.AllRows, r => Assert.Equal(ActionKind.Discard, r.ChosenAction));
-        Assert.Equal(3, aggressive.AllRows.Count());
+        Assert.Equal(4, aggressive.AllRows.Count());
     }
 
     [Fact]

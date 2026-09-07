@@ -18,6 +18,14 @@ public enum HardBlockReason
 
 public static class HardBlocks
 {
+    /// <summary>
+    /// Reasons that make an item physically or irreversibly untouchable: the game refuses, or a gearset or
+    /// plate would silently break. Everything else only keeps the *rules* away; the player can still pick the
+    /// item by hand, with the reason shown as a warning.
+    /// </summary>
+    public static bool IsImmovable(HardBlockReason reason) =>
+        reason is HardBlockReason.Indisposable or HardBlockReason.InGearset or HardBlockReason.InGlamourPlate;
+
     public static HardBlockReason Check(ScannedItem item, ItemInfo info, ItemContext ctx)
     {
         if (info.IsIndisposable) return HardBlockReason.Indisposable;

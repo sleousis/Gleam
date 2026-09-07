@@ -47,6 +47,8 @@ public sealed class RunPlanner
 
         var candidates = new List<ScannedItem>();
         var userForced = new List<(ScannedItem Item, ItemInfo Info)>();
+        // Discardable, but no rule may ever propose them (Fantasia, ultimate weapons, minions, crystals...).
+        var guarded = new List<(ScannedItem Item, ItemInfo Info, string Why)>();
 
         foreach (var item in items)
         {
@@ -56,9 +58,10 @@ public sealed class RunPlanner
             var info = inputs.InfoLookup(item.ItemId);
             if (info is null) continue;
 
-            // 1. Hard blocks: immovable, and they beat the blacklist.
+            // 1. Hard blocks: immovable ones vanish; the rest beat the blacklist and every rule, but stay
+            //    visible as hand-pick rows so the list really is everything that can be discarded.
             var block = HardBlocks.Check(item, info, ctx);
-            if (block != HardBlockReason.None)
+            if (block != HardBlockReason.None && HardBlocks.IsImmovable(block))
             {
                 plan.Excluded.Add(new ExcludedItem(item, info, HardBlocks.Describe(block), true));
                 continue;
@@ -68,6 +71,13 @@ public sealed class RunPlanner
             if (inputs.ProtectList.Contains(item.ItemId, item.IsHq, ctx.CharacterId))
             {
                 plan.Excluded.Add(new ExcludedItem(item, info, "On your protect list", false));
+                continue;
+            }
+
+            if (block != HardBlockReason.None)
+            {
+                if (inputs.IncludeUnproposed) guarded.Add((item, info, HardBlocks.Describe(block)));
+                else plan.Excluded.Add(new ExcludedItem(item, info, HardBlocks.Describe(block), true));
                 continue;
             }
 
@@ -86,16 +96,20 @@ public sealed class RunPlanner
         if (inputs.IncludeUnproposed)
         {
             var proposedSlots = new HashSet<SlotRef>(proposals.Select(p => p.Item.Slot));
-            foreach (var item in candidates)
+            var handPick = candidates
+                .Where(c => !proposedSlots.Contains(c.Slot))
+                .Select(c => (Item: c, Info: inputs.InfoLookup(c.ItemId), Why: (string?)null))
+                .Concat(guarded.Select(g => (g.Item, Info: (ItemInfo?)g.Info, Why: (string?)g.Why)));
+            foreach (var (item, info, why) in handPick)
             {
-                if (proposedSlots.Contains(item.Slot)) continue;
-                var info = inputs.InfoLookup(item.ItemId);
                 if (info is null) continue;
                 var canSell = !info.IsUntradable && info.VendorPrice > 0 && ContainerConstraints.AllowsAction(item.Slot.Kind, ActionKind.VendorSell);
                 var value = canSell ? (long)info.VendorPrice * item.Quantity : 0;
-                var warnings = new List<string> { "Not proposed by any rule" };
+                var warnings = new List<string>();
+                if (why is not null) warnings.Add(why);
+                warnings.Add("Not proposed by any rule");
                 if (info.IsUsable) warnings.Add("Usable item");
-                if (info.IsUntradable) warnings.Add("Untradeable");
+                if (info.IsUntradable && why is null) warnings.Add("Untradeable");
                 proposals.Add(new Proposal
                 {
                     Item = item, Info = info,
