@@ -1,3 +1,4 @@
+using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Game.Inventory.InventoryEventArgTypes;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game;
@@ -23,10 +24,12 @@ public sealed class GameActions : IGameActions
     private readonly ItemDatabase db;
     private readonly Configuration config;
     private readonly IPluginLog log;
+    private readonly ICondition condition;
 
     public GameActions(IFramework framework, IGameInventory inventory, GameInventoryScanner scanner, AddonDriver dialogs,
-        InventoryContextDriver context, ItemDatabase db, Configuration config, IPluginLog log)
+        InventoryContextDriver context, ItemDatabase db, Configuration config, IPluginLog log, ICondition condition)
     {
+        this.condition = condition;
         this.framework = framework;
         this.inventory = inventory;
         this.scanner = scanner;
@@ -104,20 +107,70 @@ public sealed class GameActions : IGameActions
 
     // ---------- materia ----------
 
+    /// <summary>
+    /// The game takes one materia per "Retrieve Materia" request, plays a short animation, and (since
+    /// retrieval became guaranteed) shows no confirmation dialog. So: request, wait for the slot to change
+    /// or a dialog to show up, wait for the character to be free again, repeat until the item is bare.
+    /// </summary>
     public async Task<bool> RetrieveMateriaAsync(SlotRef slot, uint itemId, CancellationToken ct)
     {
         LastFailure = null;
-        var changed = WaitForEvent<InventoryItemChangedArgs>(
-            e => (uint)e.Item.ContainerType == slot.ContainerId && e.Item.InventorySlot == (uint)slot.Slot, ct);
-        var dialog = dialogs.ExpectAsync("MateriaRetrieveDialog", config.Callbacks.MateriaRetrieveConfirm, null, Timeout, ct);
-        if (dialog.IsCompleted && !dialog.Result) { LastFailure = dialogs.LastRejection; return false; }
-        var opened = await context.InvokeAsync(slot, config.Callbacks.RetrieveMateriaLabel, ct).ConfigureAwait(false);
-        if (!opened) { dialogs.Disarm(); LastFailure = context.LastFailure; return false; }
-        var confirmed = await dialog.ConfigureAwait(false);
-        if (!confirmed) { LastFailure = dialogs.LastRejection ?? "MateriaRetrieveDialog did not appear"; return false; }
-        if (await changed.ConfigureAwait(false) is null) { LastFailure = "Materia dialog answered but the item did not change"; return false; }
+        var start = scanner.ReadSlot(slot);
+        if (start is null || start.ItemId != itemId) { LastFailure = "Item is no longer in the slot"; return false; }
+        var rounds = start.MateriaCount + 1;
+
+        for (var round = 0; round < rounds; round++)
+        {
+            var current = scanner.ReadSlot(slot);
+            if (current is null || current.ItemId != itemId) { LastFailure = "Item left the slot while its materia was being retrieved"; return false; }
+            if (!current.HasMateria) return true;
+
+            await WaitUntilFreeAsync(ct).ConfigureAwait(false);
+
+            var changed = WaitForEvent<InventoryItemChangedArgs>(
+                e => (uint)e.Item.ContainerType == slot.ContainerId && e.Item.InventorySlot == (uint)slot.Slot, ct);
+            var dialog = dialogs.ExpectAsync("MateriaRetrieveDialog", config.Callbacks.MateriaRetrieveConfirm, null, Timeout, ct);
+            if (dialog.IsCompleted && !dialog.Result) { LastFailure = dialogs.LastRejection; return false; }
+
+            var opened = await context.InvokeAsync(slot, config.Callbacks.RetrieveMateriaLabel, ct).ConfigureAwait(false);
+            if (!opened) { dialogs.Disarm(); LastFailure = context.LastFailure; return false; }
+
+            var winner = await Task.WhenAny(changed, dialog).ConfigureAwait(false);
+            if (winner == dialog)
+            {
+                if (!dialog.Result) { LastFailure = dialogs.LastRejection ?? "MateriaRetrieveDialog was not answered"; return false; }
+                if (await changed.ConfigureAwait(false) is null) { LastFailure = "Materia dialog answered but the item did not change"; return false; }
+            }
+            else
+            {
+                dialogs.Disarm();
+                if (changed.Result is null) { LastFailure = "'Retrieve Materia' was selected but the item did not change"; return false; }
+            }
+
+            // The retrieval animation blocks the next context menu; let it finish.
+            await WaitUntilFreeAsync(ct).ConfigureAwait(false);
+            await Task.Delay(300, ct).ConfigureAwait(false);
+        }
+
+        var after = scanner.ReadSlot(slot);
+        if (after is { HasMateria: true }) { LastFailure = $"{after.MateriaCount} materia still attached after {rounds} attempts"; return false; }
         return true;
     }
+
+    /// <summary>Waits (bounded) until the character is not in an occupied/casting state. Never fails; just stops waiting.</summary>
+    private async Task WaitUntilFreeAsync(CancellationToken ct)
+    {
+        for (var i = 0; i < 60; i++)
+        {
+            if (!IsBusy()) return;
+            await Task.Delay(100, ct).ConfigureAwait(false);
+        }
+    }
+
+    private bool IsBusy() =>
+        condition[ConditionFlag.Occupied] || condition[ConditionFlag.Occupied30] || condition[ConditionFlag.Occupied33] ||
+        condition[ConditionFlag.Occupied38] || condition[ConditionFlag.Occupied39] || condition[ConditionFlag.OccupiedInEvent] ||
+        condition[ConditionFlag.Casting];
 
     // ---------- sell ----------
 

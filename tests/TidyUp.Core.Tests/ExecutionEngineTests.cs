@@ -223,6 +223,20 @@ public class ExecutionEngineTests
     }
 
     [Fact]
+    public async Task Materia_found_on_the_live_item_is_retrieved_even_when_the_plan_missed_it()
+    {
+        var game = new FakeGame();
+        game.Slots[Arm(0)] = WithMateria(ScannedItem.Simple(Arm(0), 4, 1), 12);
+
+        var report = await new ExecutionEngine(game, new MemoryRunLog(), new NoDelay())
+            .ExecuteAsync([Q(Arm(0), 4, 1, ActionKind.Discard, materia: false)], Who, CancellationToken.None);
+
+        Assert.Equal(1, report.Done);
+        Assert.Contains(game.Calls, c => c.StartsWith("materia:"));
+        Assert.True(game.Calls.IndexOf(game.Calls.First(c => c.StartsWith("materia:"))) < game.Calls.IndexOf(game.Calls.First(c => c.StartsWith("discard:"))));
+    }
+
+    [Fact]
     public async Task Materia_retrieval_needs_free_slots_per_materia()
     {
         var game = new FakeGame { FreeSlots = 1 };

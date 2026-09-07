@@ -189,7 +189,8 @@ public sealed class ExecutionEngine
             await delay.Wait(options.RateLimit, ct).ConfigureAwait(false);
         }
 
-        if (action.RetrieveMateriaFirst && live.HasMateria)
+        // Materia is never destroyed silently: the live item decides, not what the plan remembered.
+        if (live.HasMateria)
         {
             if (game.FreeInventorySlots() < live.MateriaCount)
                 return new ActionResult(action, ActionOutcome.Pending, "Not enough free inventory slots to retrieve materia");
