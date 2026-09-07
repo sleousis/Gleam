@@ -189,12 +189,21 @@ public sealed class GameActions : IGameActions
 
         if (dialogTask is not null)
         {
-            var answered = await dialogTask.ConfigureAwait(false);
-            if (!answered && !dialogOptional)
+            if (dialogOptional)
             {
-                LastFailure = dialogs.LastRejection ?? "dialog was not answered";
-                log.Warning("{Failure} for {Slot}", LastFailure, slot);
-                return false;
+                // Common sales show no dialog at all: whichever comes first wins, the dialog or the item leaving.
+                var first = await Task.WhenAny(dialogTask, removed, changed).ConfigureAwait(false);
+                if (first != dialogTask) dialogs.Disarm();
+            }
+            else
+            {
+                var answered = await dialogTask.ConfigureAwait(false);
+                if (!answered)
+                {
+                    LastFailure = dialogs.LastRejection ?? "dialog was not answered";
+                    log.Warning("{Failure} for {Slot}", LastFailure, slot);
+                    return false;
+                }
             }
         }
 
