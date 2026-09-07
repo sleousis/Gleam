@@ -11,7 +11,7 @@ public enum ActionPolicy
     DiscardUntradeableSellTradeable,
     /// <summary>Everything proposed is discarded.</summary>
     DiscardAll,
-    /// <summary>Marketable items go on the market board at the lowest data-centre price; other tradeable items are vendored; untradeable ones are discarded.</summary>
+    /// <summary>Marketable items go on the market board at the lowest home-world price; other tradeable items are vendored; untradeable ones are discarded.</summary>
     MarketListTradeable,
 }
 
@@ -22,7 +22,7 @@ public static class ActionPolicyExtensions
         ActionPolicy.SellOnly => "Only sells tradeable items. Never discards anything.",
         ActionPolicy.DiscardUntradeableSellTradeable => "Discards untradeable items, sells tradeable ones.",
         ActionPolicy.DiscardAll => "Discards everything it proposes.",
-        ActionPolicy.MarketListTradeable => "Lists marketable items on the market board at the lowest price on your data centre, vendors the rest, discards untradeable items.",
+        ActionPolicy.MarketListTradeable => "Lists marketable items on the market board at the lowest price on your home world, vendors the rest, discards untradeable items.",
         _ => "Each rule picks its own action.",
     };
 }
