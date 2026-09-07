@@ -20,6 +20,17 @@ internal sealed class FakeGame : IGameActions
 
     public bool IsContainerAvailable(ContainerKind kind, ulong ownerId) => Open.Contains(kind);
     public ScannedItem? ReadSlot(SlotRef slot) => Slots.GetValueOrDefault(slot);
+    public bool CanRetrieveMateriaIn(ContainerKind kind) => kind is ContainerKind.Inventory or ContainerKind.Armoury;
+
+    public Task<SlotRef?> MoveToInventoryAsync(SlotRef slot, uint itemId, int quantity, bool isHq, CancellationToken ct)
+    {
+        Calls.Add($"move:{slot}");
+        if (!Slots.TryGetValue(slot, out var item)) return Task.FromResult<SlotRef?>(null);
+        var landing = new SlotRef(ContainerKind.Inventory, 0, 90 + Slots.Count);
+        Slots.Remove(slot);
+        Slots[landing] = item with { Slot = landing };
+        return Task.FromResult<SlotRef?>(landing);
+    }
 
     public SlotRef? FindSlot(ContainerKind kind, ulong ownerId, uint itemId, int quantity, bool isHq, IReadOnlySet<SlotRef> exclude, SlotRef preferred)
     {
@@ -234,6 +245,31 @@ public class ExecutionEngineTests
         Assert.Equal(1, report.Done);
         Assert.Contains(game.Calls, c => c.StartsWith("materia:"));
         Assert.True(game.Calls.IndexOf(game.Calls.First(c => c.StartsWith("materia:"))) < game.Calls.IndexOf(game.Calls.First(c => c.StartsWith("discard:"))));
+    }
+
+    [Fact]
+    public async Task Slotted_retainer_items_are_brought_home_and_finished_there()
+    {
+        var game = new FakeGame();
+        game.Open.Add(ContainerKind.Retainer);
+        game.Slots[Ret(3)] = WithMateria(ScannedItem.Simple(Ret(3), 4, 1), 12, 34);
+
+        var first = await new ExecutionEngine(game, new MemoryRunLog(), new NoDelay())
+            .ExecuteAsync([Q(Ret(3), 4, 1, ActionKind.Discard, materia: true)], Who, CancellationToken.None);
+
+        Assert.Equal(0, first.Done);
+        Assert.Empty(first.Pending);
+        var follow = Assert.Single(first.Moved);
+        Assert.Equal(ContainerKind.Inventory, follow.Kind);
+        Assert.DoesNotContain(game.Calls, c => c.StartsWith("materia:") || c.StartsWith("discard:"));
+        Assert.Contains("moved to your bags", first.Summary());
+
+        var second = await new ExecutionEngine(game, new MemoryRunLog(), new NoDelay())
+            .ExecuteAsync([follow], Who, CancellationToken.None);
+
+        Assert.Equal(1, second.Done);
+        Assert.Contains(game.Calls, c => c == $"materia:{follow.Slot}");
+        Assert.Empty(game.Slots);
     }
 
     [Fact]

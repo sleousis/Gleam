@@ -124,6 +124,18 @@ public sealed class AutoPilot
                 }
             }
 
+            // Items pulled out of retainers for materia retrieval finish in the bags, retainer closed.
+            var broughtBack = coordinator.PendingActions.Where(p => p.Kind.IsAlwaysLoaded() && p.RetrieveMateriaFirst).ToList();
+            if (broughtBack.Count > 0)
+            {
+                coordinator.PendingActions.RemoveAll(broughtBack.Contains);
+                await RecoverUiAsync(ct).ConfigureAwait(false);
+                sells.AddRange(broughtBack.Where(b => b.Action == ActionKind.VendorSell));
+                seals.AddRange(broughtBack.Where(b => b.Action == ActionKind.ExpertDelivery));
+                var here2 = broughtBack.Where(b => b.Action is not ActionKind.VendorSell and not ActionKind.ExpertDelivery).ToList();
+                if (here2.Count > 0) await Leg("brought back", () => Step("Stripping materia from items brought back", () => Execute(here2), ct), ct);
+            }
+
             if (S.VisitGrandCompany && seals.Count > 0) await Leg("Grand Company", () => GrandCompanyAsync(seals, ct), ct);
             if (S.SellAtVendor && sells.Count > 0) await Leg("merchant", () => VendorAsync(sells, ct), ct);
 

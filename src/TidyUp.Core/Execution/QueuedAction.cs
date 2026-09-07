@@ -39,17 +39,25 @@ public enum ActionOutcome
     /// <summary>The game refused or the action timed out. The run aborts after the first failure.</summary>
     Failed,
     Cancelled,
+    /// <summary>Brought back to the player's bags so its materia can come off there; the follow-up is in <see cref="RunReport.Moved"/>.</summary>
+    Moved,
 }
 
 public sealed record ActionResult(QueuedAction Action, ActionOutcome Outcome, string Message)
 {
     public bool IsTerminal => Outcome is not ActionOutcome.Pending;
+
+    /// <summary>For <see cref="ActionOutcome.Moved"/>: the same action, re-addressed to where the item landed.</summary>
+    public QueuedAction? Followup { get; init; }
 }
 
 public sealed class RunReport
 {
     public List<ActionResult> Results { get; } = new();
     public List<QueuedAction> Pending { get; } = new();
+
+    /// <summary>Actions re-addressed to the player's bags after the item was pulled out of a retainer. Run them once the retainer is closed.</summary>
+    public List<QueuedAction> Moved { get; } = new();
 
     /// <summary>Why each pending action is waiting, so the summary can say "open a vendor" rather than nothing.</summary>
     public Dictionary<QueuedAction, string> PendingReasons { get; } = new();
@@ -72,6 +80,7 @@ public sealed class RunReport
         var parts = new List<string> { $"{Done} done" };
         if (Skipped > 0) parts.Add($"{Skipped} skipped (changed)");
         if (Failed > 0) parts.Add($"{Failed} failed");
+        if (Moved.Count > 0) parts.Add($"{Moved.Count} moved to your bags for materia retrieval");
         if (Pending.Count > 0) parts.Add($"{Pending.Count} pending");
         if (Aborted) parts.Add($"aborted: {AbortReason}");
         return string.Join(", ", parts);

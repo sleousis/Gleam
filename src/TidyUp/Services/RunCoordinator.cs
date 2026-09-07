@@ -355,6 +355,7 @@ public sealed class RunCoordinator : IDisposable
             var report = await engine.ExecuteAsync(queue, identity, runCts.Token, progress).ConfigureAwait(false);
             LastReport = report;
             PendingActions.AddRange(report.Pending);
+            PendingActions.AddRange(report.Moved);
             Status = report.Summary();
 
             // "Skipped because it changed" is only useful if we can see *what* changed.
@@ -373,6 +374,8 @@ public sealed class RunCoordinator : IDisposable
                 chat.Print($"Tidy Up: {report.Summary()}.", "Tidy Up");
                 foreach (var (reason, count) in report.PendingByReason())
                     chat.Print($"  {count} waiting: {(string.IsNullOrEmpty(reason) ? "container not open" : reason)}.", "Tidy Up");
+                if (report.Moved.Count > 0)
+                    chat.Print($"  {report.Moved.Count} brought back to your bags: close the retainer and clean again to strip the materia and finish.", "Tidy Up");
             }
             if (report.Aborted && report.Failed > 0)
                 chat.PrintError($"Tidy Up stopped: {report.AbortReason}. Nothing after that item was touched.", "Tidy Up");
