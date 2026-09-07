@@ -118,7 +118,11 @@ public sealed class InventoryContextDriver
             string.Equals(e.Text, englishLabel, StringComparison.OrdinalIgnoreCase));
         if (match is null)
         {
-            LastFailure = $"'{englishLabel}' not offered for {slot}. Offered: {string.Join(" | ", entries.Select(e => e.Text.Length > 0 ? e.Text : e.LabelId.ToString()))}";
+            var offered = string.Join(" | ", entries.Select(e => e.Text.Length > 0 ? e.Text : e.LabelId.ToString()));
+            var hint = entries.Any(e => e.Text.Contains("Retainer", StringComparison.OrdinalIgnoreCase))
+                ? " A retainer window is open; the game hides this entry until it is closed."
+                : string.Empty;
+            LastFailure = $"'{englishLabel}' not offered for {slot}. Offered: {offered}.{hint}";
             CloseMenu();
             return -1;
         }
