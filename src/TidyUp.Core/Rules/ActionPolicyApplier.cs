@@ -17,6 +17,7 @@ public static class ActionPolicyApplier
 
         var kind = p.Item.Slot.Kind;
         var canSell = !p.Info.IsUntradable && p.Info.VendorPrice > 0 && ContainerConstraints.AllowsAction(kind, ActionKind.VendorSell);
+        var canList = p.Info.IsMarketable && p.MarketUnitPrice > 0 && ContainerConstraints.AllowsAction(kind, ActionKind.MarketList);
 
         ActionKind target;
         switch (policy)
@@ -24,6 +25,9 @@ public static class ActionPolicyApplier
             case ActionPolicy.SellOnly:
                 if (!canSell) return null;
                 target = ActionKind.VendorSell;
+                break;
+            case ActionPolicy.MarketListTradeable:
+                target = canList ? ActionKind.MarketList : canSell ? ActionKind.VendorSell : ActionKind.Discard;
                 break;
             case ActionPolicy.DiscardUntradeableSellTradeable:
                 target = canSell ? ActionKind.VendorSell : ActionKind.Discard;
@@ -39,13 +43,23 @@ public static class ActionPolicyApplier
             .Where(a => a != target && a.IsDestructive() && ContainerConstraints.AllowsAction(kind, a))
             .Distinct()
             .ToList();
-        var value = target == ActionKind.VendorSell ? (long)p.Info.VendorPrice * p.Item.Quantity : 0;
+        var value = target switch
+        {
+            ActionKind.VendorSell => (long)p.Info.VendorPrice * p.Item.Quantity,
+            ActionKind.MarketList => p.MarketUnitPrice * p.Item.Quantity,
+            _ => 0,
+        };
         return p with
         {
             Action = target,
             Alternatives = previous,
             ValueGil = value,
-            ValueLabel = target == ActionKind.VendorSell ? $"{value:N0}g" : "—",
+            ValueLabel = target switch
+            {
+                ActionKind.VendorSell => $"{value:N0}g",
+                ActionKind.MarketList => $"{value:N0}g mkt",
+                _ => "—",
+            },
         };
     }
 

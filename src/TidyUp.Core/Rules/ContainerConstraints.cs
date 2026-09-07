@@ -13,6 +13,8 @@ public static class ContainerConstraints
     public static bool AllowsAction(ContainerKind kind, ActionKind action) => action switch
     {
         ActionKind.None or ActionKind.Discard => true,
+        // A retainer lists what is in the player's bags or in its own inventory; armoury pieces must be moved first.
+        ActionKind.MarketList => kind is ContainerKind.Inventory or ContainerKind.Retainer,
         _ => kind is ContainerKind.Inventory or ContainerKind.Armoury,
     };
 

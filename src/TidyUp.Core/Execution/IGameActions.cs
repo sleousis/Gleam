@@ -43,6 +43,12 @@ public interface IGameActions
 
     Task<bool> RetrieveMateriaAsync(SlotRef slot, uint itemId, CancellationToken ct);
     Task<bool> VendorSellAsync(SlotRef slot, uint itemId, CancellationToken ct);
+
+    /// <summary>Puts the stack up for sale through the open retainer at the given unit price.</summary>
+    Task<bool> MarketListAsync(SlotRef slot, uint itemId, long unitPrice, int quantity, CancellationToken ct);
+
+    /// <summary>How many of the active retainer's 20 market slots are free; 0 when no retainer is open.</summary>
+    int FreeMarketSlots();
     Task<bool> ExpertDeliveryAsync(SlotRef slot, uint itemId, CancellationToken ct);
     Task<bool> DesynthAsync(SlotRef slot, uint itemId, CancellationToken ct);
 }

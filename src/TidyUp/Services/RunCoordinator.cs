@@ -229,11 +229,17 @@ public sealed class RunCoordinator : IDisposable
         }
     }
 
+    /// <summary>Where market prices come from: the current data centre, e.g. "Chaos".</summary>
+    public string MarketScope { get; private set; } = string.Empty;
+
     private async Task<ItemContext> AddMarketPricesAsync(IReadOnlyList<ScannedItem> items, ItemContext ctx, Profile profile)
     {
-        if (!config.UseUniversalis || !profile.EnabledRules.Contains(Core.Rules.MarketPricePostProcessor.RuleId)) return ctx;
-        var world = player.CurrentWorld.ValueNullable?.Name.ExtractText();
+        if (!config.UseUniversalis) return ctx;
+        var w = player.CurrentWorld.ValueNullable;
+        var world = w?.DataCenter.ValueNullable?.Name.ExtractText();
+        if (string.IsNullOrEmpty(world)) world = w?.Name.ExtractText();
         if (string.IsNullOrEmpty(world)) return ctx;
+        MarketScope = world;
         var ids = items.Select(i => i.ItemId).Distinct().Where(id => db.Get(id)?.IsMarketable == true).ToList();
         if (ids.Count == 0) return ctx;
         IReadOnlyDictionary<uint, MarketPrice> prices = new Dictionary<uint, MarketPrice>();
@@ -426,7 +432,7 @@ public sealed class RunCoordinator : IDisposable
     public void OnActionWindowOpened(string addonName)
     {
         // A vendor or GC officer window opened; if actions were waiting for it, tell the user.
-        var waiting = PendingActions.Count(p => p.Action is ActionKind.VendorSell or ActionKind.ExpertDelivery);
+        var waiting = PendingActions.Count(p => p.Action is ActionKind.VendorSell or ActionKind.ExpertDelivery or ActionKind.MarketList);
         if (waiting > 0) toast.ShowNormal($"Tidy Up: {waiting} accepted items can now be processed. Open /tidyup and accept.");
     }
 }

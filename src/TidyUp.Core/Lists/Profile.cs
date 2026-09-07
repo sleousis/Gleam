@@ -7,8 +7,8 @@ namespace TidyUp.Core.Lists;
 /// <summary>Everything a run reads that a user might want per character. Mutable for config round-tripping.</summary>
 public sealed class Profile
 {
-    public PresetName Preset { get; set; } = PresetName.Balanced;
-    public Thresholds Thresholds { get; set; } = Presets.For(PresetName.Balanced);
+    public PresetName Preset { get; set; } = PresetName.Vendor;
+    public Thresholds Thresholds { get; set; } = Presets.For(PresetName.Vendor);
 
     public HashSet<string> EnabledRules { get; set; } = new(RuleEngine.AllRuleIds);
 

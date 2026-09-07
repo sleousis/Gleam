@@ -6,7 +6,7 @@ namespace TidyUp.Core.Tests;
 
 public class RuleTests
 {
-    private readonly Thresholds t = Presets.For(PresetName.Balanced);
+    private readonly Thresholds t = Presets.For(PresetName.Vendor);
 
     [Fact]
     public void VendorOnlyJunk_proposes_sell_for_cheap_untradeable_with_vendor_price()
@@ -85,7 +85,7 @@ public class RuleTests
         Assert.NotNull(new ObsoleteGearRule().Evaluate(ScannedItem.Simple(Arm(0), 5, 1), Items[5], Context(), t));
 
         // With a huge gap requirement it stays quiet
-        var strict = Presets.For(PresetName.Balanced);
+        var strict = Presets.For(PresetName.Vendor);
         strict.ObsoleteGearLevelGap = 60;
         Assert.Null(new ObsoleteGearRule().Evaluate(ScannedItem.Simple(Arm(0), 5, 1), Items[5], Context(), strict));
     }
@@ -96,7 +96,7 @@ public class RuleTests
         Assert.Null(new ObsoleteGearRule().Evaluate(ScannedItem.Simple(Arm(0), 4, 1), Items[4], Context(gearsetItems: [4u]), t));
         Assert.Null(new ObsoleteGearRule().Evaluate(ScannedItem.Simple(Arm(0), 13, 1), Items[13], Context(), t));
 
-        var aggressive = Presets.For(PresetName.Aggressive);
+        var aggressive = Presets.For(PresetName.DiscardAll);
         var p = new ObsoleteGearRule().Evaluate(ScannedItem.Simple(Arm(0), 13, 1), Items[13], Context(), aggressive);
         Assert.NotNull(p);
         Assert.Equal(Confidence.Medium, p!.Confidence);
@@ -272,9 +272,10 @@ public class RuleTests
     [Fact]
     public void Presets_are_distinct_and_detectable()
     {
-        Assert.Equal(PresetName.Balanced, Presets.Detect(Presets.For(PresetName.Balanced)));
-        Assert.Equal(PresetName.Aggressive, Presets.Detect(Presets.For(PresetName.Aggressive)));
-        var custom = Presets.For(PresetName.Balanced);
+        Assert.Equal(PresetName.MarketBoard, Presets.Detect(Presets.For(PresetName.MarketBoard)));
+        Assert.Equal(PresetName.Vendor, Presets.Detect(Presets.For(PresetName.Vendor)));
+        Assert.Equal(PresetName.DiscardAll, Presets.Detect(Presets.For(PresetName.DiscardAll)));
+        var custom = Presets.For(PresetName.Vendor);
         custom.SoftCapItems = 51;
         Assert.Equal(PresetName.Custom, Presets.Detect(custom));
     }

@@ -11,6 +11,8 @@ public enum ActionPolicy
     DiscardUntradeableSellTradeable,
     /// <summary>Everything proposed is discarded.</summary>
     DiscardAll,
+    /// <summary>Marketable items go on the market board at the lowest data-centre price; other tradeable items are vendored; untradeable ones are discarded.</summary>
+    MarketListTradeable,
 }
 
 public static class ActionPolicyExtensions
@@ -20,6 +22,7 @@ public static class ActionPolicyExtensions
         ActionPolicy.SellOnly => "Only sells tradeable items. Never discards anything.",
         ActionPolicy.DiscardUntradeableSellTradeable => "Discards untradeable items, sells tradeable ones.",
         ActionPolicy.DiscardAll => "Discards everything it proposes.",
+        ActionPolicy.MarketListTradeable => "Lists marketable items on the market board at the lowest price on your data centre, vendors the rest, discards untradeable items.",
         _ => "Each rule picks its own action.",
     };
 }
@@ -65,16 +68,32 @@ public sealed class Thresholds
 
 public enum PresetName
 {
-    Balanced,
-    Aggressive,
+    /// <summary>Sell on the market board: list marketable items via retainers, vendor the rest, discard untradeable.</summary>
+    MarketBoard,
+    /// <summary>Sell to vendors: vendor tradeable items, discard untradeable.</summary>
+    Vendor,
+    /// <summary>Discard everything proposed.</summary>
+    DiscardAll,
     Custom,
+}
+
+public static class PresetNameExtensions
+{
+    public static string Label(this PresetName p) => p switch
+    {
+        PresetName.MarketBoard => "Sell on marketboard",
+        PresetName.Vendor => "Sell on vendors",
+        PresetName.DiscardAll => "Discard all",
+        _ => "Custom",
+    };
 }
 
 public static class Presets
 {
     public static Thresholds For(PresetName preset) => preset switch
     {
-        PresetName.Aggressive => new Thresholds
+        PresetName.MarketBoard => new Thresholds { Policy = ActionPolicy.MarketListTradeable },
+        PresetName.DiscardAll => new Thresholds
         {
             Policy = ActionPolicy.DiscardAll,
             ObsoleteGearLevelGap = 10,
@@ -94,7 +113,7 @@ public static class Presets
     /// <summary>Which preset a threshold set matches exactly, or Custom.</summary>
     public static PresetName Detect(Thresholds t)
     {
-        foreach (var p in new[] { PresetName.Balanced, PresetName.Aggressive })
+        foreach (var p in new[] { PresetName.MarketBoard, PresetName.Vendor, PresetName.DiscardAll })
             if (Equal(For(p), t)) return p;
         return PresetName.Custom;
     }

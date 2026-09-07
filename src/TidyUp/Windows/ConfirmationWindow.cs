@@ -143,7 +143,9 @@ public sealed class ConfirmationWindow : StyledWindow
 
     private static readonly IReadOnlyList<(Core.Rules.PresetName, string)> PresetOptions =
     [
-        (Core.Rules.PresetName.Balanced, "Balanced"), (Core.Rules.PresetName.Aggressive, "Aggressive"),
+        (Core.Rules.PresetName.MarketBoard, Core.Rules.PresetName.MarketBoard.Label()),
+        (Core.Rules.PresetName.Vendor, Core.Rules.PresetName.Vendor.Label()),
+        (Core.Rules.PresetName.DiscardAll, Core.Rules.PresetName.DiscardAll.Label()),
     ];
 
     private void DrawTopBar(RunPlan plan)
@@ -169,7 +171,7 @@ public sealed class ConfirmationWindow : StyledWindow
                 config.Save(PluginServices.PluginInterface);
                 _ = coordinator.RefreshPlanAsync(openWindow: false, coordinator.FocusContainer);
             }
-            Ui.Tooltip("Aggressive discards everything proposed. Balanced discards untradeable items and sells tradeable ones.");
+            Ui.Tooltip("Sell on marketboard: lists marketable items through your retainers at the lowest price on your data centre, vendors other tradeable items, discards untradeable ones.\nSell on vendors: vendors tradeable items, discards untradeable ones.\nDiscard all: discards everything proposed.");
         }, profile.Thresholds.Policy.Describe());
 
         Ui.Gap(0.4f);
@@ -312,7 +314,7 @@ public sealed class ConfirmationWindow : StyledWindow
         ImGui.Separator();
         Ui.Hint("Action");
         if (ImGui.MenuItem("All actions", string.Empty, filterAction is null, true)) filterAction = null;
-        foreach (var a in new[] { ActionKind.Discard, ActionKind.VendorSell, ActionKind.ExpertDelivery, ActionKind.Desynth, ActionKind.None })
+        foreach (var a in new[] { ActionKind.Discard, ActionKind.VendorSell, ActionKind.MarketList, ActionKind.ExpertDelivery, ActionKind.Desynth, ActionKind.None })
             if (ImGui.MenuItem(a.Label(), string.Empty, filterAction == a, true)) filterAction = a;
 
         ImGui.Separator();
@@ -384,13 +386,14 @@ public sealed class ConfirmationWindow : StyledWindow
         }
         if (!expanded) { Ui.Gap(0.2f); return; }
 
-        using var table = ImRaii.Table($"##t{key}", 5, ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingFixedFit | ImGuiTableFlags.NoSavedSettings | ImGuiTableFlags.PadOuterX);
+        using var table = ImRaii.Table($"##t{key}", 6, ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingFixedFit | ImGuiTableFlags.NoSavedSettings | ImGuiTableFlags.PadOuterX);
         if (!table) return;
         ImGui.TableSetupColumn("##chk", ImGuiTableColumnFlags.WidthFixed, 24 * Ui.Scale, 0);
         ImGui.TableSetupColumn("##icon", ImGuiTableColumnFlags.WidthFixed, 30 * Ui.Scale, 0);
         ImGui.TableSetupColumn("##item", ImGuiTableColumnFlags.WidthStretch, 5f, 0);
         ImGui.TableSetupColumn("##action", ImGuiTableColumnFlags.WidthFixed, 128 * Ui.Scale, 0);
-        ImGui.TableSetupColumn("##why", ImGuiTableColumnFlags.WidthStretch, 5f, 0);
+        ImGui.TableSetupColumn("##market", ImGuiTableColumnFlags.WidthFixed, 96 * Ui.Scale, 0);
+        ImGui.TableSetupColumn("##attrs", ImGuiTableColumnFlags.WidthStretch, 5f, 0);
 
         foreach (var row in rows)
         {
@@ -435,7 +438,27 @@ public sealed class ConfirmationWindow : StyledWindow
         DrawActionPicker(row);
 
         ImGui.TableNextColumn();
+        DrawMarketPrice(row);
+
+        ImGui.TableNextColumn();
         DrawAttributePills(row);
+    }
+
+    /// <summary>Lowest market-board listing on the data centre, per unit. Blank for unmarketable items.</summary>
+    private void DrawMarketPrice(PlanRow row)
+    {
+        ImGui.AlignTextToFramePadding();
+        if (!row.Info.IsMarketable) return;
+        var unit = row.Proposal.MarketUnitPrice;
+        if (unit <= 0)
+        {
+            Ui.TextColored(Ui.Muted * new Vector4(1, 1, 1, 0.5f), config.UseUniversalis ? "no listings" : "prices off");
+            Ui.Tooltip(config.UseUniversalis ? "Universalis has no current listing for this item on your data centre." : "Turn on market prices in Settings › Advanced › Integrations.");
+            return;
+        }
+        Ui.TextColored(Ui.Market, $"{unit:N0}g");
+        var scope = string.IsNullOrEmpty(coordinator.MarketScope) ? "your data centre" : coordinator.MarketScope;
+        Ui.Tooltip($"Lowest listing on {scope} ({(row.Item.IsHq ? "HQ" : "NQ")}): {unit:N0}g each · {unit * row.Item.Quantity:N0}g for the stack of {row.Item.Quantity}.");
     }
 
     /// <summary>What the item *is*, as small pills. The why (rule, warnings) lives in the name tooltip.</summary>
@@ -455,15 +478,6 @@ public sealed class ConfirmationWindow : StyledWindow
 
         ImGui.SetCursorPosY(ImGui.GetCursorPosY() + 3 * Ui.Scale);
         using var sp = ImRaii.PushStyle(ImGuiStyleVar.ItemSpacing, new Vector2(4 * Ui.Scale, 0));
-        if (row.Proposal.Warnings.Count > 0)
-        {
-            var severe = row.Proposal.Warnings[0].Contains("never be reacquired", StringComparison.Ordinal) || row.Proposal.Warnings[0].Contains("cannot be bought back", StringComparison.Ordinal);
-            ImGui.SetCursorPosY(ImGui.GetCursorPosY() + 1 * Ui.Scale);
-            Ui.Icon(FontAwesomeIcon.ExclamationTriangle, severe ? Ui.Danger : Ui.Warn);
-            if (ImGui.IsItemHovered()) ImGui.SetTooltip(string.Join("\n", row.Proposal.Warnings));
-            ImGui.SameLine(0, 6 * Ui.Scale);
-            ImGui.SetCursorPosY(ImGui.GetCursorPosY() - 1 * Ui.Scale);
-        }
         for (var i = 0; i < pills.Count; i++)
         {
             Ui.Pill(pills[i].Text, pills[i].Color);
@@ -603,6 +617,7 @@ public sealed class ConfirmationWindow : StyledWindow
         if (freed > 0) parts.Add($"frees {freed} slot{(freed == 1 ? "" : "s")}");
         if (summary.GilRecovered > 0) parts.Add($"recovers {Ui.Gil(summary.GilRecovered)}");
         if (summary.GilDestroyed > 0) parts.Add($"destroys {Ui.Gil(summary.GilDestroyed)} of vendor value");
+        if (summary.MarketRows > 0) parts.Add($"lists {summary.MarketRows} on the market for about {Ui.Gil(summary.MarketGil)}");
         if (summary.SealsRows > 0) parts.Add($"{summary.SealsRows} to seals");
         if (coordinator.PendingActions.Count > 0) parts.Add($"{coordinator.PendingActions.Count} accepted earlier still waiting");
 
@@ -610,7 +625,7 @@ public sealed class ConfirmationWindow : StyledWindow
         Ui.Hint(parts.Count == 0 ? "Select rows to see what this run would do." : string.Join("  ·  ", parts));
 
         var handsFree = Pilot is not null && config.Automation.Enabled && coordinator.FocusContainer is null && !(Pilot?.IsRunning ?? false);
-        var needsTravel = plan.AllRows.Any(r => r.Checked && r.IsExecutable && (!r.Item.Slot.Kind.IsAlwaysLoaded() || r.ChosenAction == ActionKind.VendorSell));
+        var needsTravel = plan.AllRows.Any(r => r.Checked && r.IsExecutable && (!r.Item.Slot.Kind.IsAlwaysLoaded() || r.ChosenAction is ActionKind.VendorSell or ActionKind.MarketList));
         var verb = cap.Exceeded && !capArmed
             ? $"Clean {cap.Items} · over your cap, click again"
             : handsFree && needsTravel ? $"Clean {cap.Items} everywhere" : $"Clean {cap.Items} item{(cap.Items == 1 ? "" : "s")}";

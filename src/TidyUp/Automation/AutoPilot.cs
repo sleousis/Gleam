@@ -93,7 +93,8 @@ public sealed class AutoPilot
         var ct = cts.Token;
         try
         {
-            var here = queue.Where(q => q.Kind.IsAlwaysLoaded() && q.Action is not ActionKind.VendorSell and not ActionKind.ExpertDelivery).ToList();
+            var here = queue.Where(q => q.Kind.IsAlwaysLoaded() && q.Action is not ActionKind.VendorSell and not ActionKind.ExpertDelivery and not ActionKind.MarketList).ToList();
+            var listings = queue.Where(q => q.Kind.IsAlwaysLoaded() && q.Action == ActionKind.MarketList).ToList();
             var sells = queue.Where(q => q.Kind.IsAlwaysLoaded() && q.Action == ActionKind.VendorSell).ToList();
             var seals = queue.Where(q => q.Kind.IsAlwaysLoaded() && q.Action == ActionKind.ExpertDelivery).ToList();
             var saddle = queue.Where(q => q.Kind == ContainerKind.Saddlebag).ToList();
@@ -113,13 +114,13 @@ public sealed class AutoPilot
             var sweep = S.VisitContainersWithoutRows && S.UnseenRows != UnseenRowsMode.Skip;
             if (S.OpenSaddlebag && (saddle.Count > 0 || sweep)) await Leg("saddlebag", () => SaddlebagAsync(saddle, ct), ct);
 
-            var needsInn = (S.VisitRetainers && (retainers.Count > 0 || sweep)) || (S.VisitDresser && (dresser.Count > 0 || sweep));
+            var needsInn = (S.VisitRetainers && (retainers.Count > 0 || listings.Count > 0 || sweep)) || (S.VisitDresser && (dresser.Count > 0 || sweep));
             if (needsInn)
             {
                 var inInn = await Leg("inn", () => TravelToInnAsync(ct), ct);
                 if (inInn)
                 {
-                    if (S.VisitRetainers) await Leg("retainers", () => RetainersAsync(retainers, ct), ct);
+                    if (S.VisitRetainers) await Leg("retainers", () => RetainersAsync(retainers, listings, ct), ct);
                     if (S.VisitDresser) await Leg("dresser", () => DresserAsync(dresser, ct), ct);
                 }
             }
@@ -132,7 +133,7 @@ public sealed class AutoPilot
                 await RecoverUiAsync(ct).ConfigureAwait(false);
                 sells.AddRange(broughtBack.Where(b => b.Action == ActionKind.VendorSell));
                 seals.AddRange(broughtBack.Where(b => b.Action == ActionKind.ExpertDelivery));
-                var here2 = broughtBack.Where(b => b.Action is not ActionKind.VendorSell and not ActionKind.ExpertDelivery).ToList();
+                var here2 = broughtBack.Where(b => b.Action is not ActionKind.VendorSell and not ActionKind.ExpertDelivery and not ActionKind.MarketList).ToList();
                 if (here2.Count > 0) await Leg("brought back", () => Step("Stripping materia from items brought back", () => Execute(here2), ct), ct);
             }
 
@@ -275,10 +276,10 @@ public sealed class AutoPilot
         }, ct);
     }
 
-    private async Task RetainersAsync(Dictionary<ulong, List<QueuedAction>> byRetainer, CancellationToken ct)
+    private async Task RetainersAsync(Dictionary<ulong, List<QueuedAction>> byRetainer, List<QueuedAction> listings, CancellationToken ct)
     {
         var sweep = S.VisitContainersWithoutRows && S.UnseenRows != UnseenRowsMode.Skip;
-        if (byRetainer.Count == 0 && !sweep) return;
+        if (byRetainer.Count == 0 && listings.Count == 0 && !sweep) return;
         await EnsureRetainerListAsync(ct).ConfigureAwait(false);
 
         // The list appears before the server has filled it; selecting too early is silently ignored.
@@ -291,9 +292,9 @@ public sealed class AutoPilot
             ct.ThrowIfCancellationRequested();
             var (id, name) = order[index];
             var rows = byRetainer.GetValueOrDefault(id) ?? new List<QueuedAction>();
-            if (rows.Count == 0 && !sweep) continue;
+            if (rows.Count == 0 && listings.Count == 0 && !sweep) continue;
 
-            var ok = await Leg($"retainer {name}", () => OneRetainerAsync(index, id, name, rows, ct), ct).ConfigureAwait(false);
+            var ok = await Leg($"retainer {name}", () => OneRetainerAsync(index, id, name, rows, listings, ct), ct).ConfigureAwait(false);
             if (!ok) await EnsureRetainerListAsync(ct).ConfigureAwait(false);
         }
 
@@ -343,8 +344,10 @@ public sealed class AutoPilot
         throw new AutoPilotException("Could not get back to the retainer list; close the retainer windows and run again");
     }
 
-    private async Task OneRetainerAsync(int index, ulong id, string name, List<QueuedAction> rows, CancellationToken ct)
+    private async Task OneRetainerAsync(int index, ulong id, string name, List<QueuedAction> allRows, List<QueuedAction> listings, CancellationToken ct)
     {
+        var rows = allRows.Where(r => r.Action != ActionKind.MarketList).ToList();
+        var ownListings = allRows.Where(r => r.Action == ActionKind.MarketList).ToList();
         {
 
             await Step($"Opening {name}", async () =>
@@ -399,6 +402,11 @@ public sealed class AutoPilot
                 await WaitUntil(() => GameUi.SelectStringReady(), StepTimeout, $"{name}'s menu", ct).ConfigureAwait(false);
             }
 
+            // Market listings: first what is in the bags (shared across retainers, each takes what it has room for),
+            // then what this retainer holds itself.
+            if (listings.Count > 0) await MarketStepAsync(name, S.SellFromBagsMenuText, listings, ct).ConfigureAwait(false);
+            if (ownListings.Count > 0) await MarketStepAsync(name, S.SellFromRetainerMenuText, ownListings, ct).ConfigureAwait(false);
+
             await Step($"Leaving {name}", async () =>
             {
                 await ChooseMenu(S.QuitMenuText, ct).ConfigureAwait(false);
@@ -406,6 +414,42 @@ public sealed class AutoPilot
                 await Task.Delay(500, ct).ConfigureAwait(false);
             }, ct);
         }
+    }
+
+    /// <summary>Opens one of the retainer's sell lists, lists as many rows as there are free market slots, closes it.</summary>
+    private async Task MarketStepAsync(string name, string menuText, List<QueuedAction> rows, CancellationToken ct)
+    {
+        var free = await OnFramework(FreeMarketSlots).ConfigureAwait(false);
+        if (free <= 0)
+        {
+            log.Information("{Name} has no free market slots; {Count} listings wait for another retainer", name, rows.Count);
+            return;
+        }
+        await Step($"Opening {name}'s market listings", async () =>
+        {
+            await ChooseMenu(menuText, ct).ConfigureAwait(false);
+            await WaitUntil(() => GameUi.IsVisible("RetainerSellList"), StepTimeout, $"{name}'s sell list", ct).ConfigureAwait(false);
+            await Task.Delay(800, ct).ConfigureAwait(false);
+        }, ct);
+
+        var batch = rows.Take(free).ToList();
+        await Step($"Listing {batch.Count} on the market through {name}", () => Execute(batch), ct);
+        var done = coordinator.LastReport?.Results.Where(r => r.Outcome == Core.Execution.ActionOutcome.Done).Select(r => r.Action).ToHashSet()
+                   ?? new HashSet<QueuedAction>();
+        rows.RemoveAll(done.Contains);
+
+        await framework.RunOnFrameworkThread(() => { GameUi.Close("RetainerSell"); GameUi.Close("RetainerSellList"); }).ConfigureAwait(false);
+        await WaitUntil(() => GameUi.SelectStringReady(), StepTimeout, $"{name}'s menu", ct).ConfigureAwait(false);
+        await Task.Delay(400, ct).ConfigureAwait(false);
+    }
+
+    private static unsafe int FreeMarketSlots()
+    {
+        var rm = FFXIVClientStructs.FFXIV.Client.Game.RetainerManager.Instance();
+        if (rm == null) return 0;
+        var r = rm->GetActiveRetainer();
+        if (r == null || r->RetainerId == 0) return 0;
+        return Math.Max(0, Game.GameActions.MarketSlotsPerRetainer - r->MarketItemCount);
     }
 
     private async Task DresserAsync(List<QueuedAction> rows, CancellationToken ct)

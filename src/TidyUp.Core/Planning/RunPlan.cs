@@ -54,6 +54,8 @@ public sealed class RunSummary
     public long GilRecovered { get; init; }
     public int SealsRows { get; init; }
     public int DesynthRows { get; init; }
+    public int MarketRows { get; init; }
+    public long MarketGil { get; init; }
     public int HardBlocked { get; init; }
     public int Protected { get; init; }
 }
@@ -76,7 +78,8 @@ public sealed class RunPlan
         var checkedRows = AllRows.Where(r => r.Checked && r.IsExecutable).ToList();
         var freed = new Dictionary<ContainerKind, int>();
         long destroyed = 0, recovered = 0;
-        int seals = 0, desynth = 0;
+        int seals = 0, desynth = 0, market = 0;
+        long marketGil = 0;
         foreach (var r in checkedRows)
         {
             freed[r.Item.Slot.Kind] = freed.GetValueOrDefault(r.Item.Slot.Kind) + 1;
@@ -86,6 +89,7 @@ public sealed class RunPlan
                 case ActionKind.VendorSell: recovered += (long)r.Info.VendorPrice * r.Item.Quantity; break;
                 case ActionKind.ExpertDelivery: seals++; break;
                 case ActionKind.Desynth: desynth++; break;
+                case ActionKind.MarketList: market++; marketGil += r.Proposal.MarketUnitPrice * r.Item.Quantity; break;
             }
         }
         return new RunSummary
@@ -97,6 +101,8 @@ public sealed class RunPlan
             GilRecovered = recovered,
             SealsRows = seals,
             DesynthRows = desynth,
+            MarketRows = market,
+            MarketGil = marketGil,
             HardBlocked = Excluded.Count(e => e.IsHardBlock),
             Protected = Excluded.Count(e => !e.IsHardBlock),
         };

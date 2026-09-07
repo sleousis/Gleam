@@ -54,6 +54,13 @@ internal sealed class FakeGame : IGameActions
 
     public Task<bool> DiscardAsync(SlotRef slot, uint itemId, CancellationToken ct) => Do("discard", slot);
     public Task<bool> VendorSellAsync(SlotRef slot, uint itemId, CancellationToken ct) => Do("sell", slot);
+    public int MarketSlots { get; set; } = 20;
+    public Task<bool> MarketListAsync(SlotRef slot, uint itemId, long unitPrice, int quantity, CancellationToken ct)
+    {
+        MarketSlots--;
+        return Do($"list@{unitPrice}", slot);
+    }
+    public int FreeMarketSlots() => MarketSlots;
     public Task<bool> ExpertDeliveryAsync(SlotRef slot, uint itemId, CancellationToken ct) => Do("seals", slot);
     public Task<bool> DesynthAsync(SlotRef slot, uint itemId, CancellationToken ct) => Do("desynth", slot);
 
@@ -270,6 +277,30 @@ public class ExecutionEngineTests
         Assert.Equal(1, second.Done);
         Assert.Contains(game.Calls, c => c == $"materia:{follow.Slot}");
         Assert.Empty(game.Slots);
+    }
+
+    [Fact]
+    public async Task Market_listing_needs_the_sell_list_a_price_and_a_free_slot()
+    {
+        var game = new FakeGame { MarketSlots = 1 };
+        game.AvailableActions.Add(ActionKind.MarketList);
+        game.Slots[Inv(0)] = ScannedItem.Simple(Inv(0), 12, 3);
+        game.Slots[Inv(1)] = ScannedItem.Simple(Inv(1), 12, 2);
+        game.Slots[Inv(2)] = ScannedItem.Simple(Inv(2), 6, 1);
+
+        var queue = new List<QueuedAction>
+        {
+            Q(Inv(0), 12, 3, ActionKind.MarketList) with { UnitPrice = 400 },
+            Q(Inv(1), 12, 2, ActionKind.MarketList) with { UnitPrice = 400 },
+            Q(Inv(2), 6, 1, ActionKind.MarketList), // no price
+        };
+        var report = await new ExecutionEngine(game, new MemoryRunLog(), new NoDelay()).ExecuteAsync(queue, Who, CancellationToken.None);
+
+        Assert.Equal(1, report.Done);
+        Assert.Contains(game.Calls, c => c == $"list@400:{Inv(0)}");
+        Assert.Equal(2, report.Pending.Count);
+        Assert.Contains(report.PendingReasons.Values, r => r.Contains("market slots are full"));
+        Assert.Contains(report.PendingReasons.Values, r => r.Contains("no market price"));
     }
 
     [Fact]
