@@ -50,6 +50,13 @@ public sealed class RunReport
 {
     public List<ActionResult> Results { get; } = new();
     public List<QueuedAction> Pending { get; } = new();
+
+    /// <summary>Why each pending action is waiting, so the summary can say "open a vendor" rather than nothing.</summary>
+    public Dictionary<QueuedAction, string> PendingReasons { get; } = new();
+
+    public IEnumerable<(string Reason, int Count)> PendingByReason() =>
+        Pending.GroupBy(p => PendingReasons.TryGetValue(p, out var r) ? r : string.Empty)
+            .Select(g => (g.Key, g.Count()));
     public bool Aborted { get; set; }
     public string AbortReason { get; set; } = string.Empty;
 

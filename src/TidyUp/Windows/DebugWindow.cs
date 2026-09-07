@@ -85,7 +85,7 @@ public sealed class DebugWindow : Window
         });
 
         Ui.Header("Spikes (one item each)");
-        if (Ui.ButtonColored("Discard slot", Ui.Danger)) Spike("discard", ct => actions.DiscardAsync(target, actions.ReadSlot(target)?.ItemId ?? 0, ct));
+        DrawDiscardSpike(target);
         ImGui.SameLine();
         if (Ui.ButtonColored("Restore dresser index", Ui.Warn)) RunAsync(async ct =>
         {
@@ -147,6 +147,40 @@ public sealed class DebugWindow : Window
         if (item is null) return "empty / unreadable";
         var info = db.Get(item.ItemId);
         return $"{info?.Name ?? "?"} (id {item.ItemId}) ×{item.Quantity}{(item.IsHq ? " HQ" : "")} materia {item.MateriaCount} dye {item.Stain0}/{item.Stain1} @ {item.Slot} · vendor {info?.VendorPrice}g · marketable {info?.IsMarketable} · untradeable {info?.IsUntradable} · unique {info?.IsUnique} · indisposable {info?.IsIndisposable} · cat {info?.UiCategory}";
+    }
+
+    private string? discardArmedFor;
+    private DateTime discardArmedAt;
+    private bool forceDangerous;
+
+    /// <summary>Two clicks, names the item, and refuses anything the planner would hard-block unless forced.</summary>
+    private void DrawDiscardSpike(SlotRef target)
+    {
+        var item = actions.ReadSlot(target);
+        var info = item is null ? null : db.Get(item.ItemId);
+        var armed = discardArmedFor is not null && discardArmedFor == target.ToString() && (DateTime.UtcNow - discardArmedAt).TotalSeconds < 6;
+        var label = armed && info is not null ? $"Really discard {info.Name} ×{item!.Quantity}?" : "Discard slot";
+
+        var dangerous = info is not null && (info.IsIndisposable || (info.IsUnique && info.IsUntradable) || info.IsNeverProposed
+                                             || (!info.IsEquipment && info.IsUntradable && info.VendorPrice == 0));
+        using (ImRaii.Disabled(item is null || (dangerous && !forceDangerous)))
+        {
+            if (Ui.ButtonColored(label, Ui.Danger, 260 * Ui.Scale))
+            {
+                if (!armed) { discardArmedFor = target.ToString(); discardArmedAt = DateTime.UtcNow; }
+                else
+                {
+                    discardArmedFor = null;
+                    var id = item!.ItemId;
+                    Spike($"discard {info!.Name}", ct => actions.DiscardAsync(target, id, ct));
+                }
+            }
+        }
+        if (item is null) Ui.Tooltip("Slot is empty.");
+        else if (dangerous) Ui.Tooltip($"{info!.Name} is hard-blocked (untradeable with no vendor value, unique, indisposable, or a protected category). Tick Force to override.");
+        ImGui.SameLine();
+        ImGui.Checkbox("Force", ref forceDangerous);
+        Ui.Tooltip("Allow the spike to discard items the planner would never propose. Off by default for a reason.");
     }
 
     private void Spike(string name, Func<CancellationToken, Task<bool>> action) => RunAsync(async ct =>

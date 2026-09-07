@@ -7,9 +7,9 @@ using FFXIVClientStructs.FFXIV.Component.GUI;
 namespace TidyUp.Game;
 
 /// <summary>
-/// Waits for named native dialogs and answers them. Armed per action: a SelectYesno that appears
-/// while nothing is armed is left strictly alone, and one whose prompt does not mention the expected
-/// item name is left alone too.
+/// Answers named native dialogs, but only ones that appear *after* an action armed it, and for
+/// SelectYesno only when the prompt names the expected item. A dialog that is already open when an
+/// action starts is never touched: it belongs to the player, not to us.
 /// </summary>
 public sealed unsafe class AddonDriver : IDisposable
 {
@@ -43,10 +43,23 @@ public sealed unsafe class AddonDriver : IDisposable
 
     public void Dispose() => lifecycle.UnregisterListener(AddonEvent.PostSetup, WatchedDialogs, OnDialog);
 
-    /// <summary>Arms a one-shot answer for the next appearance of <paramref name="addonName"/>.</summary>
+    /// <summary>Why the last armed dialog was refused or never answered, for the spike window.</summary>
+    public string? LastRejection { get; private set; }
+
+    /// <summary>
+    /// Arms a one-shot answer for the *next* appearance of <paramref name="addonName"/>. Call this before
+    /// the native action so the dialog cannot slip in first. Returns immediately-false if that dialog is
+    /// already open, because then it is not ours to answer.
+    /// </summary>
     public Task<bool> ExpectAsync(string addonName, int callbackValue, string? expectedSubstring, TimeSpan timeout, CancellationToken ct)
     {
         LastRejection = null;
+        if (framework.IsInFrameworkUpdateThread ? IsAddonVisible(addonName) : framework.RunOnFrameworkThread(() => IsAddonVisible(addonName)).Result)
+        {
+            LastRejection = $"{addonName} is already open; close it before running an action";
+            return Task.FromResult(false);
+        }
+
         var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         lock (gate)
         {
@@ -54,15 +67,14 @@ public sealed unsafe class AddonDriver : IDisposable
             armed = new Armed { AddonName = addonName, CallbackValue = callbackValue, ExpectedSubstring = expectedSubstring, Completion = tcs };
         }
 
-        // If the dialog is already up (fast game), answer it now.
-        framework.RunOnFrameworkThread(() => TryAnswerExisting(addonName));
-
         var timeoutTask = Task.Delay(timeout, ct);
-        return Task.WhenAny(tcs.Task, timeoutTask).ContinueWith(t =>
+        return Task.WhenAny(tcs.Task, timeoutTask).ContinueWith(_ =>
         {
             lock (gate) { if (armed?.Completion == tcs) armed = null; }
-            return tcs.Task.IsCompletedSuccessfully && tcs.Task.Result;
-        }, ct);
+            var ok = tcs.Task.IsCompletedSuccessfully && tcs.Task.Result;
+            if (!ok && LastRejection is null) LastRejection = $"{addonName} did not appear within {timeout.TotalSeconds:0}s";
+            return ok;
+        }, CancellationToken.None);
     }
 
     public void Disarm()
@@ -74,33 +86,26 @@ public sealed unsafe class AddonDriver : IDisposable
         }
     }
 
-    private void TryAnswerExisting(string addonName)
-    {
-        var addon = (AtkUnitBase*)RaptureAtkUnitManager.Instance()->GetAddonByName(addonName, 1);
-        if (addon == null || !addon->IsVisible) return;
-        Answer(addonName, addon);
-    }
-
     private void OnDialog(AddonEvent type, AddonArgs args)
     {
         Armed? a;
         lock (gate) a = armed;
         if (a is null || !string.Equals(a.AddonName, args.AddonName, StringComparison.Ordinal)) return;
         // PostSetup fires before values settle for some dialogs; answer on the next tick.
-        framework.RunOnTick(() => TryAnswerExisting(a.AddonName), delayTicks: 1);
+        framework.RunOnTick(() => Answer(a), delayTicks: 1);
     }
 
-    private void Answer(string addonName, AtkUnitBase* addon)
+    private void Answer(Armed a)
     {
-        Armed? a;
-        lock (gate) a = armed;
-        if (a is null || a.AddonName != addonName) return;
+        lock (gate) { if (armed != a) return; }
+        var addon = GetAddon(a.AddonName);
+        if (addon == null || !addon->IsVisible) return;
 
-        if (addonName == "SelectYesno" && a.ExpectedSubstring is not null)
+        if (a.AddonName == "SelectYesno" && a.ExpectedSubstring is not null)
         {
             var prompt = ReadYesNoPrompt(addon);
             // Item names carry soft hyphens and the prompt carries payload bytes; compare letters and digits only.
-            if (prompt is not null && !Normalize(prompt).Contains(Normalize(a.ExpectedSubstring), StringComparison.OrdinalIgnoreCase))
+            if (prompt is null || !Normalize(prompt).Contains(Normalize(a.ExpectedSubstring), StringComparison.OrdinalIgnoreCase))
             {
                 LastRejection = $"SelectYesno prompt '{prompt}' does not mention '{a.ExpectedSubstring}'; dialog left open";
                 log.Warning("{Rejection}", LastRejection);
@@ -110,15 +115,11 @@ public sealed unsafe class AddonDriver : IDisposable
             }
         }
 
-        LastRejection = null;
-        log.Debug("Answering {Addon} with callback {Value}", addonName, a.CallbackValue);
+        log.Debug("Answering {Addon} with callback {Value}", a.AddonName, a.CallbackValue);
         var ok = addon->FireCallbackInt(a.CallbackValue);
         lock (gate) { if (armed == a) armed = null; }
         a.Completion.TrySetResult(ok);
     }
-
-    /// <summary>Why the last armed dialog was refused, for the spike window.</summary>
-    public string? LastRejection { get; private set; }
 
     /// <summary>Letters and digits only, lower-cased: immune to soft hyphens, payload bytes, and punctuation.</summary>
     public static string Normalize(string s)
@@ -145,7 +146,7 @@ public sealed unsafe class AddonDriver : IDisposable
 
     public static bool IsAddonVisible(string name)
     {
-        var addon = (AtkUnitBase*)RaptureAtkUnitManager.Instance()->GetAddonByName(name, 1);
+        var addon = GetAddon(name);
         return addon != null && addon->IsVisible;
     }
 

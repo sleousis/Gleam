@@ -109,9 +109,11 @@ public sealed class GameActions : IGameActions
         LastFailure = null;
         var changed = WaitForEvent<InventoryItemChangedArgs>(
             e => (uint)e.Item.ContainerType == slot.ContainerId && e.Item.InventorySlot == (uint)slot.Slot, ct);
+        var dialog = dialogs.ExpectAsync("MateriaRetrieveDialog", config.Callbacks.MateriaRetrieveConfirm, null, Timeout, ct);
+        if (dialog.IsCompleted && !dialog.Result) { LastFailure = dialogs.LastRejection; return false; }
         var opened = await context.InvokeAsync(slot, config.Callbacks.RetrieveMateriaLabel, ct).ConfigureAwait(false);
-        if (!opened) { LastFailure = context.LastFailure; return false; }
-        var confirmed = await dialogs.ExpectAsync("MateriaRetrieveDialog", config.Callbacks.MateriaRetrieveConfirm, null, Timeout, ct).ConfigureAwait(false);
+        if (!opened) { dialogs.Disarm(); LastFailure = context.LastFailure; return false; }
+        var confirmed = await dialog.ConfigureAwait(false);
         if (!confirmed) { LastFailure = dialogs.LastRejection ?? "MateriaRetrieveDialog did not appear"; return false; }
         if (await changed.ConfigureAwait(false) is null) { LastFailure = "Materia dialog answered but the item did not change"; return false; }
         return true;
@@ -127,7 +129,7 @@ public sealed class GameActions : IGameActions
                 if (!ok) LastFailure = context.LastFailure;
                 return ok;
             },
-            expectDialog: ("SelectYesno", config.Callbacks.YesNoConfirm, null), dialogOptional: true);
+            expectDialog: ("SelectYesno", config.Callbacks.YesNoConfirm, db.Get(itemId)?.Name), dialogOptional: true);
 
     // ---------- expert delivery ----------
 
@@ -136,9 +138,11 @@ public sealed class GameActions : IGameActions
         LastFailure = null;
         var removed = WaitForEvent<InventoryItemRemovedArgs>(
             e => (uint)e.Item.ContainerType == slot.ContainerId && e.Item.InventorySlot == (uint)slot.Slot, ct);
+        var dialog = dialogs.ExpectAsync("GrandCompanySupplyReward", config.Callbacks.ExpertDeliveryConfirm, null, Timeout, ct);
+        if (dialog.IsCompleted && !dialog.Result) { LastFailure = dialogs.LastRejection; return false; }
         var selected = await framework.RunOnFrameworkThread(() => Native.SelectExpertDelivery(itemId, config.Callbacks.ExpertDeliverySelect)).ConfigureAwait(false);
-        if (!selected) { LastFailure = "Item not in the Expert Delivery list, or the list window is not open"; return false; }
-        var confirmed = await dialogs.ExpectAsync("GrandCompanySupplyReward", config.Callbacks.ExpertDeliveryConfirm, null, Timeout, ct).ConfigureAwait(false);
+        if (!selected) { dialogs.Disarm(); LastFailure = "Item not in the Expert Delivery list, or the list window is not open"; return false; }
+        var confirmed = await dialog.ConfigureAwait(false);
         if (!confirmed) { LastFailure = dialogs.LastRejection ?? "GrandCompanySupplyReward did not appear"; return false; }
         if (await removed.ConfigureAwait(false) is null) { LastFailure = "Reward dialog answered but the item was not removed"; return false; }
         return true;
@@ -162,6 +166,19 @@ public sealed class GameActions : IGameActions
         var changed = WaitForEvent<InventoryItemChangedArgs>(
             e => (uint)e.Item.ContainerType == slot.ContainerId && e.Item.InventorySlot == (uint)slot.Slot && e.Item.IsEmpty, ct);
 
+        // Arm first, then act: the dialog can only be answered if it appears after this point, and a
+        // dialog that is already open (the player's own) makes the whole action refuse to start.
+        Task<bool>? dialogTask = null;
+        if (expectDialog is { } d)
+        {
+            dialogTask = dialogs.ExpectAsync(d.Addon, d.Callback, d.Expect, Timeout, ct);
+            if (dialogTask.IsCompleted && !dialogTask.Result)
+            {
+                LastFailure = dialogs.LastRejection;
+                return false;
+            }
+        }
+
         var started = await start().ConfigureAwait(false);
         if (!started)
         {
@@ -170,12 +187,12 @@ public sealed class GameActions : IGameActions
             return false;
         }
 
-        if (expectDialog is { } d)
+        if (dialogTask is not null)
         {
-            var answered = await dialogs.ExpectAsync(d.Addon, d.Callback, d.Expect, Timeout, ct).ConfigureAwait(false);
+            var answered = await dialogTask.ConfigureAwait(false);
             if (!answered && !dialogOptional)
             {
-                LastFailure = dialogs.LastRejection ?? $"{d.Addon} did not appear within {Timeout.TotalSeconds:0}s";
+                LastFailure = dialogs.LastRejection ?? "dialog was not answered";
                 log.Warning("{Failure} for {Slot}", LastFailure, slot);
                 return false;
             }
