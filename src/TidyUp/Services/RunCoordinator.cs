@@ -341,7 +341,11 @@ public sealed class RunCoordinator : IDisposable
         try
         {
             var engine = new ExecutionEngine(actions, runLog, new RealDelay(),
-                new ExecutionOptions { RateLimit = TimeSpan.FromMilliseconds(config.Callbacks.RateLimitMs) });
+                new ExecutionOptions
+                {
+                    RateLimit = TimeSpan.FromMilliseconds(config.Callbacks.RateLimitMs),
+                    OnMateriaFailure = config.ActWhenMateriaFails ? MateriaFailurePolicy.ActAnyway : MateriaFailurePolicy.LeaveItem,
+                });
             var progress = new Progress<ActionResult>(r =>
             {
                 LastProgress = r;

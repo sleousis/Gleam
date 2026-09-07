@@ -12,6 +12,17 @@ public sealed class ExecutionOptions
     /// is wrong (a dialog we cannot answer, a window that closed) and the run stops.
     /// </summary>
     public int MaxConsecutiveFailures { get; init; } = 3;
+
+    /// <summary>What to do with a slotted item whose materia could not be retrieved.</summary>
+    public MateriaFailurePolicy OnMateriaFailure { get; init; } = MateriaFailurePolicy.LeaveItem;
+}
+
+public enum MateriaFailurePolicy
+{
+    /// <summary>Park the item with a reason; the player can strip the materia by hand.</summary>
+    LeaveItem,
+    /// <summary>Act anyway. The materia is destroyed with the item.</summary>
+    ActAnyway,
 }
 
 /// <summary>
@@ -178,13 +189,21 @@ public sealed class ExecutionEngine
             await delay.Wait(options.RateLimit, ct).ConfigureAwait(false);
         }
 
-        if (action.RetrieveMateriaFirst)
+        if (action.RetrieveMateriaFirst && live.HasMateria)
         {
             if (game.FreeInventorySlots() < live.MateriaCount)
                 return new ActionResult(action, ActionOutcome.Pending, "Not enough free inventory slots to retrieve materia");
             var ok = await game.RetrieveMateriaAsync(target, action.ItemId, ct).ConfigureAwait(false);
-            if (!ok) return new ActionResult(action, ActionOutcome.Failed, "Materia retrieval failed");
-            await delay.Wait(options.RateLimit, ct).ConfigureAwait(false);
+            if (!ok)
+            {
+                var why = game.LastFailure ?? "no reason given";
+                if (options.OnMateriaFailure == MateriaFailurePolicy.LeaveItem)
+                    return new ActionResult(action, ActionOutcome.Pending, $"materia could not be retrieved ({why}); remove it by hand or allow acting anyway in settings");
+            }
+            else
+            {
+                await delay.Wait(options.RateLimit, ct).ConfigureAwait(false);
+            }
         }
 
         var success = action.Action switch
@@ -198,7 +217,7 @@ public sealed class ExecutionEngine
 
         return success
             ? new ActionResult(action, ActionOutcome.Done, action.Action.Label())
-            : new ActionResult(action, ActionOutcome.Failed, $"{action.Action.Label()} did not complete");
+            : new ActionResult(action, ActionOutcome.Failed, $"{action.Action.Label()} did not complete{(game.LastFailure is { } reason ? $": {reason}" : string.Empty)}");
     }
 
     private static void Park(RunReport report, QueuedAction action, string reason)

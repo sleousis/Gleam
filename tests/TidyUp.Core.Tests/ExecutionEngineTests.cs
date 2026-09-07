@@ -15,6 +15,8 @@ internal sealed class FakeGame : IGameActions
     public int FreeSlots { get; set; } = 10;
     public Func<SlotRef, bool> FailWhen { get; set; } = _ => false;
     public Func<Task>? BeforeAction { get; set; }
+    public bool MateriaFails { get; set; }
+    public string? LastFailure { get; private set; }
 
     public bool IsContainerAvailable(ContainerKind kind, ulong ownerId) => Open.Contains(kind);
     public ScannedItem? ReadSlot(SlotRef slot) => Slots.GetValueOrDefault(slot);
@@ -47,6 +49,7 @@ internal sealed class FakeGame : IGameActions
     public Task<bool> RetrieveMateriaAsync(SlotRef slot, uint itemId, CancellationToken ct)
     {
         Calls.Add($"materia:{slot}");
+        if (MateriaFails) { LastFailure = "no Retrieve Materia entry"; return Task.FromResult(false); }
         if (Slots.TryGetValue(slot, out var item)) Slots[slot] = item with { Materia = Array.Empty<ushort>() };
         return Task.FromResult(true);
     }
@@ -187,6 +190,36 @@ public class ExecutionEngineTests
 
         Assert.Equal(1, report.Done);
         Assert.Equal(["materia:Armoury:3202#0", "seals:Armoury:3202#0"], game.Calls);
+    }
+
+    [Fact]
+    public async Task Failed_materia_retrieval_parks_the_item_instead_of_counting_as_a_failure()
+    {
+        var game = new FakeGame { MateriaFails = true };
+        for (var i = 0; i < 4; i++) game.Slots[Arm(i)] = WithMateria(ScannedItem.Simple(Arm(i), 4, 1), 12);
+
+        var report = await new ExecutionEngine(game, new MemoryRunLog(), new NoDelay())
+            .ExecuteAsync(Enumerable.Range(0, 4).Select(i => Q(Arm(i), 4, 1, ActionKind.Discard, materia: true)).ToList(), Who, CancellationToken.None);
+
+        Assert.False(report.Aborted);
+        Assert.Equal(0, report.Done);
+        Assert.Equal(0, report.Failed);
+        Assert.Equal(4, report.Pending.Count);
+        Assert.All(report.Pending, p => Assert.Contains("no Retrieve Materia entry", report.PendingReasons[p]));
+        Assert.Equal(4, game.Slots.Count);
+    }
+
+    [Fact]
+    public async Task Materia_failure_can_be_told_to_act_anyway()
+    {
+        var game = new FakeGame { MateriaFails = true };
+        game.Slots[Arm(0)] = WithMateria(ScannedItem.Simple(Arm(0), 4, 1), 12);
+
+        var report = await new ExecutionEngine(game, new MemoryRunLog(), new NoDelay(), new ExecutionOptions { OnMateriaFailure = MateriaFailurePolicy.ActAnyway })
+            .ExecuteAsync([Q(Arm(0), 4, 1, ActionKind.Discard, materia: true)], Who, CancellationToken.None);
+
+        Assert.Equal(1, report.Done);
+        Assert.Empty(game.Slots);
     }
 
     [Fact]
