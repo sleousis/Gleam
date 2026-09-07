@@ -286,20 +286,32 @@ public sealed class AutoPilot
         await WaitUntil(RetainerListReady, StepTimeout, "the retainer list to fill", ct).ConfigureAwait(false);
         await Task.Delay(1200, ct).ConfigureAwait(false);
 
+        listingFailure = null;
         var order = await OnFramework(RetainerOrder).ConfigureAwait(false);
         for (var index = 0; index < order.Count; index++)
         {
             ct.ThrowIfCancellationRequested();
-            var (id, name) = order[index];
+            var (id, name, freeMarket) = order[index];
             var rows = byRetainer.GetValueOrDefault(id) ?? new List<QueuedAction>();
-            if (rows.Count == 0 && listings.Count == 0 && !sweep) continue;
+            // Only go to a retainer for listings if it has room and listing has not already failed elsewhere.
+            var wantsListings = listings.Count > 0 && freeMarket > 0 && listingFailure is null;
+            if (rows.Count == 0 && !wantsListings && !sweep) continue;
+            if (!wantsListings && rows.All(r => r.Action == ActionKind.MarketList) && (freeMarket <= 0 || listingFailure is not null) && !sweep)
+            {
+                log.Information("Skipping {Name}: only listings and {Reason}", name, freeMarket <= 0 ? "no free market slots" : "listing already failed");
+                continue;
+            }
 
-            var ok = await Leg($"retainer {name}", () => OneRetainerAsync(index, id, name, rows, listings, ct), ct).ConfigureAwait(false);
+            var ok = await Leg($"retainer {name}", () => OneRetainerAsync(index, id, name, rows, wantsListings ? listings : new List<QueuedAction>(), ct), ct).ConfigureAwait(false);
             if (!ok) await EnsureRetainerListAsync(ct).ConfigureAwait(false);
         }
 
+        if (listingFailure is not null) tally.LegFailures.Add($"Market listing stopped: {listingFailure}");
         await framework.RunOnFrameworkThread(() => GameUi.Close("RetainerList")).ConfigureAwait(false);
     }
+
+    /// <summary>Set when a retainer with free slots listed nothing; further retainers are not visited for listings.</summary>
+    private string? listingFailure;
 
     /// <summary>
     /// Gets the game to the retainer list from wherever the retainer UI currently is: a retainer's
@@ -434,9 +446,17 @@ public sealed class AutoPilot
 
         var batch = rows.Take(free).ToList();
         await Step($"Listing {batch.Count} on the market through {name}", () => Execute(batch), ct);
-        var done = coordinator.LastReport?.Results.Where(r => r.Outcome == Core.Execution.ActionOutcome.Done).Select(r => r.Action).ToHashSet()
+        var report = coordinator.LastReport;
+        var done = report?.Results.Where(r => r.Outcome == Core.Execution.ActionOutcome.Done).Select(r => r.Action).ToHashSet()
                    ?? new HashSet<QueuedAction>();
         rows.RemoveAll(done.Contains);
+
+        // Free slots, nothing listed: the listing step itself is broken, so do not drag it to every other retainer.
+        if (done.Count == 0 && report is not null && report.Failed > 0)
+        {
+            var why = report.Results.FirstOrDefault(r => r.Outcome == Core.Execution.ActionOutcome.Failed)?.Message ?? report.AbortReason;
+            listingFailure = $"{name} listed nothing ({why})";
+        }
 
         await framework.RunOnFrameworkThread(() => { GameUi.Close("RetainerSell"); GameUi.Close("RetainerSellList"); }).ConfigureAwait(false);
         await WaitUntil(() => GameUi.SelectStringReady(), StepTimeout, $"{name}'s menu", ct).ConfigureAwait(false);
@@ -711,9 +731,9 @@ public sealed class AutoPilot
         return rm != null && rm->GetRetainerCount() > 0;
     }
 
-    private static unsafe List<(ulong Id, string Name)> RetainerOrder()
+    private static unsafe List<(ulong Id, string Name, int FreeMarketSlots)> RetainerOrder()
     {
-        var list = new List<(ulong, string)>();
+        var list = new List<(ulong, string, int)>();
         var rm = FFXIVClientStructs.FFXIV.Client.Game.RetainerManager.Instance();
         if (rm == null) return list;
         var count = rm->GetRetainerCount();
@@ -721,7 +741,7 @@ public sealed class AutoPilot
         {
             var r = rm->GetRetainerBySortedIndex(i);
             if (r == null || r->RetainerId == 0 || !r->Available) continue;
-            list.Add((r->RetainerId, r->NameString));
+            list.Add((r->RetainerId, r->NameString, Math.Max(0, Game.GameActions.MarketSlotsPerRetainer - r->MarketItemCount)));
         }
         return list;
     }
