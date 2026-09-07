@@ -21,6 +21,12 @@ public sealed class PlannerInputs
 
     /// <summary>Retainer id → display name.</summary>
     public IReadOnlyDictionary<ulong, string> RetainerNames { get; init; } = new Dictionary<ulong, string>();
+
+    /// <summary>
+    /// Also list every item no rule proposed, unchecked, so the user can pick by hand. Hard-blocked and
+    /// protected items stay out; everything else gets a row with the sensible default action.
+    /// </summary>
+    public bool IncludeUnproposed { get; init; }
 }
 
 /// <summary>Turns scanned items into the confirmation window's content. Pure: no game access.</summary>
@@ -76,6 +82,31 @@ public sealed class RunPlanner
         }
 
         var proposals = new List<Proposal>(engine.Evaluate(candidates, inputs.InfoLookup, ctx, profile.Thresholds, profile.EnabledRules));
+
+        if (inputs.IncludeUnproposed)
+        {
+            var proposedSlots = new HashSet<SlotRef>(proposals.Select(p => p.Item.Slot));
+            foreach (var item in candidates)
+            {
+                if (proposedSlots.Contains(item.Slot)) continue;
+                var info = inputs.InfoLookup(item.ItemId);
+                if (info is null) continue;
+                var canSell = !info.IsUntradable && info.VendorPrice > 0 && ContainerConstraints.AllowsAction(item.Slot.Kind, ActionKind.VendorSell);
+                var value = canSell ? (long)info.VendorPrice * item.Quantity : 0;
+                proposals.Add(new Proposal
+                {
+                    Item = item, Info = info,
+                    Action = canSell ? ActionKind.VendorSell : ActionKind.Discard,
+                    Alternatives = canSell ? [ActionKind.Discard] : [],
+                    Confidence = Confidence.Low,
+                    RuleId = "manual",
+                    Reason = "Not proposed by any rule",
+                    ValueGil = value,
+                    ValueLabel = value > 0 ? $"{value:N0}g" : "—",
+                });
+            }
+        }
+
         foreach (var (item, info) in userForced)
         {
             var vendorTotal = (long)info.VendorPrice * item.Quantity;
@@ -96,7 +127,8 @@ public sealed class RunPlanner
         foreach (var p in proposals.OrderBy(p => p.Item.Slot.Kind.ExecutionOrder()).ThenBy(p => p.Item.Slot.OwnerId))
         {
             // Preset policy first (the headline promise), then the user's finer per-rule override, then physics.
-            var policed = ActionPolicyApplier.Apply(ContainerConstraints.Apply(p), profile.Thresholds.Policy);
+            // Hand-picked rows already carry the only sensible default and are never dropped by a policy.
+            var policed = p.RuleId == "manual" ? p : ActionPolicyApplier.Apply(ContainerConstraints.Apply(p), profile.Thresholds.Policy);
             if (policed is null)
             {
                 plan.Excluded.Add(new ExcludedItem(p.Item, p.Info, ActionPolicyApplier.DropReason(profile.Thresholds.Policy), false));

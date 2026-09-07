@@ -189,6 +189,31 @@ public class PlannerTests
     }
 
     [Fact]
+    public void Everything_mode_lists_unproposed_items_unchecked_with_a_default_action()
+    {
+        // item 12 is a mid-level potion no rule fires on with a high gearset; item 16 is hard-blocked (Fantasia).
+        var items = new[] { ScannedItem.Simple(Inv(0), 1, 5), ScannedItem.Simple(Inv(1), 12, 2), ScannedItem.Simple(Ret(0), 12, 2), ScannedItem.Simple(Inv(2), 16, 1) };
+        var ctx = Context(maxGearsetIlvl: 100);
+
+        var proposedOnly = new RunPlanner().Build(items, Inputs(ctx: ctx));
+        Assert.Single(proposedOnly.AllRows);
+
+        var inputs = Inputs(ctx: ctx);
+        var everything = new RunPlanner().Build(items, new PlannerInputs
+        {
+            Context = inputs.Context, Profile = inputs.Profile, InfoLookup = inputs.InfoLookup, ProtectList = inputs.ProtectList,
+            AlwaysDiscardList = inputs.AlwaysDiscardList, IsAvailable = inputs.IsAvailable, RetainerNames = inputs.RetainerNames, IncludeUnproposed = true,
+        });
+        Assert.Equal(3, everything.AllRows.Count());
+        var manual = everything.AllRows.Where(r => r.Proposal.RuleId == "manual").ToList();
+        Assert.Equal(2, manual.Count);
+        Assert.All(manual, r => Assert.False(r.Checked));
+        Assert.Equal(ActionKind.VendorSell, manual.Single(r => r.Item.Slot.Kind == ContainerKind.Inventory).ChosenAction);
+        Assert.Equal(ActionKind.Discard, manual.Single(r => r.Item.Slot.Kind == ContainerKind.Retainer).ChosenAction);
+        Assert.DoesNotContain(everything.AllRows, r => r.Item.ItemId == 16);
+    }
+
+    [Fact]
     public void A_fantasia_on_the_always_discard_list_is_still_never_proposed()
     {
         var always = new ItemList(); always.Add(16);
