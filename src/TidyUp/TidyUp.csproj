@@ -2,7 +2,7 @@
 <Project Sdk="Dalamud.NET.Sdk/15.0.0">
   <PropertyGroup>
     <Version>0.1.0.0</Version>
-    <Author>Savvas Leousis</Author>
+    <Author>Raiden Shinryu</Author>
     <Name>Tidy Up</Name>
     <Punchline>One review. One click. Every bag clean.</Punchline>
     <Description>Finds the junk in your inventory, armoury, saddlebag, retainers and glamour dresser. Shows it all in one list, with icons. You accept once; it discards, sells, turns in for seals or desynths, and never touches anything you protect.</Description>
