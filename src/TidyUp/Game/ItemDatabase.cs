@@ -242,6 +242,19 @@ public sealed class ItemDatabase
         return null;
     }
 
+    /// <summary>Text of an Addon sheet row in the client language, or null.</summary>
+    public string? AddonText(uint rowId)
+    {
+        try
+        {
+            return data.GetExcelSheet<Addon>()!.TryGetRow(rowId, out var row) ? row.Text.ExtractText() : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     /// <summary>Case-insensitive substring search over item names, for the list editors.</summary>
     public IEnumerable<ItemInfo> Search(string query, int limit = 50)
     {

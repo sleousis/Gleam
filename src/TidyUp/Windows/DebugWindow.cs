@@ -3,8 +3,6 @@ using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility.Raii;
 using Dalamud.Interface.Windowing;
 using Dalamud.Plugin.Services;
-using FFXIVClientStructs.FFXIV.Client.Game;
-using FFXIVClientStructs.FFXIV.Client.UI.Agent;
 using TidyUp.Core.Integrations;
 using TidyUp.Core.Model;
 using TidyUp.Game;
@@ -80,20 +78,28 @@ public sealed class DebugWindow : Window
             return item is null ? $"{plates.Count} plate item ids loaded; dresser index empty" : $"{plates.Count} plate item ids loaded; index {dresserIndex} ({db.Get(item.ItemId)?.Name}) referenced: {plates.Contains(item.ItemId)}";
         });
         ImGui.SameLine();
-        if (Ui.Button("Context menu labels")) Run(() => DumpContextLabels(target));
+        if (Ui.Button("Context menu labels")) Run(() =>
+        {
+            var entries = context.ReadEntries(target);
+            return entries.Count == 0 ? "no context entries" : string.Join("  ", entries.Select(e => $"[{e.Index}] {e.LabelId} '{e.Text}'{(e.Disabled ? " (disabled)" : "")}"));
+        });
 
         Ui.Header("Spikes (one item each)");
-        if (Ui.ButtonColored("Discard slot", Ui.Danger)) RunAsync(async ct => $"discard: {await actions.DiscardAsync(target, actions.ReadSlot(target)?.ItemId ?? 0, ct)}");
+        if (Ui.ButtonColored("Discard slot", Ui.Danger)) Spike("discard", ct => actions.DiscardAsync(target, actions.ReadSlot(target)?.ItemId ?? 0, ct));
         ImGui.SameLine();
-        if (Ui.ButtonColored("Restore dresser index", Ui.Warn)) RunAsync(async ct => $"restore: {await actions.RestoreFromDresserAsync(SlotRef.Dresser(dresserIndex), actions.ReadSlot(SlotRef.Dresser(dresserIndex))?.ItemId ?? 0, ct)}");
+        if (Ui.ButtonColored("Restore dresser index", Ui.Warn)) RunAsync(async ct =>
+        {
+            var landed = await actions.RestoreFromDresserAsync(SlotRef.Dresser(dresserIndex), actions.ReadSlot(SlotRef.Dresser(dresserIndex))?.ItemId ?? 0, ct);
+            return landed is null ? $"restore: False · {actions.LastFailure}" : $"restore: True · landed in {landed}";
+        });
         ImGui.SameLine();
-        if (Ui.ButtonColored("Retrieve materia", Ui.Warn)) RunAsync(async ct => $"materia: {await actions.RetrieveMateriaAsync(target, actions.ReadSlot(target)?.ItemId ?? 0, ct)}");
+        if (Ui.ButtonColored("Retrieve materia", Ui.Warn)) Spike("materia", ct => actions.RetrieveMateriaAsync(target, actions.ReadSlot(target)?.ItemId ?? 0, ct));
         ImGui.SameLine();
-        if (Ui.ButtonColored("Desynth slot", Ui.Warn)) RunAsync(async ct => $"desynth: {await actions.DesynthAsync(target, actions.ReadSlot(target)?.ItemId ?? 0, ct)}");
+        if (Ui.ButtonColored("Desynth slot", Ui.Warn)) Spike("desynth", ct => actions.DesynthAsync(target, actions.ReadSlot(target)?.ItemId ?? 0, ct));
         ImGui.SameLine();
-        if (Ui.ButtonColored("Vendor sell slot", Ui.Ok)) RunAsync(async ct => $"sell: {await actions.VendorSellAsync(target, actions.ReadSlot(target)?.ItemId ?? 0, ct)}");
+        if (Ui.ButtonColored("Vendor sell slot", Ui.Ok)) Spike("sell", ct => actions.VendorSellAsync(target, actions.ReadSlot(target)?.ItemId ?? 0, ct));
         ImGui.SameLine();
-        if (Ui.ButtonColored("Expert delivery slot", Ui.Info)) RunAsync(async ct => $"seals: {await actions.ExpertDeliveryAsync(target, actions.ReadSlot(target)?.ItemId ?? 0, ct)}");
+        if (Ui.ButtonColored("Expert delivery slot", Ui.Info)) Spike("seals", ct => actions.ExpertDeliveryAsync(target, actions.ReadSlot(target)?.ItemId ?? 0, ct));
 
         Ui.Header("Integrations");
         if (Ui.Button("Allagan Tools status")) Run(() =>
@@ -102,11 +108,13 @@ public sealed class DebugWindow : Window
             if (!allagan.IsAvailable) return "Allagan Tools installed but IPC says not initialised";
             var chars = allagan.Characters();
             var mine = allagan.Items(player.ContentId);
-            return $"available · {chars.Count} characters/retainers · {mine.Count} cached items for this character · by kind: {string.Join(", ", mine.GroupBy(i => i.Slot.Kind).Select(g => $"{g.Key} {g.Count()}"))}";
+            var byContainer = string.Join(", ", mine.GroupBy(i => i.Slot.ContainerId).OrderBy(g => g.Key).Select(g => $"{g.Key}:{g.Count()}"));
+            return $"available · {chars.Count} characters/retainers · {mine.Count} cached items for this character · by kind: {string.Join(", ", mine.GroupBy(i => i.Slot.Kind).Select(g => $"{g.Key} {g.Count()}"))} · by raw container: {byContainer}";
         });
         ImGui.SameLine();
         if (Ui.Button("Universalis test")) RunAsync(async ct =>
         {
+            if (itemId <= 0) return "Set an item id above first (e.g. 5 for Earth Shard)";
             var world = player.CurrentWorld.ValueNullable?.Name.ExtractText() ?? "";
             var p = await market.GetPricesAsync([(uint)itemId], world, ct);
             return p.TryGetValue((uint)itemId, out var mp) ? $"{world}: {db.Get((uint)itemId)?.Name} NQ {mp.MinNq:N0} HQ {mp.MinHq:N0}" : $"{world}: no price for {itemId}";
@@ -141,27 +149,14 @@ public sealed class DebugWindow : Window
         return $"{info?.Name ?? "?"} (id {item.ItemId}) ×{item.Quantity}{(item.IsHq ? " HQ" : "")} materia {item.MateriaCount} dye {item.Stain0}/{item.Stain1} @ {item.Slot} · vendor {info?.VendorPrice}g · marketable {info?.IsMarketable} · untradeable {info?.IsUntradable} · unique {info?.IsUnique} · indisposable {info?.IsIndisposable} · cat {info?.UiCategory}";
     }
 
-    private unsafe string DumpContextLabels(SlotRef target)
+    private void Spike(string name, Func<CancellationToken, Task<bool>> action) => RunAsync(async ct =>
     {
-        var agent = AgentModule.Instance()->GetAgentInventoryContext();
-        if (agent == null) return "no agent";
-        agent->OpenForItemSlot((InventoryType)target.ContainerId, target.Slot, 0, 0);
-        var infos = agent->ContextCallbackInfos;
-        var count = agent->ContextItemCount;
-        var addon = db;
-        var parts = new List<string>();
-        for (var i = 0; i < Math.Min(count, 32); i++)
-        {
-            var label = infos[i].LabelId;
-            var text = PluginServices.DataManager.GetExcelSheet<Lumina.Excel.Sheets.Addon>()!.TryGetRow(label, out var row) ? row.Text.ExtractText() : "?";
-            parts.Add($"[{i}] {label} '{text}'{(agent->IsContextItemDisabled(i) ? " (disabled)" : "")}");
-        }
-        var ctx = AddonDriver.GetAddon("ContextMenu");
-        if (ctx != null && ctx->IsVisible) ctx->Close(true);
-        return count == 0 ? "no context entries" : string.Join("  ", parts);
-    }
+        var ok = await action(ct);
+        return ok ? $"{name}: True" : $"{name}: False · {actions.LastFailure ?? "no reason recorded"}";
+    });
 
     private void Run(Func<string> f) => framework.RunOnFrameworkThread(() =>
+
     {
         try { Log(f()); } catch (Exception ex) { Log($"ERROR {ex.GetType().Name}: {ex.Message}"); }
     });
