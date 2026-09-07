@@ -131,12 +131,18 @@ public sealed class RunPlanner
         foreach (var p in proposals.OrderBy(p => p.Item.Slot.Kind.ExecutionOrder()).ThenBy(p => p.Item.Slot.OwnerId))
         {
             // Preset policy first (the headline promise), then the user's finer per-rule override, then physics.
-            // Hand-picked rows already carry the only sensible default and are never dropped by a policy.
-            var policed = p.RuleId == "manual" ? p : ActionPolicyApplier.Apply(ContainerConstraints.Apply(p), profile.Thresholds.Policy);
+            // Hand-picked rows follow the preset too (Aggressive means discard everywhere), but are never dropped:
+            // the user asked to see them.
+            var constrained = ContainerConstraints.Apply(p);
+            var policed = ActionPolicyApplier.Apply(constrained, profile.Thresholds.Policy);
             if (policed is null)
             {
-                plan.Excluded.Add(new ExcludedItem(p.Item, p.Info, ActionPolicyApplier.DropReason(profile.Thresholds.Policy), false));
-                continue;
+                if (p.RuleId == "manual") policed = constrained;
+                else
+                {
+                    plan.Excluded.Add(new ExcludedItem(p.Item, p.Info, ActionPolicyApplier.DropReason(profile.Thresholds.Policy), false));
+                    continue;
+                }
             }
             var proposal = ContainerConstraints.Apply(ApplyActionOverride(policed, profile));
             var section = GetSection(plan, proposal.Item, inputs);
