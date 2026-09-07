@@ -10,6 +10,9 @@ namespace TidyUp.Automation;
 /// <summary>Small, framework-thread-only helpers for driving the game's own menus the way a click would.</summary>
 public static unsafe class GameUi
 {
+    /// <summary>The two list menus NPCs use: plain text (retainers, officers) and icon rows (merchants).</summary>
+    private static readonly string[] MenuAddons = ["SelectString", "SelectIconString"];
+
     public static bool IsVisible(string addon) => AddonDriver.IsAddonVisible(addon);
 
     public static bool AnyVisible(params string[] addons) => addons.Any(IsVisible);
@@ -32,13 +35,37 @@ public static unsafe class GameUi
         return true;
     }
 
-    /// <summary>The entries of the open SelectString menu, in order.</summary>
+    /// <summary>Which menu addon is currently open, or null.</summary>
+    private static (AtkUnitBase* Addon, PopupMenu* Menu)? OpenMenu()
+    {
+        foreach (var name in MenuAddons)
+        {
+            var addon = AddonDriver.GetAddon(name);
+            if (addon == null || !addon->IsVisible) continue;
+            PopupMenu* menu = name == "SelectString"
+                ? &((AddonSelectString*)addon)->PopupMenu.PopupMenu
+                : &((AddonSelectIconString*)addon)->PopupMenu.PopupMenu;
+            return (addon, menu);
+        }
+        return null;
+    }
+
+    /// <summary>Visible *and* populated: menus appear a frame or two before their entries exist.</summary>
+    public static bool SelectStringReady()
+    {
+        var open = OpenMenu();
+        if (open is null) return false;
+        var (addon, menu) = open.Value;
+        return addon->IsReady && menu->EntryNames != null && menu->EntryCount > 0;
+    }
+
+    /// <summary>The entries of whichever list menu is open, in order.</summary>
     public static IReadOnlyList<string> SelectStringEntries()
     {
         var list = new List<string>();
-        var addon = (AddonSelectString*)AddonDriver.GetAddon("SelectString");
-        if (addon == null || !addon->AtkUnitBase.IsVisible) return list;
-        var menu = &addon->PopupMenu.PopupMenu;
+        var open = OpenMenu();
+        if (open is null) return list;
+        var menu = open.Value.Menu;
         if (menu->EntryNames == null) return list;
         for (var i = 0; i < menu->EntryCount; i++)
         {
@@ -48,27 +75,24 @@ public static unsafe class GameUi
         return list;
     }
 
-    /// <summary>Visible *and* populated: the menu appears a frame or two before its entries exist.</summary>
-    public static bool SelectStringReady()
-    {
-        var addon = (AddonSelectString*)AddonDriver.GetAddon("SelectString");
-        if (addon == null || !addon->AtkUnitBase.IsVisible || !addon->AtkUnitBase.IsReady) return false;
-        var menu = &addon->PopupMenu.PopupMenu;
-        return menu->EntryNames != null && menu->EntryCount > 0;
-    }
-
-    /// <summary>Picks the first SelectString entry containing the text. Returns the index chosen, or -1.</summary>
+    /// <summary>Picks the first entry containing the text. Returns the index chosen, or -1.</summary>
     public static int SelectStringChoose(string containing)
     {
+        var open = OpenMenu();
+        if (open is null) return -1;
         var entries = SelectStringEntries();
         for (var i = 0; i < entries.Count; i++)
         {
             if (!entries[i].Contains(containing, StringComparison.OrdinalIgnoreCase)) continue;
-            var addon = AddonDriver.GetAddon("SelectString");
-            if (addon == null) return -1;
-            return addon->FireCallbackInt(i) ? i : -1;
+            return open.Value.Addon->FireCallbackInt(i) ? i : -1;
         }
         return -1;
+    }
+
+    /// <summary>Closes whichever list menu is open.</summary>
+    public static void CloseMenu()
+    {
+        foreach (var name in MenuAddons) Close(name);
     }
 
     /// <summary>Fires an arbitrary int callback on a visible addon, e.g. to switch a tab.</summary>
