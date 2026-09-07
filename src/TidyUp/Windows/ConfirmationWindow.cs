@@ -32,6 +32,8 @@ public sealed class ConfirmationWindow : Window
     private string? filterRule;
     private ActionKind? filterAction;
     private readonly HashSet<ItemTag> filterTags = new();
+    /// <summary>null = both, true = tradeable only, false = untradeable only.</summary>
+    private bool? filterTradeable;
     private int sortMode; // 0 name, 1 value, 2 quantity
     private bool capArmed;
     private int cursor = -1;
@@ -183,7 +185,7 @@ public sealed class ConfirmationWindow : Window
         Ui.InputText("##search", "Search", ref search, 64);
 
         ImGui.SameLine();
-        var filtersActive = filterContainer is not null || filterRule is not null || filterAction is not null || filterTags.Count > 0 || sortMode != 0;
+        var filtersActive = filterContainer is not null || filterRule is not null || filterAction is not null || filterTags.Count > 0 || filterTradeable is not null || sortMode != 0;
         if (Ui.Button(filtersActive ? "Filter •" : "Filter")) ImGui.OpenPopup("##filters", ImGuiPopupFlags.None);
         DrawFilterMenu();
 
@@ -200,7 +202,7 @@ public sealed class ConfirmationWindow : Window
         ImGui.SameLine();
         // All means all of what is on screen: with a type, container or search filter on, it ticks just
         // those rows. The soft cap still asks for a second click on a big run.
-        var narrowed = filterContainer is not null || filterRule is not null || filterAction is not null || filterTags.Count > 0 || !string.IsNullOrWhiteSpace(search);
+        var narrowed = filterContainer is not null || filterRule is not null || filterAction is not null || filterTags.Count > 0 || filterTradeable is not null || !string.IsNullOrWhiteSpace(search);
         var executable = (narrowed ? Filter(plan.AllRows) : plan.AllRows).Where(r => r.IsExecutable).ToList();
         var allChecked = executable.Count > 0 && executable.All(r => r.Checked);
         if (Ui.LinkButton(allChecked ? "None" : narrowed ? "All shown" : "All"))
@@ -253,7 +255,9 @@ public sealed class ConfirmationWindow : Window
             .OrderBy(g => g.Key)
             .Select(g => (Tag: g.Key, Rows: g.Count(), Checked: g.Count(r => r.Checked)))
             .ToList();
-        if (groups.Count < 2) return;
+        var rowList = rows.ToList();
+        var hasTradeSplit = rowList.Any(r => r.Info.IsUntradable) && rowList.Any(r => !r.Info.IsUntradable);
+        if (groups.Count < 2 && !hasTradeSplit) return;
 
         Ui.Hint("Types");
         ImGui.SameLine();
@@ -268,7 +272,20 @@ public sealed class ConfirmationWindow : Window
             Ui.Tooltip(active ? "Click to stop filtering by this type." : $"Show {tag.Label().ToLowerInvariant()} only. Click more types to add them.");
             ImGui.SameLine();
         }
-        if (filterTags.Count > 0 && Ui.LinkButton("Clear")) filterTags.Clear();
+        var tradeable = rowList.Count(r => !r.Info.IsUntradable);
+        var untradeable = rowList.Count(r => r.Info.IsUntradable);
+        if (tradeable > 0 && untradeable > 0)
+        {
+            ImGui.TextDisabled("|");
+            ImGui.SameLine();
+            if (Chip($"Tradeable {tradeable}", filterTradeable == true)) filterTradeable = filterTradeable == true ? null : true;
+            Ui.Tooltip("Only items that can be sold or traded.");
+            ImGui.SameLine();
+            if (Chip($"Untradeable {untradeable}", filterTradeable == false)) filterTradeable = filterTradeable == false ? null : false;
+            Ui.Tooltip("Only items that cannot be sold or traded. Discarding is the only way out for these.");
+            ImGui.SameLine();
+        }
+        if ((filterTags.Count > 0 || filterTradeable is not null) && Ui.LinkButton("Clear")) { filterTags.Clear(); filterTradeable = null; }
         ImGui.NewLine();
         Ui.Gap(0.2f);
     }
@@ -305,6 +322,12 @@ public sealed class ConfirmationWindow : Window
             if (ImGui.MenuItem(t.Label(), string.Empty, filterTags.Contains(t), true)) { if (!filterTags.Remove(t)) filterTags.Add(t); }
 
         ImGui.Separator();
+        Ui.Hint("Trade");
+        if (ImGui.MenuItem("Tradeable and untradeable", string.Empty, filterTradeable is null, true)) filterTradeable = null;
+        if (ImGui.MenuItem("Tradeable only", string.Empty, filterTradeable == true, true)) filterTradeable = true;
+        if (ImGui.MenuItem("Untradeable only", string.Empty, filterTradeable == false, true)) filterTradeable = false;
+
+        ImGui.Separator();
         Ui.Hint("Action");
         if (ImGui.MenuItem("All actions", string.Empty, filterAction is null, true)) filterAction = null;
         foreach (var a in new[] { ActionKind.Discard, ActionKind.VendorSell, ActionKind.ExpertDelivery, ActionKind.Desynth, ActionKind.None })
@@ -317,7 +340,7 @@ public sealed class ConfirmationWindow : Window
         if (ImGui.MenuItem("Quantity", string.Empty, sortMode == 2, true)) sortMode = 2;
 
         ImGui.Separator();
-        if (ImGui.MenuItem("Reset", string.Empty, false, true)) { filterContainer = null; filterRule = null; filterAction = null; filterTags.Clear(); sortMode = 0; }
+        if (ImGui.MenuItem("Reset", string.Empty, false, true)) { filterContainer = null; filterRule = null; filterAction = null; filterTags.Clear(); filterTradeable = null; sortMode = 0; }
     }
 
     private IEnumerable<PlanRow> Filter(IEnumerable<PlanRow> rows)
@@ -327,6 +350,7 @@ public sealed class ConfirmationWindow : Window
         if (filterRule is { } rule) q = q.Where(r => r.Proposal.RuleId == rule);
         if (filterAction is { } a) q = q.Where(r => r.ChosenAction == a);
         if (filterTags.Count > 0) q = q.Where(r => filterTags.Contains(ItemTags.Of(r.Info)));
+        if (filterTradeable is { } tradeOnly) q = q.Where(r => r.Info.IsUntradable != tradeOnly);
         if (!string.IsNullOrWhiteSpace(search))
             q = q.Where(r => r.Info.Name.Contains(search, StringComparison.OrdinalIgnoreCase) || r.Proposal.Reason.Contains(search, StringComparison.OrdinalIgnoreCase));
         return sortMode switch

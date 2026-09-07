@@ -122,6 +122,9 @@ public sealed class ExecutionEngine
             if (result.Outcome == ActionOutcome.Done)
                 await log.AppendAsync(RunLogEntry.From(action, identity, result.Outcome)).ConfigureAwait(false);
 
+            if (result.Outcome == ActionOutcome.Moved && result.Followup is { } follow)
+                report.Moved.Add(follow);
+
             // A pre-condition discovered mid-action (no free slot, etc.) parks the item rather than failing the run.
             if (result.Outcome == ActionOutcome.Pending)
                 Park(report, action, result.Message);
@@ -190,7 +193,21 @@ public sealed class ExecutionEngine
         }
 
         // Materia is never destroyed silently: the live item decides, not what the plan remembered.
-        if (live.HasMateria)
+        if (live.HasMateria && !game.CanRetrieveMateriaIn(action.Kind) && options.OnMateriaFailure == MateriaFailurePolicy.LeaveItem)
+        {
+            // Retainer menus have no "Retrieve Materia": bring the item home and finish there.
+            if (game.FreeInventorySlots() < 1)
+                return new ActionResult(action, ActionOutcome.Pending, "No free inventory slot to bring the item back for materia retrieval");
+            var landed = await game.MoveToInventoryAsync(target, action.ItemId, action.Quantity, action.IsHq, ct).ConfigureAwait(false);
+            if (landed is null)
+                return new ActionResult(action, ActionOutcome.Pending, $"materia cannot be retrieved here and the item could not be brought back ({game.LastFailure ?? "no reason given"})");
+            return new ActionResult(action, ActionOutcome.Moved, "brought back to your bags; its materia comes off there once the retainer is closed")
+            {
+                Followup = action with { Slot = landed.Value, RetrieveMateriaFirst = true },
+            };
+        }
+
+        if (live.HasMateria && game.CanRetrieveMateriaIn(action.Kind))
         {
             if (game.FreeInventorySlots() < live.MateriaCount)
                 return new ActionResult(action, ActionOutcome.Pending, "Not enough free inventory slots to retrieve materia");

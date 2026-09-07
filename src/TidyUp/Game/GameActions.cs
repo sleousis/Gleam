@@ -107,6 +107,30 @@ public sealed class GameActions : IGameActions
 
     // ---------- materia ----------
 
+    public bool CanRetrieveMateriaIn(ContainerKind kind) => kind is ContainerKind.Inventory or ContainerKind.Armoury;
+
+    public async Task<SlotRef?> MoveToInventoryAsync(SlotRef slot, uint itemId, int quantity, bool isHq, CancellationToken ct)
+    {
+        LastFailure = null;
+        if (slot.Kind != ContainerKind.Retainer) { LastFailure = "Only retainer items can be brought back automatically"; return null; }
+
+        var arrived = WaitForEvent<InventoryEventArgs>(
+            e => e is InventoryItemAddedArgs or InventoryItemMovedArgs
+                 && e.Item.BaseItemId == itemId
+                 && GameContainerIds.KindOf((uint)e.Item.ContainerType) == ContainerKind.Inventory, ct);
+        var ok = await context.InvokeAsync(slot, config.Callbacks.RetrieveFromRetainerLabel, ct).ConfigureAwait(false);
+        if (!ok) { LastFailure = context.LastFailure; return null; }
+
+        var landed = await arrived.ConfigureAwait(false);
+        if (landed is not null)
+            return new SlotRef(ContainerKind.Inventory, (uint)landed.Item.ContainerType, (int)landed.Item.InventorySlot);
+
+        // No event seen: look for the item in the bags directly before giving up.
+        var found = FindSlot(ContainerKind.Inventory, 0, itemId, quantity, isHq, new HashSet<SlotRef>(), slot);
+        if (found is null) LastFailure = "'Retrieve from Retainer' was selected but the item did not arrive in your bags";
+        return found;
+    }
+
     /// <summary>
     /// The game takes one materia per "Retrieve Materia" request, plays a short animation, and (since
     /// retrieval became guaranteed) shows no confirmation dialog. So: request, wait for the slot to change

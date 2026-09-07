@@ -35,6 +35,12 @@ public interface IGameActions
     /// <summary>Restores a dresser item to the inventory. Returns the inventory slot it landed in, or null.</summary>
     Task<SlotRef?> RestoreFromDresserAsync(SlotRef dresserSlot, uint itemId, CancellationToken ct);
 
+    /// <summary>Whether the game offers materia retrieval on items sitting in this container (bags and armoury only).</summary>
+    bool CanRetrieveMateriaIn(ContainerKind kind);
+
+    /// <summary>Brings an item from a retainer back into the player's bags. Returns where it landed, or null.</summary>
+    Task<SlotRef?> MoveToInventoryAsync(SlotRef slot, uint itemId, int quantity, bool isHq, CancellationToken ct);
+
     Task<bool> RetrieveMateriaAsync(SlotRef slot, uint itemId, CancellationToken ct);
     Task<bool> VendorSellAsync(SlotRef slot, uint itemId, CancellationToken ct);
     Task<bool> ExpertDeliveryAsync(SlotRef slot, uint itemId, CancellationToken ct);

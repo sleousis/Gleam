@@ -27,6 +27,9 @@ public sealed class CallbackSettings
     /// <summary>English label of the inventory context menu entry that opens materia retrieval.</summary>
     public string RetrieveMateriaLabel { get; set; } = "Retrieve Materia";
 
+    /// <summary>Retainer inventory context entry that moves an item back to the player's bags.</summary>
+    public string RetrieveFromRetainerLabel { get; set; } = "Retrieve from Retainer";
+
     /// <summary>How long to wait for the game to confirm one action before treating it as failed.</summary>
     public int ActionTimeoutMs { get; set; } = 8000;
 
