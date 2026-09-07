@@ -113,7 +113,12 @@ public sealed class DebugWindow : Window
             var chars = allagan.Characters();
             var mine = allagan.Items(player.ContentId);
             var byContainer = string.Join(", ", mine.GroupBy(i => i.Slot.ContainerId).OrderBy(g => g.Key).Select(g => $"{g.Key}:{g.Count()}"));
-            return $"connected · {chars.Count} characters and retainers · {mine.Count} cached items here · by container: {byContainer}";
+            var known = GameInventoryScanner.KnownRetainers();
+            var gameIds = string.Join(", ", known.Select(kv => $"{kv.Value}={kv.Key:X}"));
+            var cacheOwners = string.Join(", ", chars.Where(c => c.CharacterId != player.ContentId)
+                .Select(c => { var it = allagan.Items(c.CharacterId); return $"{c.CharacterId:X}:{it.Count} items, retainer pages {it.Count(i => i.Slot.Kind == ContainerKind.Retainer)}, owners {string.Join("/", it.Select(i => i.Slot.OwnerId.ToString("X")).Distinct().Take(3))}"; }));
+            var (activeId, activeName) = GameInventoryScanner.ActiveRetainer();
+            return $"connected · {mine.Count} cached items on this character by container: {byContainer} · game retainers: {gameIds} · active: {activeName}={activeId:X} · cache entries: {cacheOwners}";
         });
         ImGui.SameLine();
         ImGui.SetNextItemWidth(w); Ui.InputInt("##mid", ref itemId);
