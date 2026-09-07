@@ -23,6 +23,9 @@ public sealed class ConfirmationWindow : Window
     private readonly Configuration config;
     private readonly IGamepadState gamepad;
 
+    /// <summary>Set by the plugin when hands-free mode is available.</summary>
+    public Automation.AutoPilot? Pilot { get; set; }
+
     private string search = string.Empty;
     private ContainerKind? filterContainer;
     private string? filterRule;
@@ -69,8 +72,10 @@ public sealed class ConfirmationWindow : Window
     public override void Draw()
     {
         var plan = coordinator.CurrentPlan;
+        if (Pilot is { IsRunning: true } && !Pilot.Status.StartsWith("Waiting for you", StringComparison.Ordinal)) { DrawPilotRunning(); return; }
         if (coordinator.IsRunning) { DrawRunning(); return; }
         if (plan is null) { DrawCentered(string.IsNullOrEmpty(coordinator.Status) ? "Scanning your containers…" : coordinator.Status); return; }
+        if (Pilot is { IsRunning: true }) { Ui.TextColored(Ui.Accent, Pilot.Status); Ui.Hint("Clean what you agree with, or close this window to skip it. The run continues either way."); Ui.Gap(0.5f); }
 
         DrawTopBar(plan);
         DrawLastRunBanner();
@@ -432,21 +437,58 @@ public sealed class ConfirmationWindow : Window
         ImGui.AlignTextToFramePadding();
         Ui.Hint(parts.Count == 0 ? "Select rows to see what this run would do." : string.Join("  ·  ", parts));
 
-        var verb = cap.Exceeded && !capArmed ? $"Clean {cap.Items} · over your cap, click again" : $"Clean {cap.Items} item{(cap.Items == 1 ? "" : "s")}";
+        var handsFree = Pilot is not null && config.Automation.Enabled && coordinator.FocusContainer is null && !(Pilot?.IsRunning ?? false);
+        var needsTravel = plan.AllRows.Any(r => r.Checked && r.IsExecutable && (!r.Item.Slot.Kind.IsAlwaysLoaded() || r.ChosenAction == ActionKind.VendorSell));
+        var verb = cap.Exceeded && !capArmed
+            ? $"Clean {cap.Items} · over your cap, click again"
+            : handsFree && needsTravel ? $"Clean {cap.Items} everywhere" : $"Clean {cap.Items} item{(cap.Items == 1 ? "" : "s")}";
         var buttonWidth = 240 * Ui.Scale;
         ImGui.SameLine();
-        Ui.RightAlign(buttonWidth + 70 * Ui.Scale);
+        Ui.RightAlign(buttonWidth + (handsFree && needsTravel ? 170 : 70) * Ui.Scale);
         if (Ui.LinkButton("Close")) IsOpen = false;
+        if (handsFree && needsTravel)
+        {
+            ImGui.SameLine();
+            using (ImRaii.Disabled(cap.Items == 0))
+            {
+                if (Ui.LinkButton("Clean here only")) { capArmed = false; _ = coordinator.AcceptAsync(); }
+            }
+            Ui.Tooltip("Cleans what is reachable right now and leaves the rest waiting for their container.");
+        }
         ImGui.SameLine();
         using (ImRaii.Disabled(cap.Items == 0))
         {
             if (Ui.PrimaryButton(verb, buttonWidth, danger: cap.Exceeded && !capArmed))
             {
                 if (cap.Exceeded && !capArmed) capArmed = true;
-                else { capArmed = false; _ = coordinator.AcceptAsync(); }
+                else
+                {
+                    capArmed = false;
+                    if (handsFree && needsTravel) _ = Pilot!.RunAsync(); else _ = coordinator.AcceptAsync();
+                }
             }
         }
         if (cap.Exceeded) Ui.Tooltip(cap.Explanation);
+        else if (handsFree && needsTravel) Ui.Tooltip("Hands-free: opens the saddlebag, travels to an inn, visits each retainer and the dresser, and cleans as it goes.");
+    }
+
+    private void DrawPilotRunning()
+    {
+        Ui.Gap(2);
+        DrawCentered("Hands-free run");
+        Ui.Gap(0.5f);
+        DrawCentered(Pilot!.Status, muted: true);
+        if (coordinator.IsRunning)
+        {
+            var frac = coordinator.RunTotal == 0 ? 0f : (float)coordinator.RunDone / coordinator.RunTotal;
+            ImGui.SetCursorPosX(ImGui.GetWindowWidth() * 0.2f);
+            using (ImRaii.PushColor(ImGuiCol.PlotHistogram, Ui.Accent))
+                ImGui.ProgressBar(frac, new Vector2(ImGui.GetWindowWidth() * 0.6f, 0), $"{coordinator.RunDone} / {coordinator.RunTotal}");
+        }
+        Ui.Gap();
+        ImGui.SetCursorPosX((ImGui.GetWindowWidth() - 120 * Ui.Scale) / 2);
+        if (Ui.PrimaryButton("Stop", 120 * Ui.Scale, danger: true)) Pilot.Stop();
+        DrawCentered("Stops moving and finishes only the current item.", muted: true);
     }
 
     private void DrawRunning()

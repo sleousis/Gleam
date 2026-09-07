@@ -33,6 +33,45 @@ public sealed class CallbackSettings
     public int RateLimitMs { get; set; } = 250;
 }
 
+/// <summary>Everything the hands-free mode needs. Off by default; it moves the character and drives NPC menus.</summary>
+public sealed class AutomationSettings
+{
+    public bool Enabled { get; set; } = false;
+
+    /// <summary>Travel to an inn with Lifestream when retainers, sells, or the dresser are involved.</summary>
+    public bool TravelToInn { get; set; } = true;
+
+    /// <summary>Lifestream inn index; null lets Lifestream pick.</summary>
+    public int? InnIndex { get; set; } = null;
+
+    public bool VisitRetainers { get; set; } = true;
+    public bool SellAtRetainer { get; set; } = true;
+    public bool VisitDresser { get; set; } = true;
+    public bool OpenSaddlebag { get; set; } = true;
+
+    /// <summary>Client-language names of the objects to walk to. English defaults; change for other clients.</summary>
+    public string BellObjectName { get; set; } = "Summoning Bell";
+    public string DresserObjectName { get; set; } = "Glamour Dresser";
+
+    /// <summary>Substrings matched against the retainer menu entries.</summary>
+    public string EntrustMenuText { get; set; } = "Entrust";
+    public string SellMenuText { get; set; } = "Sell items";
+    public string QuitMenuText { get; set; } = "Quit";
+
+    /// <summary>English MainCommand name that opens the saddlebag.</summary>
+    public string SaddlebagCommandName { get; set; } = "Chocobo Saddlebag";
+
+    /// <summary>RetainerList callback: first value, then the retainer's list index.</summary>
+    public int RetainerListSelect { get; set; } = 2;
+
+    public float InteractRange { get; set; } = 3.0f;
+    public int TravelTimeoutSeconds { get; set; } = 120;
+    public int StepTimeoutSeconds { get; set; } = 20;
+
+    /// <summary>When a container reveals rows that were not in the accepted plan, pause and ask rather than act.</summary>
+    public bool PauseForUnseenRows { get; set; } = true;
+}
+
 public sealed class Configuration : IPluginConfiguration
 {
     public int Version { get; set; } = 1;
@@ -41,6 +80,7 @@ public sealed class Configuration : IPluginConfiguration
     public ItemList ProtectList { get; set; } = new();
     public ItemList AlwaysDiscardList { get; set; } = new();
     public CallbackSettings Callbacks { get; set; } = new();
+    public AutomationSettings Automation { get; set; } = new();
 
     public bool UseUniversalis { get; set; } = true;
     public bool UseAllaganTools { get; set; } = true;

@@ -53,7 +53,7 @@ public sealed class Plugin : IDalamudPlugin
         IDalamudPluginInterface pi, ICommandManager commands, IClientState clientState, IPluginLog log,
         IFramework framework, IDataManager data, IPlayerState player, IGameInventory inventory, IAddonLifecycle addonLifecycle,
         IContextMenu contextMenuService, IChatGui chat, IToastGui toast, IDtrBar dtrBar, IDutyState dutyState,
-        ITextureProvider textures, IReliableFileStorage storage, IGamepadState gamepad)
+        ITextureProvider textures, IReliableFileStorage storage, IGamepadState gamepad, ICondition condition, IObjectTable objectTable)
     {
         this.pi = pi;
         this.commands = commands;
@@ -89,6 +89,18 @@ public sealed class Plugin : IDalamudPlugin
 
         coordinator.RequestOpenWindow += () => confirmWindow.IsOpen = true;
 
+        var nav = new VnavmeshIpc(pi);
+        var travel = new LifestreamIpc(pi);
+        var pilot = new Automation.AutoPilot(framework, clientState, condition, objectTable, data, chat, log, config, coordinator, nav, travel, db)
+        {
+            IsReviewOpen = () => confirmWindow.IsOpen,
+        };
+        coordinator.IsPilotRunning = () => pilot.IsRunning;
+        confirmWindow.Pilot = pilot;
+        settingsWindow.Pilot = pilot;
+        settingsWindow.Nav = nav;
+        settingsWindow.Travel = travel;
+
         watcher = new AddonWatcher(addonLifecycle, framework);
         watcher.ContainerOpened += kind => _ = coordinator.OnContainerOpenedAsync(kind);
         watcher.ActionWindowOpened += coordinator.OnActionWindowOpened;
@@ -110,7 +122,7 @@ public sealed class Plugin : IDalamudPlugin
 
         commands.AddHandler(Command, new CommandInfo(OnCommand)
         {
-            HelpMessage = "Open Tidy Up. /tidyup settings · history · scan · merge · spikes",
+            HelpMessage = "Open Tidy Up. /tidyup settings · history · scan · merge · spikes · stop",
         });
 
         pi.UiBuilder.Draw += windows.Draw;
@@ -164,6 +176,10 @@ public sealed class Plugin : IDalamudPlugin
                 break;
             case "merge":
                 _ = coordinator.StackMergeAsync().ContinueWith(t => log.Information("Merged {N} stacks", t.Result));
+                break;
+            case "stop":
+                confirmWindow.Pilot?.Stop();
+                coordinator.CancelRun();
                 break;
             default:
                 if (confirmWindow.IsOpen) confirmWindow.IsOpen = false;

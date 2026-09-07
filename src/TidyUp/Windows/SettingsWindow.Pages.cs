@@ -214,6 +214,48 @@ public sealed partial class SettingsWindow
             "Venture rewards and market returns land in retainers; a collapsed section forces a deliberate look.");
     }
 
+    // ---------- Automation ----------
+
+    private void DrawAutomation()
+    {
+        var a = config.Automation;
+        Ui.Section("Hands-free mode");
+        var on = a.Enabled;
+        if (ImGui.Checkbox("Enable", ref on)) { a.Enabled = on; dirty = true; }
+        ImGui.SameLine();
+        if (Nav is null || !Nav.IsInstalled) Ui.Pill("vnavmesh missing", Ui.Warn); else Ui.Pill("vnavmesh", Ui.Ok);
+        ImGui.SameLine();
+        if (Travel is null || !Travel.IsInstalled) Ui.Pill("Lifestream missing", Ui.Warn); else Ui.Pill("Lifestream", Ui.Ok);
+        Ui.HintWrapped("Moves your character and drives NPC menus: opens the saddlebag, travels to an inn, summons each retainer, sells, then visits the glamour dresser. This is gameplay automation and is against the game's terms of service. Never use it while people are watching.");
+
+        if (!on) return;
+        Ui.Section("Steps");
+        var v = a.OpenSaddlebag; if (ImGui.Checkbox("Open the saddlebag", ref v)) { a.OpenSaddlebag = v; dirty = true; }
+        v = a.TravelToInn; if (ImGui.Checkbox("Travel to an inn with Lifestream", ref v)) { a.TravelToInn = v; dirty = true; }
+        Ui.Tooltip("Off: you must already be standing in an inn room.");
+        v = a.VisitRetainers; if (ImGui.Checkbox("Visit each retainer at the bell", ref v)) { a.VisitRetainers = v; dirty = true; }
+        v = a.SellAtRetainer; if (ImGui.Checkbox("Sell vendor rows to the first retainer", ref v)) { a.SellAtRetainer = v; dirty = true; }
+        v = a.VisitDresser; if (ImGui.Checkbox("Visit the glamour dresser", ref v)) { a.VisitDresser = v; dirty = true; }
+        v = a.PauseForUnseenRows; if (ImGui.Checkbox("Pause and ask when a container shows items not in the plan", ref v)) { a.PauseForUnseenRows = v; dirty = true; }
+        Ui.Tooltip("Strongly recommended. Off means only items you already accepted are touched; new ones are simply skipped.");
+
+        Ui.Section("Names in your client language");
+        var w = 200 * Ui.Scale;
+        var s = a.BellObjectName; ImGui.SetNextItemWidth(w); if (Ui.InputText("Summoning bell", "", ref s, 64)) { a.BellObjectName = s; dirty = true; }
+        s = a.DresserObjectName; ImGui.SetNextItemWidth(w); if (Ui.InputText("Glamour dresser", "", ref s, 64)) { a.DresserObjectName = s; dirty = true; }
+        s = a.EntrustMenuText; ImGui.SetNextItemWidth(w); if (Ui.InputText("Retainer menu: inventory", "", ref s, 64)) { a.EntrustMenuText = s; dirty = true; }
+        s = a.SellMenuText; ImGui.SetNextItemWidth(w); if (Ui.InputText("Retainer menu: sell", "", ref s, 64)) { a.SellMenuText = s; dirty = true; }
+        s = a.QuitMenuText; ImGui.SetNextItemWidth(w); if (Ui.InputText("Retainer menu: quit", "", ref s, 64)) { a.QuitMenuText = s; dirty = true; }
+        Ui.Hint("Menu texts are matched as substrings, case-insensitive.");
+
+        Ui.Section("Timing");
+        var t = a.TravelTimeoutSeconds; ImGui.SetNextItemWidth(100 * Ui.Scale); if (Ui.InputInt("Travel timeout (s)", ref t, 10)) { a.TravelTimeoutSeconds = Math.Clamp(t, 30, 600); dirty = true; }
+        t = a.StepTimeoutSeconds; ImGui.SetNextItemWidth(100 * Ui.Scale); if (Ui.InputInt("Menu step timeout (s)", ref t, 5)) { a.StepTimeoutSeconds = Math.Clamp(t, 5, 120); dirty = true; }
+        var r = a.InteractRange; ImGui.SetNextItemWidth(100 * Ui.Scale); if (ImGui.SliderFloat("Interact range (yalms)", ref r, 2f, 6f, "%.1f", ImGuiSliderFlags.None)) { a.InteractRange = r; dirty = true; }
+        var sel = a.RetainerListSelect; ImGui.SetNextItemWidth(100 * Ui.Scale); if (Ui.InputInt("Retainer list callback", ref sel)) { a.RetainerListSelect = sel; dirty = true; }
+        Ui.Tooltip("First callback value used to pick a retainer from the list. 2 is the known value; change only if selection fails.");
+    }
+
     // ---------- Notifications ----------
 
     private void DrawNotifications()

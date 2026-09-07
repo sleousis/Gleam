@@ -16,7 +16,12 @@ namespace TidyUp.Windows;
 /// </summary>
 public sealed partial class SettingsWindow : Window
 {
-    private enum Page { General, Rules, Lists, Containers, Notifications, Integrations, Advanced }
+    private enum Page { General, Rules, Lists, Containers, Automation, Notifications, Integrations, Advanced }
+
+    /// <summary>Set by the plugin so the Automation page can show dependency status.</summary>
+    public Automation.AutoPilot? Pilot { get; set; }
+    public Integrations.VnavmeshIpc? Nav { get; set; }
+    public Integrations.LifestreamIpc? Travel { get; set; }
 
     private readonly Configuration config;
     private readonly IPlayerState player;
@@ -92,6 +97,7 @@ public sealed partial class SettingsWindow : Window
                     case Page.Rules: DrawRules(); break;
                     case Page.Lists: DrawLists(); break;
                     case Page.Containers: DrawContainers(); break;
+                    case Page.Automation: DrawAutomation(); break;
                     case Page.Notifications: DrawNotifications(); break;
                     case Page.Integrations: DrawIntegrations(); break;
                     case Page.Advanced: DrawAdvanced(); break;
