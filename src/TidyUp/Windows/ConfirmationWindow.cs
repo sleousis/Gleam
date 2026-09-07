@@ -35,7 +35,11 @@ public sealed class ConfirmationWindow : StyledWindow
     private readonly HashSet<ItemTag> filterTags = new();
     /// <summary>null = both, true = tradeable only, false = untradeable only.</summary>
     private bool? filterTradeable;
-    private int sortMode; // 0 name, 1 value, 2 quantity
+    private enum SortKey { Name, Quantity, Action, Market }
+    private SortKey sortKey = SortKey.Name;
+    /// <summary>+1 ascending, -1 descending. "None" is Name ascending, the natural order.</summary>
+    private int sortDir = 1;
+    private bool SortIsDefault => sortKey == SortKey.Name && sortDir == 1;
     private bool capArmed;
     private int cursor = -1;
     private readonly List<PlanRow> visibleRows = new();
@@ -182,7 +186,7 @@ public sealed class ConfirmationWindow : StyledWindow
         Ui.SearchBox("##search", ref search, 260 * Ui.Scale);
 
         ImGui.SameLine();
-        var filtersActive = filterContainer is not null || filterRule is not null || filterAction is not null || filterTags.Count > 0 || filterTradeable is not null || sortMode != 0;
+        var filtersActive = filterContainer is not null || filterRule is not null || filterAction is not null || filterTags.Count > 0 || filterTradeable is not null || !SortIsDefault;
         if (Ui.IconButton(FontAwesomeIcon.Filter, filtersActive ? "Filter •" : "Filter")) ImGui.OpenPopup("##filters", ImGuiPopupFlags.None);
         DrawFilterMenu();
 
@@ -319,12 +323,13 @@ public sealed class ConfirmationWindow : StyledWindow
 
         ImGui.Separator();
         Ui.Hint("Sort");
-        if (ImGui.MenuItem("Name", string.Empty, sortMode == 0, true)) sortMode = 0;
-        if (ImGui.MenuItem("Value", string.Empty, sortMode == 1, true)) sortMode = 1;
-        if (ImGui.MenuItem("Quantity", string.Empty, sortMode == 2, true)) sortMode = 2;
+        if (ImGui.MenuItem("Name", string.Empty, sortKey == SortKey.Name, true)) { sortKey = SortKey.Name; sortDir = 1; }
+        if (ImGui.MenuItem("Quantity", string.Empty, sortKey == SortKey.Quantity, true)) { sortKey = SortKey.Quantity; sortDir = -1; }
+        if (ImGui.MenuItem("Action", string.Empty, sortKey == SortKey.Action, true)) { sortKey = SortKey.Action; sortDir = 1; }
+        if (ImGui.MenuItem("Market price", string.Empty, sortKey == SortKey.Market, true)) { sortKey = SortKey.Market; sortDir = -1; }
 
         ImGui.Separator();
-        if (ImGui.MenuItem("Reset", string.Empty, false, true)) { filterContainer = null; filterRule = null; filterAction = null; filterTags.Clear(); filterTradeable = null; sortMode = 0; }
+        if (ImGui.MenuItem("Reset", string.Empty, false, true)) { filterContainer = null; filterRule = null; filterAction = null; filterTags.Clear(); filterTradeable = null; sortKey = SortKey.Name; sortDir = 1; }
     }
 
     private IEnumerable<PlanRow> Filter(IEnumerable<PlanRow> rows)
@@ -337,12 +342,44 @@ public sealed class ConfirmationWindow : StyledWindow
         if (filterTradeable is { } tradeOnly) q = q.Where(r => r.Info.IsUntradable != tradeOnly);
         if (!string.IsNullOrWhiteSpace(search))
             q = q.Where(r => r.Info.Name.Contains(search, StringComparison.OrdinalIgnoreCase) || r.Proposal.Reason.Contains(search, StringComparison.OrdinalIgnoreCase));
-        return sortMode switch
+        IOrderedEnumerable<PlanRow> ordered = sortKey switch
         {
-            1 => q.OrderByDescending(r => r.Proposal.ValueGil).ThenBy(r => r.Info.Name),
-            2 => q.OrderByDescending(r => r.Item.Quantity).ThenBy(r => r.Info.Name),
-            _ => q.OrderBy(r => r.Info.Name, StringComparer.OrdinalIgnoreCase),
+            SortKey.Quantity => sortDir > 0 ? q.OrderBy(r => r.Item.Quantity) : q.OrderByDescending(r => r.Item.Quantity),
+            SortKey.Action => sortDir > 0 ? q.OrderBy(r => r.ChosenAction.Label()) : q.OrderByDescending(r => r.ChosenAction.Label()),
+            SortKey.Market => sortDir > 0 ? q.OrderBy(r => r.Proposal.MarketUnitPrice * r.Item.Quantity) : q.OrderByDescending(r => r.Proposal.MarketUnitPrice * r.Item.Quantity),
+            _ => sortDir > 0 ? q.OrderBy(r => r.Info.Name, StringComparer.OrdinalIgnoreCase) : q.OrderByDescending(r => r.Info.Name, StringComparer.OrdinalIgnoreCase),
         };
+        return sortKey == SortKey.Name ? ordered : ordered.ThenBy(r => r.Info.Name, StringComparer.OrdinalIgnoreCase);
+    }
+
+    /// <summary>Click cycles ascending, descending, then back to the natural order.</summary>
+    private void ClickSort(SortKey key, bool numeric)
+    {
+        if (sortKey != key) { sortKey = key; sortDir = numeric ? -1 : 1; return; }
+        var second = numeric ? 1 : -1;
+        if (sortDir != second) sortDir = second;
+        else { sortKey = SortKey.Name; sortDir = 1; }
+    }
+
+    private void HeaderCell(string label, SortKey? key, bool numeric = false)
+    {
+        ImGui.TableNextColumn();
+        if (key is null) { Ui.Hint(label); return; }
+        var isSorted = sortKey == key && !(key == SortKey.Name && SortIsDefault);
+        var text = label;
+        using (ImRaii.PushColor(ImGuiCol.Text, isSorted ? Ui.AccentSoft : Ui.Muted))
+        using (ImRaii.PushColor(ImGuiCol.HeaderHovered, new Vector4(1, 1, 1, 0.06f)))
+        using (ImRaii.PushColor(ImGuiCol.HeaderActive, new Vector4(1, 1, 1, 0.09f)))
+        {
+            if (ImGui.Selectable($"{text}##hdr{key}", false, ImGuiSelectableFlags.None, Vector2.Zero)) ClickSort(key.Value, numeric);
+        }
+        Ui.Tooltip(isSorted
+            ? (sortDir > 0 ? "Sorted ascending. Click for descending." : "Sorted descending. Click to clear.")
+            : $"Sort by {label.ToLowerInvariant()}.");
+        if (!isSorted) return;
+        ImGui.SameLine();
+        ImGui.SetCursorPosX(ImGui.GetCursorPosX() - ImGui.GetStyle().ItemSpacing.X + ImGui.CalcTextSize(text, false, 0).X + 6 * Ui.Scale);
+        Ui.Icon(sortDir > 0 ? FontAwesomeIcon.SortUp : FontAwesomeIcon.SortDown, Ui.AccentSoft);
     }
 
     // ---------- sections ----------
@@ -394,6 +431,15 @@ public sealed class ConfirmationWindow : StyledWindow
         ImGui.TableSetupColumn("##action", ImGuiTableColumnFlags.WidthFixed, 128 * Ui.Scale, 0);
         ImGui.TableSetupColumn("##market", ImGuiTableColumnFlags.WidthFixed, 96 * Ui.Scale, 0);
         ImGui.TableSetupColumn("##attrs", ImGuiTableColumnFlags.WidthStretch, 5f, 0);
+
+        // Column titles; the sortable ones cycle asc / desc / off and apply to every section.
+        ImGui.TableNextRow(ImGuiTableRowFlags.None, 24 * Ui.Scale);
+        ImGui.TableNextColumn();
+        ImGui.TableNextColumn();
+        HeaderCell("Item", SortKey.Name);
+        HeaderCell("Action", SortKey.Action);
+        HeaderCell("Market", SortKey.Market, numeric: true);
+        HeaderCell("Attributes", null);
 
         foreach (var row in rows)
         {
