@@ -460,6 +460,14 @@ public sealed class ConfirmationWindow : StyledWindow
         if (!options.Contains(row.ChosenAction)) options.Insert(0, row.ChosenAction);
         var labels = options.Select(a => a == row.ChosenAction && row.Proposal.ValueLabel != "—" ? $"{a.Label()} · {row.Proposal.ValueLabel}" : a.Label()).ToList();
         var idx = options.IndexOf(row.ChosenAction);
+        if (options.Count == 1)
+        {
+            // Nothing to choose: plain coloured text, aligned with the dropdowns on other rows.
+            ImGui.SetCursorPosX(ImGui.GetCursorPosX() + ImGui.GetStyle().FramePadding.X);
+            ImGui.AlignTextToFramePadding();
+            Ui.TextColored(Ui.ActionColor(row.ChosenAction), labels[0]);
+            return;
+        }
         var widest = labels.Max(l => ImGui.CalcTextSize(l, false, 0).X);
         ImGui.SetNextItemWidth(Math.Min(ImGui.GetContentRegionAvail().X, widest + ImGui.GetFrameHeight() + ImGui.GetStyle().FramePadding.X * 2));
         using var c = ImRaii.PushColor(ImGuiCol.Text, Ui.ActionColor(row.ChosenAction));
