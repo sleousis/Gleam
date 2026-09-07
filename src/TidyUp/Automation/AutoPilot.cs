@@ -107,15 +107,16 @@ public sealed class AutoPilot
 
             if (S.OpenSaddlebag && saddle.Count > 0) await SaddlebagAsync(saddle, ct);
 
-            var needsInn = (S.VisitRetainers && (retainers.Count > 0 || (S.SellAtRetainer && sells.Count > 0))) || (S.VisitDresser && dresser.Count > 0);
+            var needsInn = (S.VisitRetainers && retainers.Count > 0) || (S.VisitDresser && dresser.Count > 0);
             if (needsInn)
             {
                 await TravelToInnAsync(ct);
-                if (S.VisitRetainers) await RetainersAsync(retainers, S.SellAtRetainer ? sells : new List<QueuedAction>(), ct);
+                if (S.VisitRetainers) await RetainersAsync(retainers, ct);
                 if (S.VisitDresser) await DresserAsync(dresser, ct);
             }
 
             if (S.VisitGrandCompany && seals.Count > 0) await GrandCompanyAsync(seals, ct);
+            if (S.SellAtVendor && sells.Count > 0) await VendorAsync(sells, ct);
 
             Status = "Done";
             chat.Print($"Tidy Up: hands-free run finished. {tally.Summary()}", "Tidy Up");
@@ -213,9 +214,9 @@ public sealed class AutoPilot
         }, ct);
     }
 
-    private async Task RetainersAsync(Dictionary<ulong, List<QueuedAction>> byRetainer, List<QueuedAction> sells, CancellationToken ct)
+    private async Task RetainersAsync(Dictionary<ulong, List<QueuedAction>> byRetainer, CancellationToken ct)
     {
-        if (byRetainer.Count == 0 && sells.Count == 0) return;
+        if (byRetainer.Count == 0) return;
         await WalkToAndInteractAsync(S.BellObjectName, "RetainerList", ct).ConfigureAwait(false);
 
         // The list appears before the server has filled it; selecting too early is silently ignored.
@@ -223,14 +224,12 @@ public sealed class AutoPilot
         await Task.Delay(1200, ct).ConfigureAwait(false);
 
         var order = await OnFramework(RetainerOrder).ConfigureAwait(false);
-        var sellsDone = false;
         for (var index = 0; index < order.Count; index++)
         {
             ct.ThrowIfCancellationRequested();
             var (id, name) = order[index];
             var rows = byRetainer.GetValueOrDefault(id) ?? new List<QueuedAction>();
-            var wantSell = !sellsDone && sells.Count > 0;
-            if (rows.Count == 0 && !wantSell && !S.PauseForUnseenRows) continue;
+            if (rows.Count == 0 && !S.PauseForUnseenRows) continue;
 
             await Step($"Opening {name}", async () =>
             {
@@ -266,20 +265,6 @@ public sealed class AutoPilot
                 await WaitUntil(() => GameUi.SelectStringReady(), StepTimeout, $"{name}'s menu", ct).ConfigureAwait(false);
             }
 
-            if (wantSell)
-            {
-                await Step($"Selling to {name}", async () =>
-                {
-                    await ChooseMenu(S.SellMenuText, ct).ConfigureAwait(false);
-                    await WaitUntil(() => GameUi.IsVisible("RetainerSellList"), StepTimeout, "the sell window", ct).ConfigureAwait(false);
-                    await Task.Delay(600, ct).ConfigureAwait(false);
-                    await Execute(sells).ConfigureAwait(false);
-                    sellsDone = true;
-                    await framework.RunOnFrameworkThread(() => GameUi.Close("RetainerSellList")).ConfigureAwait(false);
-                    await WaitUntil(() => GameUi.SelectStringReady(), StepTimeout, $"{name}'s menu", ct).ConfigureAwait(false);
-                }, ct);
-            }
-
             await Step($"Leaving {name}", async () =>
             {
                 await ChooseMenu(S.QuitMenuText, ct).ConfigureAwait(false);
@@ -300,6 +285,30 @@ public sealed class AutoPilot
         if (rows.Count > 0) await Step("Cleaning the glamour dresser", () => Execute(rows), ct);
         await PauseForUnseen(ContainerKind.GlamourDresser, ct).ConfigureAwait(false);
         await framework.RunOnFrameworkThread(() => GameUi.Close("MiragePrismPrismBox")).ConfigureAwait(false);
+    }
+
+    /// <summary>Selling needs a real merchant: find the named NPC nearby, open its shop, sell from the bags.</summary>
+    private async Task VendorAsync(List<QueuedAction> sells, CancellationToken ct)
+    {
+        var npc = await OnFramework(() => FindNearest(S.VendorNpcName)).ConfigureAwait(false);
+        if (npc is null)
+        {
+            var reason = $"no '{S.VendorNpcName}' within reach; sell them at any merchant";
+            tally.Pending[reason] = tally.Pending.GetValueOrDefault(reason) + sells.Count;
+            return;
+        }
+        await WalkToAndInteractAsync(S.VendorNpcName, "Shop", ct, orMenu: true).ConfigureAwait(false);
+        if (!await OnFramework(() => GameUi.IsVisible("Shop")).ConfigureAwait(false))
+        {
+            await Step("Opening the shop", async () =>
+            {
+                await ChooseMenu(S.VendorMenuText, ct).ConfigureAwait(false);
+                await WaitUntil(() => GameUi.IsVisible("Shop"), StepTimeout, "the shop window", ct).ConfigureAwait(false);
+            }, ct);
+        }
+        await Task.Delay(600, ct).ConfigureAwait(false);
+        await Step("Selling to the merchant", () => Execute(sells), ct);
+        await framework.RunOnFrameworkThread(() => GameUi.Close("Shop")).ConfigureAwait(false);
     }
 
     /// <summary>Expert Delivery: teleport to the Grand Company's city, reach the HQ, talk to the personnel officer.</summary>
@@ -338,7 +347,7 @@ public sealed class AutoPilot
             }
         }
 
-        await WalkToAndInteractAsync(S.PersonnelOfficerName, "SelectString", ct).ConfigureAwait(false);
+        await WalkToAndInteractAsync(S.PersonnelOfficerName, "SelectString", ct, orMenu: true).ConfigureAwait(false);
         await Step("Opening supply missions", async () =>
         {
             await ChooseMenu(S.GcSupplyMenuText, ct).ConfigureAwait(false);
@@ -377,7 +386,7 @@ public sealed class AutoPilot
 
     // ---------- movement & interaction ----------
 
-    private async Task WalkToAndInteractAsync(string objectName, string expectAddon, CancellationToken ct)
+    private async Task WalkToAndInteractAsync(string objectName, string expectAddon, CancellationToken ct, bool orMenu = false)
     {
         var target = await OnFramework(() => FindNearest(objectName)).ConfigureAwait(false);
         if (target is null)
@@ -406,7 +415,7 @@ public sealed class AutoPilot
                 await framework.RunOnFrameworkThread(() => GameUi.Interact(target)).ConfigureAwait(false);
                 try
                 {
-                    await WaitUntil(() => GameUi.IsVisible(expectAddon), TimeSpan.FromSeconds(6), expectAddon, ct).ConfigureAwait(false);
+                    await WaitUntil(() => GameUi.IsVisible(expectAddon) || (orMenu && GameUi.SelectStringReady()), TimeSpan.FromSeconds(6), expectAddon, ct).ConfigureAwait(false);
                     return;
                 }
                 catch (AutoPilotException) when (attempt < 2) { }

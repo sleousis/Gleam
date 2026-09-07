@@ -234,7 +234,8 @@ public sealed partial class SettingsWindow
         v = a.TravelToInn; if (ImGui.Checkbox("Travel to an inn with Lifestream", ref v)) { a.TravelToInn = v; dirty = true; }
         Ui.Tooltip("Off: you must already be standing in an inn room.");
         v = a.VisitRetainers; if (ImGui.Checkbox("Visit each retainer at the bell", ref v)) { a.VisitRetainers = v; dirty = true; }
-        v = a.SellAtRetainer; if (ImGui.Checkbox("Sell vendor rows to the first retainer", ref v)) { a.SellAtRetainer = v; dirty = true; }
+        v = a.SellAtVendor; if (ImGui.Checkbox("Sell vendor rows at a merchant NPC", ref v)) { a.SellAtVendor = v; dirty = true; }
+        Ui.Tooltip("Retainers cannot buy items. After the other legs, the pilot looks for the named merchant nearby and sells there.");
         v = a.VisitDresser; if (ImGui.Checkbox("Visit the glamour dresser", ref v)) { a.VisitDresser = v; dirty = true; }
         v = a.VisitGrandCompany; if (ImGui.Checkbox("Visit your Grand Company for Expert Delivery", ref v)) { a.VisitGrandCompany = v; dirty = true; }
         Ui.Tooltip("Teleports to your GC's city, reaches the HQ, and talks to the personnel officer.");
@@ -246,7 +247,8 @@ public sealed partial class SettingsWindow
         var s = a.BellObjectName; ImGui.SetNextItemWidth(w); if (Ui.InputText("Summoning bell", "", ref s, 64)) { a.BellObjectName = s; dirty = true; }
         s = a.DresserObjectName; ImGui.SetNextItemWidth(w); if (Ui.InputText("Glamour dresser", "", ref s, 64)) { a.DresserObjectName = s; dirty = true; }
         s = a.EntrustMenuText; ImGui.SetNextItemWidth(w); if (Ui.InputText("Retainer menu: inventory", "", ref s, 64)) { a.EntrustMenuText = s; dirty = true; }
-        s = a.SellMenuText; ImGui.SetNextItemWidth(w); if (Ui.InputText("Retainer menu: sell", "", ref s, 64)) { a.SellMenuText = s; dirty = true; }
+        s = a.VendorNpcName; ImGui.SetNextItemWidth(w); if (Ui.InputText("Merchant NPC", "", ref s, 64)) { a.VendorNpcName = s; dirty = true; }
+        s = a.VendorMenuText; ImGui.SetNextItemWidth(w); if (Ui.InputText("Merchant menu: open shop", "", ref s, 64)) { a.VendorMenuText = s; dirty = true; }
         s = a.QuitMenuText; ImGui.SetNextItemWidth(w); if (Ui.InputText("Retainer menu: quit", "", ref s, 64)) { a.QuitMenuText = s; dirty = true; }
         s = a.PersonnelOfficerName; ImGui.SetNextItemWidth(w); if (Ui.InputText("GC personnel officer", "", ref s, 64)) { a.PersonnelOfficerName = s; dirty = true; }
         s = a.GcSupplyMenuText; ImGui.SetNextItemWidth(w); if (Ui.InputText("Officer menu: supply missions", "", ref s, 64)) { a.GcSupplyMenuText = s; dirty = true; }
