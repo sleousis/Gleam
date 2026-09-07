@@ -158,3 +158,19 @@ public class RunLogTests
         Assert.Equal("Allagan Bronze Piece", all[1].ItemName);
     }
 }
+
+public class ItemTagTests
+{
+    [Fact]
+    public void Items_fall_into_one_coarse_type_each()
+    {
+        Assert.Equal(ItemTag.Gear, ItemTags.Of(ItemInfo.Test(1, "Sword", equipment: true, category: "Two-handed Conjurer's Arm")));
+        Assert.Equal(ItemTag.Materia, ItemTags.Of(ItemInfo.Test(2, "Savage Might Materia XII", category: "Materia")));
+        Assert.Equal(ItemTag.Crystals, ItemTags.Of(ItemInfo.Test(3, "Fire Shard", category: "Crystal")));
+        Assert.Equal(ItemTag.Materials, ItemTags.Of(ItemInfo.Test(4, "Ash Lumber", category: "Lumber")));
+        Assert.Equal(ItemTag.Consumables, ItemTags.Of(ItemInfo.Test(5, "Potion", category: "Medicine")));
+        Assert.Equal(ItemTag.Housing, ItemTags.Of(ItemInfo.Test(6, "Oak Table", category: "Table")));
+        Assert.Equal(ItemTag.Collectibles, ItemTags.Of(ItemInfo.Test(7, "Wind-up Cursor", category: "Minion")));
+        Assert.Equal(ItemTag.Other, ItemTags.Of(ItemInfo.Test(8, "Phial of Fantasia", category: "Miscellany")));
+    }
+}

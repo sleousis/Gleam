@@ -31,6 +31,7 @@ public sealed class ConfirmationWindow : Window
     private ContainerKind? filterContainer;
     private string? filterRule;
     private ActionKind? filterAction;
+    private readonly HashSet<ItemTag> filterTags = new();
     private int sortMode; // 0 name, 1 value, 2 quantity
     private bool capArmed;
     private int cursor = -1;
@@ -176,12 +177,13 @@ public sealed class ConfirmationWindow : Window
         Ui.Gap(0.3f);
 
         DrawContainerChips(plan);
+        DrawTypeChips(plan);
 
         ImGui.SetNextItemWidth(260 * Ui.Scale);
         Ui.InputText("##search", "Search", ref search, 64);
 
         ImGui.SameLine();
-        var filtersActive = filterContainer is not null || filterRule is not null || filterAction is not null || sortMode != 0;
+        var filtersActive = filterContainer is not null || filterRule is not null || filterAction is not null || filterTags.Count > 0 || sortMode != 0;
         if (Ui.Button(filtersActive ? "Filter •" : "Filter")) ImGui.OpenPopup("##filters", ImGuiPopupFlags.None);
         DrawFilterMenu();
 
@@ -196,11 +198,12 @@ public sealed class ConfirmationWindow : Window
         Ui.RightAlign(w);
         Ui.Hint(label);
         ImGui.SameLine();
-        // All means all. The soft cap still asks for a second click on a big run, and hard-blocked
-        // items are never in this list to begin with.
-        var executable = plan.AllRows.Where(r => r.IsExecutable).ToList();
+        // All means all of what is on screen: with a type, container or search filter on, it ticks just
+        // those rows. The soft cap still asks for a second click on a big run.
+        var narrowed = filterContainer is not null || filterRule is not null || filterAction is not null || filterTags.Count > 0 || !string.IsNullOrWhiteSpace(search);
+        var executable = (narrowed ? Filter(plan.AllRows) : plan.AllRows).Where(r => r.IsExecutable).ToList();
         var allChecked = executable.Count > 0 && executable.All(r => r.Checked);
-        if (Ui.LinkButton(allChecked ? "None" : "All"))
+        if (Ui.LinkButton(allChecked ? "None" : narrowed ? "All shown" : "All"))
         {
             foreach (var r in executable)
             {
@@ -209,9 +212,10 @@ public sealed class ConfirmationWindow : Window
             }
         }
         var warned = executable.Count(r => r.Proposal.Warnings.Count > 0);
+        var scope = narrowed ? "every row that matches the current filters" : "every row";
         Ui.Tooltip(warned > 0
-            ? $"Ticks every row, including {warned} with a warning (usable, untradeable, or valuable on the market). Glance at those before you clean."
-            : "Ticks every row.");
+            ? $"Ticks {scope}, including {warned} with a warning (usable, untradeable, or valuable on the market). Glance at those before you clean."
+            : $"Ticks {scope}.");
     }
 
     /// <summary>One chip per container with its row count. Click to show only that container; click again for all.</summary>
@@ -231,16 +235,49 @@ public sealed class ConfirmationWindow : Window
         {
             var active = filterContainer == kind;
             var label = checkedCount > 0 ? $"{kind.DisplayName()} {checkedCount}/{rows}" : $"{kind.DisplayName()} {rows}";
-            using (ImRaii.PushColor(ImGuiCol.Button, active ? ImGui.GetColorU32(Ui.Accent * new Vector4(1, 1, 1, 0.75f)) : ImGui.GetColorU32(ImGuiCol.FrameBg), true))
-            using (ImRaii.PushColor(ImGuiCol.Text, active ? ImGui.GetColorU32(new Vector4(0.08f, 0.08f, 0.08f, 1f)) : ImGui.GetColorU32(ImGuiCol.Text), true))
-            {
-                if (ImGui.SmallButton(label)) filterContainer = active ? null : kind;
-            }
+            if (Chip(label, active)) filterContainer = active ? null : kind;
             Ui.Tooltip(active ? "Showing only this container. Click to show all." : $"Show only the {kind.DisplayName().ToLowerInvariant()}.");
             ImGui.SameLine();
         }
         ImGui.NewLine();
         Ui.Gap(0.2f);
+    }
+
+    /// <summary>Item-type chips. Several can be on at once; none on means every type.</summary>
+    private void DrawTypeChips(RunPlan plan)
+    {
+        var rows = plan.AllRows;
+        if (coordinator.FocusContainer is { } focus) rows = rows.Where(r => r.Item.Slot.Kind == focus);
+        var groups = rows
+            .GroupBy(r => ItemTags.Of(r.Info))
+            .OrderBy(g => g.Key)
+            .Select(g => (Tag: g.Key, Rows: g.Count(), Checked: g.Count(r => r.Checked)))
+            .ToList();
+        if (groups.Count < 2) return;
+
+        Ui.Hint("Types");
+        ImGui.SameLine();
+        foreach (var (tag, count, checkedCount) in groups)
+        {
+            var active = filterTags.Contains(tag);
+            var label = checkedCount > 0 ? $"{tag.Label()} {checkedCount}/{count}" : $"{tag.Label()} {count}";
+            if (Chip(label, active))
+            {
+                if (!filterTags.Remove(tag)) filterTags.Add(tag);
+            }
+            Ui.Tooltip(active ? "Click to stop filtering by this type." : $"Show {tag.Label().ToLowerInvariant()} only. Click more types to add them.");
+            ImGui.SameLine();
+        }
+        if (filterTags.Count > 0 && Ui.LinkButton("Clear")) filterTags.Clear();
+        ImGui.NewLine();
+        Ui.Gap(0.2f);
+    }
+
+    private static bool Chip(string label, bool active)
+    {
+        using var bg = ImRaii.PushColor(ImGuiCol.Button, active ? ImGui.GetColorU32(Ui.Accent * new Vector4(1, 1, 1, 0.75f)) : ImGui.GetColorU32(ImGuiCol.FrameBg), true);
+        using var fg = ImRaii.PushColor(ImGuiCol.Text, active ? ImGui.GetColorU32(new Vector4(0.08f, 0.08f, 0.08f, 1f)) : ImGui.GetColorU32(ImGuiCol.Text), true);
+        return ImGui.SmallButton(label);
     }
 
     private void DrawFilterMenu()
@@ -262,6 +299,12 @@ public sealed class ConfirmationWindow : Window
         if (ImGui.MenuItem("Not proposed", string.Empty, filterRule == "manual", true)) filterRule = "manual";
 
         ImGui.Separator();
+        Ui.Hint("Type");
+        if (ImGui.MenuItem("All types", string.Empty, filterTags.Count == 0, true)) filterTags.Clear();
+        foreach (var t in Enum.GetValues<ItemTag>())
+            if (ImGui.MenuItem(t.Label(), string.Empty, filterTags.Contains(t), true)) { if (!filterTags.Remove(t)) filterTags.Add(t); }
+
+        ImGui.Separator();
         Ui.Hint("Action");
         if (ImGui.MenuItem("All actions", string.Empty, filterAction is null, true)) filterAction = null;
         foreach (var a in new[] { ActionKind.Discard, ActionKind.VendorSell, ActionKind.ExpertDelivery, ActionKind.Desynth, ActionKind.None })
@@ -274,7 +317,7 @@ public sealed class ConfirmationWindow : Window
         if (ImGui.MenuItem("Quantity", string.Empty, sortMode == 2, true)) sortMode = 2;
 
         ImGui.Separator();
-        if (ImGui.MenuItem("Reset", string.Empty, false, true)) { filterContainer = null; filterRule = null; filterAction = null; sortMode = 0; }
+        if (ImGui.MenuItem("Reset", string.Empty, false, true)) { filterContainer = null; filterRule = null; filterAction = null; filterTags.Clear(); sortMode = 0; }
     }
 
     private IEnumerable<PlanRow> Filter(IEnumerable<PlanRow> rows)
@@ -283,6 +326,7 @@ public sealed class ConfirmationWindow : Window
         if (filterContainer is { } c) q = q.Where(r => r.Item.Slot.Kind == c);
         if (filterRule is { } rule) q = q.Where(r => r.Proposal.RuleId == rule);
         if (filterAction is { } a) q = q.Where(r => r.ChosenAction == a);
+        if (filterTags.Count > 0) q = q.Where(r => filterTags.Contains(ItemTags.Of(r.Info)));
         if (!string.IsNullOrWhiteSpace(search))
             q = q.Where(r => r.Info.Name.Contains(search, StringComparison.OrdinalIgnoreCase) || r.Proposal.Reason.Contains(search, StringComparison.OrdinalIgnoreCase));
         return sortMode switch
