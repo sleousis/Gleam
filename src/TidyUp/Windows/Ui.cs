@@ -18,9 +18,11 @@ internal static class Ui
     // Palette. Ink tones carry a faint blue bias so greys read as chosen rather than default.
     public static readonly Vector4 Accent = new(0.87f, 0.72f, 0.31f, 1f);
     public static readonly Vector4 AccentSoft = new(0.96f, 0.86f, 0.55f, 1f);
-    public static readonly Vector4 Ink = new(0.075f, 0.09f, 0.12f, 0.97f);
+    public static readonly Vector4 Ink = new(0.075f, 0.09f, 0.12f, 0.985f);
     public static readonly Vector4 InkRaised = new(0.11f, 0.13f, 0.17f, 1f);
-    public static readonly Vector4 InkLine = new(1f, 1f, 1f, 0.07f);
+    public static readonly Vector4 InkPopup = new(0.10f, 0.12f, 0.155f, 1f);
+    public static readonly Vector4 InkLine = new(1f, 1f, 1f, 0.08f);
+    public static readonly Vector4 InkEdge = new(1f, 1f, 1f, 0.16f);
     public static readonly Vector4 Cream = new(0.97f, 0.93f, 0.85f, 1f);
     public static readonly Vector4 Danger = new(0.93f, 0.42f, 0.40f, 1f);
     public static readonly Vector4 Ok = new(0.49f, 0.80f, 0.55f, 1f);
@@ -58,12 +60,13 @@ internal static class Ui
                 .Push(ImGuiStyleVar.ItemSpacing, new Vector2(8f * Scale, 6f * Scale))
                 .Push(ImGuiStyleVar.CellPadding, new Vector2(6f * Scale, 3f * Scale))
                 .Push(ImGuiStyleVar.WindowBorderSize, 1f)
+                .Push(ImGuiStyleVar.PopupBorderSize, 1f)
                 .Push(ImGuiStyleVar.WindowTitleAlign, new Vector2(0.02f, 0.5f));
 
             color = ImRaii.PushColor(ImGuiCol.WindowBg, Ink)
                 .Push(ImGuiCol.ChildBg, Vector4.Zero)
-                .Push(ImGuiCol.PopupBg, new Vector4(0.09f, 0.105f, 0.14f, 0.98f))
-                .Push(ImGuiCol.Border, InkLine)
+                .Push(ImGuiCol.PopupBg, InkPopup)
+                .Push(ImGuiCol.Border, InkEdge)
                 .Push(ImGuiCol.TitleBg, new Vector4(0.06f, 0.075f, 0.10f, 1f))
                 .Push(ImGuiCol.TitleBgActive, new Vector4(0.08f, 0.10f, 0.135f, 1f))
                 .Push(ImGuiCol.TitleBgCollapsed, new Vector4(0.06f, 0.075f, 0.10f, 0.8f))
@@ -144,6 +147,36 @@ internal static class Ui
     }
 
     public static void Gap(float multiple = 1f) => ImGui.Dummy(new Vector2(0, Space * multiple));
+
+    /// <summary>A label in the muted tone followed by its value on the same line, label column fixed.</summary>
+    public static void KeyValue(string label, string value, Vector4? valueColor = null, float labelWidth = 92f)
+    {
+        var x = ImGui.GetCursorPosX();
+        Hint(label);
+        ImGui.SameLine();
+        ImGui.SetCursorPosX(x + labelWidth * Scale);
+        if (valueColor is { } c) TextColored(c, value); else Text(value);
+    }
+
+    /// <summary>A tooltip with the plugin's padding and a fixed comfortable width. Dispose to close.</summary>
+    public static IDisposable RichTooltip(float width = 340f)
+    {
+        var style = ImRaii.PushStyle(ImGuiStyleVar.WindowPadding, new Vector2(14f * Scale, 12f * Scale))
+            .Push(ImGuiStyleVar.ItemSpacing, new Vector2(8f * Scale, 5f * Scale))
+            .Push(ImGuiStyleVar.WindowRounding, 8f * Scale);
+        ImGui.SetNextWindowSize(new Vector2(width * Scale, 0));
+        ImGui.BeginTooltip();
+        return new TooltipScope(style);
+    }
+
+    private sealed class TooltipScope(IDisposable style) : IDisposable
+    {
+        public void Dispose()
+        {
+            ImGui.EndTooltip();
+            style.Dispose();
+        }
+    }
 
     /// <summary>A hairline across the content width. Quieter than ImGui.Separator.</summary>
     public static void Rule()
