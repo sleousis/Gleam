@@ -174,7 +174,7 @@ public class ExecutionEngineTests
     }
 
     [Fact]
-    public async Task First_failure_aborts_everything_that_remains()
+    public async Task A_single_failure_is_skipped_and_the_run_continues()
     {
         var game = new FakeGame { FailWhen = s => s.Slot == 1 };
         for (var i = 0; i < 4; i++) game.Slots[Inv(i)] = ScannedItem.Simple(Inv(i), 1, 1);
@@ -182,12 +182,28 @@ public class ExecutionEngineTests
         var report = await new ExecutionEngine(game, new MemoryRunLog(), new NoDelay())
             .ExecuteAsync(Enumerable.Range(0, 4).Select(i => Q(Inv(i), 1, 1)).ToList(), Who, CancellationToken.None);
 
+        Assert.False(report.Aborted);
+        Assert.Equal(3, report.Done);
+        Assert.Equal(1, report.Failed);
+        Assert.Empty(report.Pending);
+        Assert.Equal(4, game.Calls.Count);
+    }
+
+    [Fact]
+    public async Task Three_failures_in_a_row_abort_the_rest()
+    {
+        var game = new FakeGame { FailWhen = s => s.Slot is 1 or 2 or 3 };
+        for (var i = 0; i < 6; i++) game.Slots[Inv(i)] = ScannedItem.Simple(Inv(i), 1, 1);
+
+        var report = await new ExecutionEngine(game, new MemoryRunLog(), new NoDelay())
+            .ExecuteAsync(Enumerable.Range(0, 6).Select(i => Q(Inv(i), 1, 1)).ToList(), Who, CancellationToken.None);
+
         Assert.True(report.Aborted);
         Assert.Equal(1, report.Done);
-        Assert.Equal(1, report.Failed);
+        Assert.Equal(3, report.Failed);
         Assert.Equal(2, report.Pending.Count);
-        Assert.Contains("item1", report.AbortReason);
-        Assert.Equal(2, game.Calls.Count);
+        Assert.Contains("3 items failed in a row", report.AbortReason);
+        Assert.All(report.Pending, p => Assert.Contains("earlier failure", report.PendingReasons[p]));
     }
 
     [Fact]

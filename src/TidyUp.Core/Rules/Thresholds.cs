@@ -1,8 +1,35 @@
 namespace TidyUp.Core.Rules;
 
+/// <summary>What a preset does with the items it proposes. Stated in one sentence each, and shown to the user as such.</summary>
+public enum ActionPolicy
+{
+    /// <summary>Each rule picks the action it thinks best (seals, desynth, sell, discard).</summary>
+    RuleDecides,
+    /// <summary>Only tradeable items with a vendor price are proposed, and they are sold. Nothing is ever discarded.</summary>
+    SellOnly,
+    /// <summary>Untradeable items are discarded; tradeable items are sold.</summary>
+    DiscardUntradeableSellTradeable,
+    /// <summary>Everything proposed is discarded.</summary>
+    DiscardAll,
+}
+
+public static class ActionPolicyExtensions
+{
+    public static string Describe(this ActionPolicy p) => p switch
+    {
+        ActionPolicy.SellOnly => "Only sells tradeable items. Never discards anything.",
+        ActionPolicy.DiscardUntradeableSellTradeable => "Discards untradeable items, sells tradeable ones.",
+        ActionPolicy.DiscardAll => "Discards everything it proposes.",
+        _ => "Each rule picks its own action.",
+    };
+}
+
 /// <summary>Every tunable number the rules and the run caps read. Mutable so it round-trips through plugin config.</summary>
 public sealed class Thresholds
 {
+    /// <summary>What happens to proposed items. Presets set this; it is the headline meaning of each preset.</summary>
+    public ActionPolicy Policy { get; set; } = ActionPolicy.DiscardUntradeableSellTradeable;
+
     /// <summary>Gear is obsolete when the best job that can wear it is at least this many levels above the gear's equip level.</summary>
     public int ObsoleteGearLevelGap { get; set; } = 15;
 
@@ -50,6 +77,7 @@ public static class Presets
     {
         PresetName.Cautious => new Thresholds
         {
+            Policy = ActionPolicy.SellOnly,
             ObsoleteGearLevelGap = 20,
             IncludeGearForUnplayedJobs = false,
             ConsumableItemLevelGap = 300,
@@ -63,6 +91,7 @@ public static class Presets
         },
         PresetName.Aggressive => new Thresholds
         {
+            Policy = ActionPolicy.DiscardAll,
             ObsoleteGearLevelGap = 10,
             IncludeGearForUnplayedJobs = true,
             ConsumableItemLevelGap = 120,
@@ -86,6 +115,7 @@ public static class Presets
     }
 
     private static bool Equal(Thresholds a, Thresholds b) =>
+        a.Policy == b.Policy &&
         a.ObsoleteGearLevelGap == b.ObsoleteGearLevelGap &&
         a.IncludeGearForUnplayedJobs == b.IncludeGearForUnplayedJobs &&
         a.ConsumableItemLevelGap == b.ConsumableItemLevelGap &&

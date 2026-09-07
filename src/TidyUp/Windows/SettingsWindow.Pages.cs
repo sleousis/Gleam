@@ -28,7 +28,12 @@ public sealed partial class SettingsWindow
             if (Ui.Segmented("##preset", ref preset, PresetOptions)) { p.ApplyPreset(preset); dirty = true; }
             if (preset == PresetName.Custom) { ImGui.SameLine(); Ui.Hint("custom"); }
         }
-        Ui.Hint("Cautious proposes less and caps runs lower. Aggressive proposes more. Fine-tune under Rules.");
+        Ui.TextColored(Ui.Accent, p.Thresholds.Policy.Describe());
+        Ui.Gap(0.3f);
+        Ui.Hint("Cautious   only sells tradeable items; never discards.");
+        Ui.Hint("Balanced   discards untradeable items, sells tradeable ones.");
+        Ui.Hint("Aggressive discards everything it proposes.");
+        Ui.Hint("Every row can still be switched to seals, desynth or another action before you clean.");
 
         Ui.Section("Runs");
         Toggle("Merge split stacks before each scan", nameof(Profile.StackMergeBeforeScan), p.StackMergeBeforeScan, v => p.StackMergeBeforeScan = v,
