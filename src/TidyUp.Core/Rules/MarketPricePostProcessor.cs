@@ -3,9 +3,9 @@ using TidyUp.Core.Model;
 namespace TidyUp.Core.Rules;
 
 /// <summary>
-/// Vendor vs market. Never *adds* proposals; it re-routes the ones the rules made:
-/// if the market clearly beats the vendor, the row becomes show-only ("list it yourself");
-/// if the row was a discard but the vendor pays, it becomes a vendor sell.
+/// Vendor vs market. Never *adds* proposals; it annotates and re-routes the ones the rules made:
+/// if the market clearly beats the vendor, the row keeps its action but carries a warning with the
+/// market value and starts unchecked; if the row was a discard but the vendor pays, it becomes a sell.
 /// </summary>
 public sealed class MarketPricePostProcessor : IProposalPostProcessor
 {
@@ -39,14 +39,12 @@ public sealed class MarketPricePostProcessor : IProposalPostProcessor
                 var beatsVendor = marketTotal > vendorTotal * t.MarketPremiumFactor;
                 if (beatsVendor && marketTotal >= t.MarketMinStackValueGil)
                 {
-                    return p with
+                    // Still actionable: the preset decides what happens. The warning keeps it unchecked until you look.
+                    p = p with
                     {
-                        Action = ActionKind.None,
-                        Alternatives = [p.Action, .. p.Alternatives],
-                        Reason = $"{p.Reason} · worth {marketTotal:N0}g on the market, list it yourself",
-                        ValueGil = marketTotal,
+                        Reason = $"{p.Reason} · worth about {marketTotal:N0}g on the market",
                         ValueLabel = $"{marketTotal:N0}g mkt",
-                        Warnings = [.. p.Warnings, "Market value exceeds vendor value"],
+                        Warnings = [.. p.Warnings, $"Worth {marketTotal:N0}g on the market"],
                     };
                 }
             }

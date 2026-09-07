@@ -205,16 +205,20 @@ public sealed class ConfirmationWindow : Window
         Ui.RightAlign(w);
         Ui.Hint(label);
         ImGui.SameLine();
-        if (Ui.LinkButton(checkedCount == total ? "None" : "All"))
+        var safeRows = plan.AllRows.Where(r => r.IsExecutable && r.Proposal.Warnings.Count == 0).ToList();
+        var allSafeChecked = safeRows.Count > 0 && safeRows.All(r => r.Checked);
+        if (Ui.LinkButton(allSafeChecked ? "None" : "All"))
         {
-            var toAll = checkedCount != total;
-            foreach (var r in plan.AllRows.Where(r => r.IsExecutable))
+            if (allSafeChecked)
             {
-                r.Checked = toAll;
-                if (!toAll) coordinator.SessionSkips.Add(r.Key); else coordinator.SessionSkips.Remove(r.Key);
+                foreach (var r in plan.AllRows.Where(r => r.IsExecutable)) { r.Checked = false; coordinator.SessionSkips.Add(r.Key); }
+            }
+            else
+            {
+                foreach (var r in safeRows) { r.Checked = true; coordinator.SessionSkips.Remove(r.Key); }
             }
         }
-        Ui.Tooltip("All selects every row, including ones that started unchecked because of a warning. Review those before accepting.");
+        Ui.Tooltip("All ticks only rows without a warning. Hand-picked, usable, or market-flagged rows must be ticked one by one.");
     }
 
     private void DrawFilterMenu()

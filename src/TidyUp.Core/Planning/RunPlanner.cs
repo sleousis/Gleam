@@ -93,6 +93,9 @@ public sealed class RunPlanner
                 if (info is null) continue;
                 var canSell = !info.IsUntradable && info.VendorPrice > 0 && ContainerConstraints.AllowsAction(item.Slot.Kind, ActionKind.VendorSell);
                 var value = canSell ? (long)info.VendorPrice * item.Quantity : 0;
+                var warnings = new List<string> { "Not proposed by any rule" };
+                if (info.IsUsable) warnings.Add("Usable item");
+                if (info.IsUntradable) warnings.Add("Untradeable");
                 proposals.Add(new Proposal
                 {
                     Item = item, Info = info,
@@ -100,9 +103,10 @@ public sealed class RunPlanner
                     Alternatives = canSell ? [ActionKind.Discard] : [],
                     Confidence = Confidence.Low,
                     RuleId = "manual",
-                    Reason = "Not proposed by any rule",
+                    Reason = "Hand-picked",
                     ValueGil = value,
                     ValueLabel = value > 0 ? $"{value:N0}g" : "—",
+                    Warnings = warnings,
                 });
             }
         }

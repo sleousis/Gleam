@@ -109,9 +109,10 @@ public sealed class AutoPilot
 
             if (here.Count > 0) await Leg("bags", () => Step("Cleaning inventory and armoury", () => Execute(here), ct), ct);
 
-            if (S.OpenSaddlebag && saddle.Count > 0) await Leg("saddlebag", () => SaddlebagAsync(saddle, ct), ct);
+            var cleanUnseen = S.UnseenRows == UnseenRowsMode.Clean;
+            if (S.OpenSaddlebag && (saddle.Count > 0 || cleanUnseen)) await Leg("saddlebag", () => SaddlebagAsync(saddle, ct), ct);
 
-            var needsInn = (S.VisitRetainers && retainers.Count > 0) || (S.VisitDresser && dresser.Count > 0);
+            var needsInn = (S.VisitRetainers && (retainers.Count > 0 || cleanUnseen)) || (S.VisitDresser && (dresser.Count > 0 || cleanUnseen));
             if (needsInn)
             {
                 var inInn = await Leg("inn", () => TravelToInnAsync(ct), ct);
@@ -242,8 +243,8 @@ public sealed class AutoPilot
             await framework.RunOnFrameworkThread(() => GameUi.ExecuteMainCommand(id.Value)).ConfigureAwait(false);
             await WaitUntil(() => GameInventoryScanner.IsSaddlebagLoaded() && GameUi.IsVisible("InventoryBuddy"), StepTimeout, "the saddlebag to open", ct).ConfigureAwait(false);
         }, ct);
-        await Step("Cleaning the saddlebag", () => Execute(rows), ct);
-        await PauseForUnseen(ContainerKind.Saddlebag, ct).ConfigureAwait(false);
+        if (rows.Count > 0) await Step("Cleaning the saddlebag", () => Execute(rows), ct);
+        await HandleUnseen(ContainerKind.Saddlebag, "the saddlebag", ct).ConfigureAwait(false);
         await framework.RunOnFrameworkThread(() => GameUi.Close("InventoryBuddy")).ConfigureAwait(false);
     }
 
@@ -263,7 +264,7 @@ public sealed class AutoPilot
 
     private async Task RetainersAsync(Dictionary<ulong, List<QueuedAction>> byRetainer, CancellationToken ct)
     {
-        if (byRetainer.Count == 0) return;
+        if (byRetainer.Count == 0 && S.UnseenRows == UnseenRowsMode.Skip) return;
         await EnsureRetainerListAsync(ct).ConfigureAwait(false);
 
         // The list appears before the server has filled it; selecting too early is silently ignored.
@@ -276,7 +277,7 @@ public sealed class AutoPilot
             ct.ThrowIfCancellationRequested();
             var (id, name) = order[index];
             var rows = byRetainer.GetValueOrDefault(id) ?? new List<QueuedAction>();
-            if (rows.Count == 0 && !S.PauseForUnseenRows) continue;
+            if (rows.Count == 0 && S.UnseenRows == UnseenRowsMode.Skip) continue;
 
             var ok = await Leg($"retainer {name}", () => OneRetainerAsync(index, id, name, rows, ct), ct).ConfigureAwait(false);
             if (!ok) await EnsureRetainerListAsync(ct).ConfigureAwait(false);
@@ -361,7 +362,7 @@ public sealed class AutoPilot
                 throw new AutoPilotException($"{name}'s menu did not open after selecting row {i} four times. Try another 'Retainer list callback' value in Settings › Advanced.");
             }, ct);
 
-            if (rows.Count > 0 || S.PauseForUnseenRows)
+            if (rows.Count > 0 || S.UnseenRows != UnseenRowsMode.Skip)
             {
                 await Step($"Opening {name}'s inventory", async () =>
                 {
@@ -371,7 +372,7 @@ public sealed class AutoPilot
                     await Task.Delay(600, ct).ConfigureAwait(false);
                 }, ct);
                 if (rows.Count > 0) await Step($"Cleaning {name}", () => Execute(rows), ct);
-                await PauseForUnseen(ContainerKind.Retainer, ct).ConfigureAwait(false);
+                await HandleUnseen(ContainerKind.Retainer, name, ct).ConfigureAwait(false);
                 await framework.RunOnFrameworkThread(() => { GameUi.Close("InventoryRetainer"); GameUi.Close("InventoryRetainerLarge"); }).ConfigureAwait(false);
                 await WaitUntil(() => GameUi.SelectStringReady(), StepTimeout, $"{name}'s menu", ct).ConfigureAwait(false);
             }
@@ -387,28 +388,13 @@ public sealed class AutoPilot
 
     private async Task DresserAsync(List<QueuedAction> rows, CancellationToken ct)
     {
-        // The dresser is never cached, so its rows only exist if it was open during the scan. With no
-        // accepted rows, open it anyway and leave the review showing what it holds: one click to clean.
-        var showOnly = rows.Count == 0 && !S.PauseForUnseenRows;
+        // The dresser is never cached, so its rows only exist if it was open during the scan.
+        if (rows.Count == 0 && S.UnseenRows == UnseenRowsMode.Skip) return;
         await WalkToAndInteractAsync(S.DresserObjectName, "MiragePrismPrismBox", ct).ConfigureAwait(false);
         await WaitUntil(GameInventoryScanner.IsDresserLoaded, StepTimeout, "the dresser to load", ct).ConfigureAwait(false);
         await Task.Delay(800, ct).ConfigureAwait(false);
         if (rows.Count > 0) await Step("Cleaning the glamour dresser", () => Execute(rows), ct);
-        if (showOnly)
-        {
-            await coordinator.RefreshPlanAsync(openWindow: false, focus: ContainerKind.GlamourDresser).ConfigureAwait(false);
-            if (coordinator.CurrentPlan?.AllRows.Any(r => r.IsExecutable) == true)
-            {
-                coordinator.RaiseOpenWindow();
-                chat.Print("Tidy Up: the dresser is open and its proposals are in the review. Clean them with one click, or close it.", "Tidy Up");
-            }
-            else
-            {
-                await framework.RunOnFrameworkThread(() => GameUi.Close("MiragePrismPrismBox")).ConfigureAwait(false);
-            }
-            return;
-        }
-        await PauseForUnseen(ContainerKind.GlamourDresser, ct).ConfigureAwait(false);
+        await HandleUnseen(ContainerKind.GlamourDresser, "the glamour dresser", ct).ConfigureAwait(false);
         await framework.RunOnFrameworkThread(() => GameUi.Close("MiragePrismPrismBox")).ConfigureAwait(false);
     }
 
@@ -416,9 +402,23 @@ public sealed class AutoPilot
     private async Task VendorAsync(List<QueuedAction> sells, CancellationToken ct)
     {
         var npc = await OnFramework(() => FindNearest(S.VendorNpcName)).ConfigureAwait(false);
+        if (npc is null && S.TravelToInn && !string.IsNullOrWhiteSpace(S.VendorAetheryte))
+        {
+            await Step($"Teleporting to {S.VendorAetheryte} for a merchant", async () =>
+            {
+                var before = clientState.TerritoryType;
+                if (!travel.Execute(S.VendorAetheryte)) throw new AutoPilotException("Lifestream refused the teleport");
+                await Task.Delay(1500, ct).ConfigureAwait(false);
+                await WaitUntil(() => !travel.IsBusy && !condition[ConditionFlag.BetweenAreas] && !condition[ConditionFlag.BetweenAreas51] && (clientState.TerritoryType != before || FindNearest(S.VendorNpcName) is not null),
+                    TimeSpan.FromSeconds(S.TravelTimeoutSeconds), S.VendorAetheryte, ct).ConfigureAwait(false);
+                await Task.Delay(2000, ct).ConfigureAwait(false);
+            }, ct);
+            npc = await OnFramework(() => FindNearest(S.VendorNpcName)).ConfigureAwait(false);
+        }
         if (npc is null)
         {
-            var reason = $"no '{S.VendorNpcName}' within reach; sell them at any merchant";
+            var nearby = await OnFramework(NearbyObjectNames).ConfigureAwait(false);
+            var reason = $"no '{S.VendorNpcName}' near {S.VendorAetheryte}; nearby: {string.Join(", ", nearby.Take(6))}";
             tally.Pending[reason] = tally.Pending.GetValueOrDefault(reason) + sells.Count;
             return;
         }
@@ -486,13 +486,25 @@ public sealed class AutoPilot
         await framework.RunOnFrameworkThread(() => GameUi.Close("GrandCompanySupplyList")).ConfigureAwait(false);
     }
 
-    /// <summary>Re-plans the now-open container. If it shows rows the user never saw, opens the review and waits for them.</summary>
-    private async Task PauseForUnseen(ContainerKind kind, CancellationToken ct)
+    /// <summary>
+    /// Re-plans the now-open container with the same rules the review uses. Depending on the setting the
+    /// newly visible rows are cleaned right away (only those the rules would have checked by default),
+    /// shown to the user, or left alone.
+    /// </summary>
+    private async Task HandleUnseen(ContainerKind kind, string what, CancellationToken ct)
     {
-        if (!S.PauseForUnseenRows) return;
+        if (S.UnseenRows == UnseenRowsMode.Skip) return;
         await coordinator.RefreshPlanAsync(openWindow: false, focus: kind).ConfigureAwait(false);
         var plan = coordinator.CurrentPlan;
         if (plan is null || !plan.AllRows.Any(r => r.IsExecutable)) return;
+
+        if (S.UnseenRows == UnseenRowsMode.Clean)
+        {
+            var queue = coordinator.BuildQueueFromPlan(r => r.Checked);
+            if (queue.Count == 0) return;
+            await Step($"Cleaning {what} by the rules ({queue.Count})", () => Execute(queue), ct).ConfigureAwait(false);
+            return;
+        }
 
         Status = $"Waiting for you to review the {kind.DisplayName().ToLowerInvariant()}";
         coordinator.RaiseOpenWindow();

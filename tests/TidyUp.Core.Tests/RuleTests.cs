@@ -193,17 +193,17 @@ public class RuleTests
     }
 
     [Fact]
-    public void MarketPostProcessor_reroutes_to_show_only_when_market_clearly_wins()
+    public void MarketPostProcessor_warns_but_keeps_the_action_when_market_clearly_wins()
     {
         var market = new Dictionary<uint, MarketPrice> { [12] = new(12, 20_000, 0, DateTimeOffset.UtcNow) };
         var ctx = Context(market: market);
         var proposal = new OutleveledConsumablesRule().Evaluate(ScannedItem.Simple(Inv(0), 12, 1), Items[12], ctx, t)!;
 
         var result = MarketPricePostProcessor.Apply(proposal, ctx, t);
-        Assert.Equal(ActionKind.None, result.Action);
-        Assert.False(result.DefaultChecked);
+        Assert.True(result.Action.IsDestructive());          // no more "show only": the preset decides
+        Assert.False(result.DefaultChecked);                 // but it starts unchecked
+        Assert.Contains(result.Warnings, w => w.Contains("19,000g")); // 20,000 × (1 - 0.05)
         Assert.Contains("market", result.Reason, StringComparison.OrdinalIgnoreCase);
-        Assert.Equal(19_000, result.ValueGil); // 20,000 × (1 - 0.05)
     }
 
     [Fact]

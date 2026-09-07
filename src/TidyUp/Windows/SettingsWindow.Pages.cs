@@ -178,8 +178,12 @@ public sealed partial class SettingsWindow
         v = a.VisitDresser; if (ImGui.Checkbox("Visit the glamour dresser", ref v)) { a.VisitDresser = v; dirty = true; }
         v = a.VisitGrandCompany; if (ImGui.Checkbox("Visit your Grand Company for Expert Delivery", ref v)) { a.VisitGrandCompany = v; dirty = true; }
         Ui.Tooltip("Teleports to your GC's city, reaches the HQ, and talks to the personnel officer.");
-        v = a.PauseForUnseenRows; if (ImGui.Checkbox("Pause and ask when a container shows items not in the plan", ref v)) { a.PauseForUnseenRows = v; dirty = true; }
-        Ui.Tooltip("Strongly recommended. Off means only items you already accepted are touched; new ones are simply skipped.");
+        Ui.Gap(0.3f);
+        Ui.Hint("Items found only once a container opens:");
+        ImGui.SameLine();
+        var unseen = a.UnseenRows;
+        if (Ui.Segmented("##unseen", ref unseen, [(UnseenRowsMode.Clean, "Clean by the rules"), (UnseenRowsMode.Ask, "Ask me"), (UnseenRowsMode.Skip, "Skip")])) { a.UnseenRows = unseen; dirty = true; }
+        Ui.Tooltip("Retainers not yet cached and the dresser only show their contents when open. Clean applies the preset and hard rules to them on the spot.");
 
         Ui.Section("Names in your client language");
         var w = 200 * Ui.Scale;
@@ -188,6 +192,8 @@ public sealed partial class SettingsWindow
         s = a.EntrustMenuText; ImGui.SetNextItemWidth(w); if (Ui.InputText("Retainer menu: inventory", "", ref s, 64)) { a.EntrustMenuText = s; dirty = true; }
         s = a.VendorNpcName; ImGui.SetNextItemWidth(w); if (Ui.InputText("Merchant NPC", "", ref s, 64)) { a.VendorNpcName = s; dirty = true; }
         s = a.VendorMenuText; ImGui.SetNextItemWidth(w); if (Ui.InputText("Merchant menu: open shop", "", ref s, 64)) { a.VendorMenuText = s; dirty = true; }
+        s = a.VendorAetheryte; ImGui.SetNextItemWidth(w); if (Ui.InputText("Merchant: teleport to", "", ref s, 64)) { a.VendorAetheryte = s; dirty = true; }
+        Ui.Tooltip("Lifestream destination with a merchant right by the aetheryte. Used only when no merchant is within reach.");
         s = a.QuitMenuText; ImGui.SetNextItemWidth(w); if (Ui.InputText("Retainer menu: quit", "", ref s, 64)) { a.QuitMenuText = s; dirty = true; }
         s = a.PersonnelOfficerName; ImGui.SetNextItemWidth(w); if (Ui.InputText("GC personnel officer", "", ref s, 64)) { a.PersonnelOfficerName = s; dirty = true; }
         s = a.GcSupplyMenuText; ImGui.SetNextItemWidth(w); if (Ui.InputText("Officer menu: supply missions", "", ref s, 64)) { a.GcSupplyMenuText = s; dirty = true; }
