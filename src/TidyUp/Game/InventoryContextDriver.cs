@@ -120,7 +120,7 @@ public sealed class InventoryContextDriver
         {
             var offered = string.Join(" | ", entries.Select(e => e.Text.Length > 0 ? e.Text : e.LabelId.ToString()));
             var hint = entries.Any(e => e.Text.Contains("Retainer", StringComparison.OrdinalIgnoreCase))
-                ? " A retainer window is open; the game hides this entry until it is closed."
+                ? " A retainer window is open, which changes this menu; close it and try again."
                 : string.Empty;
             LastFailure = $"'{englishLabel}' not offered for {slot}. Offered: {offered}.{hint}";
             CloseMenu();

@@ -9,6 +9,9 @@ namespace TidyUp.Integrations;
 /// <summary>Reads closed containers and alt characters through Allagan Tools' IPC. Degrades to unavailable when it is not installed.</summary>
 public sealed class AllaganToolsSource : IOfflineInventorySource
 {
+    /// <summary>Only equipment carries materia; the cache stores junk in those fields for other items.</summary>
+    public Func<uint, bool> CanHoldMateria { get; init; } = _ => true;
+
     private readonly IDalamudPluginInterface pi;
     private readonly IPluginLog log;
     private readonly ICallGateSubscriber<bool> isInitialized;
@@ -83,7 +86,9 @@ public sealed class AllaganToolsSource : IOfflineInventorySource
             {
                 var ownerName = rec.Length > 23 && retainers.TryGetValue(rec[23], out var n) ? n : string.Empty;
                 var item = AllaganItemRecord.Parse(rec, ownerName, characterOrRetainerId);
-                if (item is not null) list.Add(item);
+                if (item is null) continue;
+                if (item.HasMateria && !CanHoldMateria(item.ItemId)) item = item with { Materia = Array.Empty<ushort>() };
+                list.Add(item);
             }
             return list;
         }
