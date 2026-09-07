@@ -186,6 +186,8 @@ public sealed class ConfirmationWindow : Window
             : "Only what the rules propose. Switch to Everything to pick by hand.");
         Ui.Gap(0.3f);
 
+        DrawContainerChips(plan);
+
         ImGui.SetNextItemWidth(260 * Ui.Scale);
         Ui.InputText("##search", "Search", ref search, 64);
 
@@ -221,6 +223,35 @@ public sealed class ConfirmationWindow : Window
         Ui.Tooltip(warned > 0
             ? $"Ticks every row, including {warned} with a warning (usable, untradeable, or valuable on the market). Glance at those before you clean."
             : "Ticks every row.");
+    }
+
+    /// <summary>One chip per container with its row count. Click to show only that container; click again for all.</summary>
+    private void DrawContainerChips(RunPlan plan)
+    {
+        if (coordinator.FocusContainer is not null) return;
+        var groups = plan.Sections
+            .GroupBy(s => s.Kind)
+            .OrderBy(g => g.Key.ExecutionOrder())
+            .Select(g => (Kind: g.Key, Rows: g.Sum(s => s.Rows.Count), Checked: g.Sum(s => s.CheckedCount)))
+            .ToList();
+        if (groups.Count == 0) return;
+
+        Ui.Hint("Containers");
+        ImGui.SameLine();
+        foreach (var (kind, rows, checkedCount) in groups)
+        {
+            var active = filterContainer == kind;
+            var label = checkedCount > 0 ? $"{kind.DisplayName()} {checkedCount}/{rows}" : $"{kind.DisplayName()} {rows}";
+            using (ImRaii.PushColor(ImGuiCol.Button, active ? ImGui.GetColorU32(Ui.Accent * new Vector4(1, 1, 1, 0.75f)) : ImGui.GetColorU32(ImGuiCol.FrameBg), true))
+            using (ImRaii.PushColor(ImGuiCol.Text, active ? ImGui.GetColorU32(new Vector4(0.08f, 0.08f, 0.08f, 1f)) : ImGui.GetColorU32(ImGuiCol.Text), true))
+            {
+                if (ImGui.SmallButton(label)) filterContainer = active ? null : kind;
+            }
+            Ui.Tooltip(active ? "Showing only this container. Click to show all." : $"Show only the {kind.DisplayName().ToLowerInvariant()}.");
+            ImGui.SameLine();
+        }
+        ImGui.NewLine();
+        Ui.Gap(0.2f);
     }
 
     private void DrawFilterMenu()
