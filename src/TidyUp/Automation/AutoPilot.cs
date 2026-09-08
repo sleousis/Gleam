@@ -232,6 +232,12 @@ public sealed partial class AutoPilot
     private async Task RecoverUiAsync(CancellationToken ct)
     {
         nav.Stop();
+        // A retainer's leave prompt left open blocks every later confirmation; answer it before closing windows.
+        if (await OnFramework(() => GameUi.IsVisible("SelectYesno") && (GameUi.IsVisible("RetainerList") || GameUi.SelectStringReady())).ConfigureAwait(false))
+        {
+            await framework.RunOnFrameworkThread(() => GameUi.FireInts("SelectYesno", [config.Callbacks.YesNoConfirm])).ConfigureAwait(false);
+            await Task.Delay(500, ct).ConfigureAwait(false);
+        }
         await framework.RunOnFrameworkThread(() =>
         {
             foreach (var addon in new[] { "SelectString", "SelectIconString", "InventoryRetainer", "InventoryRetainerLarge", "RetainerSellList", "RetainerList", "Shop", "GrandCompanySupplyList", "MiragePrismPrismBox", "InventoryBuddy" })
@@ -354,6 +360,7 @@ public sealed partial class AutoPilot
                     Status = "Leaving the retainer menu";
                     var chosen = await framework.RunOnFrameworkThread(() => GameUi.SelectStringChoose(db.LocalizeMenuText(S.QuitMenuText))).ConfigureAwait(false);
                     if (chosen < 0) await framework.RunOnFrameworkThread(() => GameUi.Close("SelectString")).ConfigureAwait(false);
+                    else await AnswerLeavePromptAsync(ct).ConfigureAwait(false);
                     await Task.Delay(800, ct).ConfigureAwait(false);
                     break;
                 default:
@@ -452,11 +459,31 @@ public sealed partial class AutoPilot
         await WaitUntil(() => GameUi.SelectStringReady(), StepTimeout, $"{name}'s menu", ct).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// After a retainer has sold something, quitting asks "unable to process buyback requests once recalled,
+    /// proceed?". Answer yes when that prompt shows up within a moment of leaving.
+    /// </summary>
+    private async Task AnswerLeavePromptAsync(CancellationToken ct)
+    {
+        for (var i = 0; i < 15; i++)
+        {
+            if (await OnFramework(() => GameUi.IsVisible("SelectYesno")).ConfigureAwait(false))
+            {
+                await framework.RunOnFrameworkThread(() => GameUi.FireInts("SelectYesno", [config.Callbacks.YesNoConfirm])).ConfigureAwait(false);
+                await Task.Delay(500, ct).ConfigureAwait(false);
+                return;
+            }
+            if (await OnFramework(() => GameUi.IsVisible("RetainerList") && !GameUi.SelectStringReady()).ConfigureAwait(false)) return;
+            await Task.Delay(100, ct).ConfigureAwait(false);
+        }
+    }
+
     private async Task LeaveRetainerAsync(string name, CancellationToken ct)
     {
         await Step($"Leaving {name}", async () =>
         {
             await ChooseMenu(db.LocalizeMenuText(S.QuitMenuText), ct).ConfigureAwait(false);
+            await AnswerLeavePromptAsync(ct).ConfigureAwait(false);
             await WaitUntil(() => GameUi.IsVisible("RetainerList") && !GameUi.SelectStringReady(), StepTimeout, "the retainer list", ct).ConfigureAwait(false);
             await Task.Delay(500, ct).ConfigureAwait(false);
         }, ct);

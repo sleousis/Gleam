@@ -172,7 +172,7 @@ public sealed class ExecutionEngine
             var landed = await game.MoveToInventoryAsync(target, action.ItemId, action.Quantity, action.IsHq, ct).ConfigureAwait(false);
             if (landed is null)
                 return new ActionResult(action, ActionOutcome.Pending, $"materia cannot be retrieved here and the item could not be brought back ({game.LastFailure ?? "no reason given"})");
-            return new ActionResult(action, ActionOutcome.Moved, "brought back to your bags; its materia comes off there once the retainer is closed")
+            return new ActionResult(action, ActionOutcome.Moved, "brought back to you; its materia comes off once the retainer is closed")
             {
                 Followup = action with { Slot = landed.Value, RetrieveMateriaFirst = true, BroughtHome = true },
             };
@@ -185,7 +185,7 @@ public sealed class ExecutionEngine
             var home = await game.MoveToInventoryAsync(target, action.ItemId, action.Quantity, action.IsHq, ct).ConfigureAwait(false);
             if (home is null)
                 return new ActionResult(action, ActionOutcome.Pending, $"could not be brought back from the retainer ({game.LastFailure ?? "no reason given"})");
-            return new ActionResult(action, ActionOutcome.Moved, $"brought back to your bags to {action.Action.Label()} later")
+            return new ActionResult(action, ActionOutcome.Moved, $"brought back to you to {action.Action.Label()} later")
             {
                 Followup = action with { Slot = home.Value, BroughtHome = true },
             };
