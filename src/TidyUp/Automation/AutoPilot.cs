@@ -277,10 +277,39 @@ public sealed partial class AutoPilot
         {
             var id = saddlebagCommandId ??= db.MainCommandIdForEnglishName(S.SaddlebagCommandName);
             if (id is null) throw new AutoPilotException("The saddlebag could not be opened");
-            await framework.RunOnFrameworkThread(() => GameUi.ExecuteMainCommand(id.Value)).ConfigureAwait(false);
-            await WaitUntil(() => GameInventoryScanner.IsSaddlebagLoaded() && GameUi.IsVisible("InventoryBuddy"), StepTimeout, "the saddlebag to open", ct).ConfigureAwait(false);
-            await Task.Delay(400, ct).ConfigureAwait(false);
+            // Right after a teleport or a bell session the game refuses commands for a moment ("while occupied").
+            await WaitUntilFreeAsync(ct).ConfigureAwait(false);
+            for (var attempt = 0; attempt < 3; attempt++)
+            {
+                await framework.RunOnFrameworkThread(() => GameUi.ExecuteMainCommand(id.Value)).ConfigureAwait(false);
+                try
+                {
+                    await WaitUntil(() => GameInventoryScanner.IsSaddlebagLoaded() && GameUi.IsVisible("InventoryBuddy"), TimeSpan.FromSeconds(4), "the saddlebag to open", ct).ConfigureAwait(false);
+                    await Task.Delay(400, ct).ConfigureAwait(false);
+                    return;
+                }
+                catch (AutoPilotException) when (attempt < 2)
+                {
+                    await Task.Delay(1000, ct).ConfigureAwait(false);
+                    await WaitUntilFreeAsync(ct).ConfigureAwait(false);
+                }
+            }
+            throw new AutoPilotException("The saddlebag did not open");
         }, ct);
+    }
+
+    /// <summary>Waits (bounded) until the character is not occupied, casting or between areas.</summary>
+    private async Task WaitUntilFreeAsync(CancellationToken ct)
+    {
+        for (var i = 0; i < 100; i++)
+        {
+            var busy = condition[ConditionFlag.Occupied] || condition[ConditionFlag.Occupied30] || condition[ConditionFlag.Occupied33]
+                       || condition[ConditionFlag.Occupied38] || condition[ConditionFlag.Occupied39] || condition[ConditionFlag.OccupiedInEvent]
+                       || condition[ConditionFlag.OccupiedSummoningBell] || condition[ConditionFlag.BetweenAreas] || condition[ConditionFlag.BetweenAreas51]
+                       || condition[ConditionFlag.Casting];
+            if (!busy) return;
+            await Task.Delay(100, ct).ConfigureAwait(false);
+        }
     }
 
     private async Task SaddlebagAsync(List<QueuedAction> rows, CancellationToken ct)

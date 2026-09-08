@@ -27,11 +27,13 @@ public sealed class MoveActions : IMoveActions
 
     private TimeSpan Timeout => TimeSpan.FromMilliseconds(config.Callbacks.ActionTimeoutMs);
 
+    // Data can stay loaded after a window closes; the game only accepts moves while the window itself is up.
     public bool IsOpen(StorageId storage) => storage.Kind switch
     {
         ContainerKind.Inventory or ContainerKind.Armoury => true,
-        ContainerKind.Saddlebag => GameInventoryScanner.IsSaddlebagLoaded(),
-        ContainerKind.Retainer => GameInventoryScanner.IsRetainerOpen(storage.OwnerId),
+        ContainerKind.Saddlebag => GameInventoryScanner.IsSaddlebagLoaded() && AddonDriver.IsAddonVisible("InventoryBuddy"),
+        ContainerKind.Retainer => GameInventoryScanner.IsRetainerOpen(storage.OwnerId)
+                                  && (AddonDriver.IsAddonVisible("InventoryRetainer") || AddonDriver.IsAddonVisible("InventoryRetainerLarge")),
         _ => false,
     };
 
