@@ -275,7 +275,8 @@ public sealed class OrganizerWindow : StyledWindow
         TriState("Trade", ref when, w => w.IsUntradable, (w, v) => w.IsUntradable = v, "untradeable", "tradeable");
         ImGui.SameLine(); TriState("Unique", ref when, w => w.IsUnique, (w, v) => w.IsUnique = v, "unique", "not unique");
         ImGui.SameLine(); TriState("Jobs", ref when, w => w.ForJobsPlayed, (w, v) => w.ForJobsPlayed = v, "jobs I play", "jobs I don't");
-        TriState("Never touch", ref when, w => w.OnNeverTouchList, (w, v) => w.OnNeverTouchList = v, "on the list", "not on it");
+        TriState("Gear set", ref when, w => w.InGearset, (w, v) => w.InGearset = v, "in a gear set", "not in one");
+        ImGui.SameLine(); TriState("Never touch", ref when, w => w.OnNeverTouchList, (w, v) => w.OnNeverTouchList = v, "on the list", "not on it");
 
         // Levels
         Range("Item level", ref when, w => w.MinItemLevel, w => w.MaxItemLevel, (w, v) => w.MinItemLevel = v, (w, v) => w.MaxItemLevel = v, 999);

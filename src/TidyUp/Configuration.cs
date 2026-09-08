@@ -250,6 +250,30 @@ public sealed class Configuration : IPluginConfiguration
             Version = 7;
             changed = true;
         }
+        if (Version < 8)
+        {
+            foreach (var plan in Organizer.Plans)
+            {
+                if (plan.Rules.Any(r => r.When.InGearset is not null)) continue;
+                var old = plan.Rules.FindIndex(r => r.Name == "Gear I can wear in the armoury");
+                if (old >= 0) plan.Rules.RemoveAt(old);
+                var at = old >= 0 ? old : plan.Rules.Count;
+                plan.Rules.Insert(at, new Core.Organizer.Model.OrganizerRule
+                {
+                    Name = "Gear set pieces in the armoury",
+                    When = new Core.Organizer.Model.OrganizerPredicate { Tags = [Core.Model.ItemTag.Gear], InGearset = true },
+                    Then = Core.Organizer.Model.Destination.Armoury,
+                });
+                plan.Rules.Insert(at + 1, new Core.Organizer.Model.OrganizerRule
+                {
+                    Name = "Other gear to a retainer",
+                    When = new Core.Organizer.Model.OrganizerPredicate { Tags = [Core.Model.ItemTag.Gear], InGearset = false },
+                    Then = Core.Organizer.Model.Destination.AnyRetainer,
+                });
+            }
+            Version = 8;
+            changed = true;
+        }
         return changed;
     }
 

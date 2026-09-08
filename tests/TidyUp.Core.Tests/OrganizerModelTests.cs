@@ -39,6 +39,14 @@ public class OrganizerModelTests
         Assert.False(new OrganizerPredicate { ForJobsPlayed = true }.Matches(ScannedItem.Simple(Arm(0), 13, 1), Items[13], Context(), NeverTouch));
 
         Assert.True(new OrganizerPredicate { OnNeverTouchList = true }.Matches(ScannedItem.Simple(Arm(0), 6, 1), Items[6], Context(), NeverTouch));
+
+        // Gear set membership comes from the character context; non-gear never matches either way.
+        var withSet = Context(gearsetItems: [5u]);
+        Assert.True(new OrganizerPredicate { InGearset = true }.Matches(ScannedItem.Simple(Arm(0), 5, 1), Items[5], withSet, NeverTouch));
+        Assert.False(new OrganizerPredicate { InGearset = true }.Matches(ScannedItem.Simple(Arm(0), 6, 1), Items[6], withSet, NeverTouch));
+        Assert.True(new OrganizerPredicate { InGearset = false }.Matches(ScannedItem.Simple(Arm(0), 6, 1), Items[6], withSet, NeverTouch));
+        Assert.False(new OrganizerPredicate { InGearset = false }.Matches(ScannedItem.Simple(Inv(0), 12, 1), Items[12], withSet, NeverTouch));
+        Assert.Equal("Gear · not in a gear set", new OrganizerPredicate { Tags = [ItemTag.Gear], InGearset = false }.Describe());
         Assert.Equal("Gear · iL ≤ 40", gearUnder40.Describe());
     }
 
@@ -70,6 +78,7 @@ public class OrganizerModelTests
         Assert.Contains(ItemTag.Materia, back.Rules[0].When.Tags!);
         Assert.Equal(DestinationKind.Retainer, back.Rules[4].Then.Kind);
         Assert.True(back.Rules[4].Then.IsAnyRetainer);
+        Assert.False(back.Rules[4].When.InGearset);
         Assert.Contains(0xBEEFul, back.RetainersInScope);
 
         var clone = plan.Clone();
