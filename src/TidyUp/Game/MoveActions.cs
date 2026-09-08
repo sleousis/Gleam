@@ -65,9 +65,11 @@ public sealed class MoveActions : IMoveActions
         if (expectAtDest < 0) return new MoveOutcome(MoveStatus.Refused, "the destination slot holds a different item");
 
         var sent = await framework.RunOnFrameworkThread(() => Native.Move(from, to, itemId)).ConfigureAwait(false);
-        if (!sent) return new MoveOutcome(MoveStatus.Refused, "the game did not accept the move");
+        if (sent is null) return new MoveOutcome(MoveStatus.Refused, "the source or destination slot could not be read");
+        log.Debug("MoveItemSlot {From} -> {To} returned {Code}", from, to, sent.Value);
 
         // The slots are the ground truth: the source empties (or shrinks, on a merge) and the destination gains.
+        // The call's return code is logged but not trusted either way.
         var deadline = DateTime.UtcNow + Timeout;
         while (DateTime.UtcNow < deadline)
         {
@@ -78,22 +80,22 @@ public sealed class MoveActions : IMoveActions
             var destHas = dst is not null && dst.ItemId == itemId && dst.Quantity >= Math.Min(expectAtDest, quantity);
             if (sourceGone && destHas) return MoveOutcome.Ok;
         }
-        log.Warning("Move {From} -> {To} of item {Item} was sent but not confirmed", from, to, itemId);
-        return new MoveOutcome(MoveStatus.NotConfirmed, "the move was sent but the slots did not change");
+        log.Warning("Move {From} -> {To} of item {Item} was sent (code {Code}) but not confirmed", from, to, itemId, sent.Value);
+        return new MoveOutcome(MoveStatus.Refused, "the game did not carry out the move");
     }
 
     private static unsafe class Native
     {
-        public static bool Move(SlotRef from, SlotRef to, uint itemId)
+        /// <summary>Issues the move. Null when the slots could not even be addressed; otherwise the game's return code, for the log.</summary>
+        public static int? Move(SlotRef from, SlotRef to, uint itemId)
         {
             var im = InventoryManager.Instance();
-            if (im == null) return false;
+            if (im == null) return null;
             var src = im->GetInventorySlot((InventoryType)from.ContainerId, from.Slot);
-            if (src == null || ScannedItem.BaseItemId(src->ItemId) != itemId) return false;
+            if (src == null || ScannedItem.BaseItemId(src->ItemId) != itemId) return null;
             var dstContainer = im->GetInventoryContainer((InventoryType)to.ContainerId);
-            if (dstContainer == null || !dstContainer->IsLoaded || to.Slot < 0 || to.Slot >= dstContainer->Size) return false;
-            var result = im->MoveItemSlot((InventoryType)from.ContainerId, (ushort)from.Slot, (InventoryType)to.ContainerId, (ushort)to.Slot, true);
-            return result != 0;
+            if (dstContainer == null || !dstContainer->IsLoaded || to.Slot < 0 || to.Slot >= dstContainer->Size) return null;
+            return im->MoveItemSlot((InventoryType)from.ContainerId, (ushort)from.Slot, (InventoryType)to.ContainerId, (ushort)to.Slot, true);
         }
 
         public static SlotRef? FindLanding(StorageId storage, uint itemId, bool isHq, uint preferredPage, IReadOnlySet<SlotRef> reserved)

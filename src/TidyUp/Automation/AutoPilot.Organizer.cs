@@ -99,6 +99,14 @@ public sealed partial class AutoPilot
         foreach (var (storage, ops) in sessions)
         {
             ct.ThrowIfCancellationRequested();
+            // Anything not at a retainer needs the bell session over first: the game refuses commands and hides
+            // item-menu entries while a retainer is summoned.
+            if ((storage is null || storage.Value.Kind != ContainerKind.Retainer) && atBell)
+            {
+                await LeaveBellAsync(ct).ConfigureAwait(false);
+                atBell = false;
+            }
+
             if (storage is null)
             {
                 await Leg("bags", () => Step("Moving things within your bags and armoury", () => ExecuteMoves(ops), ct), ct).ConfigureAwait(false);
