@@ -105,7 +105,7 @@ public sealed unsafe class AddonDriver : IDisposable
         {
             var prompt = ReadYesNoPrompt(addon);
             // Item names carry soft hyphens and the prompt carries payload bytes; compare letters and digits only.
-            if (prompt is null || !Normalize(prompt).Contains(Normalize(a.ExpectedSubstring), StringComparison.OrdinalIgnoreCase))
+            if (prompt is null || !PromptMentions(prompt, a.ExpectedSubstring))
             {
                 LastRejection = "the confirmation that appeared was about a different item, so it was left alone";
                 log.Warning("{Rejection}", LastRejection);
@@ -142,6 +142,44 @@ public sealed unsafe class AddonDriver : IDisposable
         foreach (var ch in s)
             if (char.IsLetterOrDigit(ch)) sb.Append(char.ToLowerInvariant(ch));
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// Whether a confirmation prompt is about the named item. The game pluralises stacks ("Discard 986 magicked
+    /// prisms (sunshine)?"), so every word of the name must appear in the prompt either as is or with a plural
+    /// ending; the quantity and punctuation are ignored.
+    /// </summary>
+    public static bool PromptMentions(string prompt, string itemName)
+    {
+        var flat = Normalize(prompt);
+        if (flat.Contains(Normalize(itemName), StringComparison.OrdinalIgnoreCase)) return true;
+
+        var promptWords = Words(prompt);
+        foreach (var word in Words(itemName))
+        {
+            if (promptWords.Contains(word)) continue;
+            if (promptWords.Contains(word + "s") || promptWords.Contains(word + "es")) continue;
+            if (word.EndsWith('y') && promptWords.Contains(word[..^1] + "ies")) continue;
+            if (word.EndsWith('f') && promptWords.Contains(word[..^1] + "ves")) continue;
+            if (word.EndsWith("fe") && promptWords.Contains(word[..^2] + "ves")) continue;
+            if (word.EndsWith("us") && promptWords.Contains(word[..^2] + "i")) continue;
+            return false;
+        }
+        return true;
+    }
+
+    private static HashSet<string> Words(string s)
+    {
+        var set = new HashSet<string>(StringComparer.Ordinal);
+        var sb = new System.Text.StringBuilder();
+        foreach (var ch in s + " ")
+        {
+            if (char.IsLetterOrDigit(ch)) sb.Append(char.ToLowerInvariant(ch));
+            else if (sb.Length > 0) { set.Add(sb.ToString()); sb.Clear(); }
+        }
+        // "of", "the", "a" appear in prompts at will; never require them.
+        set.Remove("of"); set.Remove("the"); set.Remove("a"); set.Remove("an");
+        return set;
     }
 
     private static string? ReadYesNoPrompt(AtkUnitBase* addon)
