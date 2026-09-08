@@ -120,7 +120,7 @@ public sealed class AutoPilot
                 var inInn = await Leg("inn", () => TravelToInnAsync(ct), ct);
                 if (inInn)
                 {
-                    if (S.VisitRetainers) await Leg("retainers", () => RetainersAsync(retainers, listings, ct), ct);
+                    if (S.VisitRetainers) await Leg("retainers", () => RetainersAsync(retainers, listings, sells, ct), ct);
                     if (S.VisitDresser) await Leg("dresser", () => DresserAsync(dresser, ct), ct);
                 }
             }
@@ -276,10 +276,10 @@ public sealed class AutoPilot
         }, ct);
     }
 
-    private async Task RetainersAsync(Dictionary<ulong, List<QueuedAction>> byRetainer, List<QueuedAction> listings, CancellationToken ct)
+    private async Task RetainersAsync(Dictionary<ulong, List<QueuedAction>> byRetainer, List<QueuedAction> listings, List<QueuedAction> sells, CancellationToken ct)
     {
         var sweep = S.VisitContainersWithoutRows && S.UnseenRows != UnseenRowsMode.Skip;
-        if (byRetainer.Count == 0 && listings.Count == 0 && !sweep) return;
+        if (byRetainer.Count == 0 && listings.Count == 0 && sells.Count == 0 && !sweep) return;
         await EnsureRetainerListAsync(ct).ConfigureAwait(false);
 
         // The list appears before the server has filled it; selecting too early is silently ignored.
@@ -295,14 +295,15 @@ public sealed class AutoPilot
             var rows = byRetainer.GetValueOrDefault(id) ?? new List<QueuedAction>();
             // Only go to a retainer for listings if it has room and listing has not already failed elsewhere.
             var wantsListings = listings.Count > 0 && freeMarket > 0 && listingFailure is null;
-            if (rows.Count == 0 && !wantsListings && !sweep) continue;
+            var wantsSells = sells.Count > 0;
+            if (rows.Count == 0 && !wantsListings && !wantsSells && !sweep) continue;
             if (!wantsListings && rows.All(r => r.Action == ActionKind.MarketList) && (freeMarket <= 0 || listingFailure is not null) && !sweep)
             {
                 log.Information("Skipping {Name}: only listings and {Reason}", name, freeMarket <= 0 ? "no free market slots" : "listing already failed");
                 continue;
             }
 
-            var ok = await Leg($"retainer {name}", () => OneRetainerAsync(index, id, name, rows, wantsListings ? listings : new List<QueuedAction>(), ct), ct).ConfigureAwait(false);
+            var ok = await Leg($"retainer {name}", () => OneRetainerAsync(index, id, name, rows, wantsListings ? listings : new List<QueuedAction>(), sells, ct), ct).ConfigureAwait(false);
             if (!ok) await EnsureRetainerListAsync(ct).ConfigureAwait(false);
         }
 
@@ -344,19 +345,19 @@ public sealed class AutoPilot
                     break;
                 case "menu":
                     Status = "Leaving the retainer menu";
-                    var chosen = await framework.RunOnFrameworkThread(() => GameUi.SelectStringChoose(S.QuitMenuText)).ConfigureAwait(false);
+                    var chosen = await framework.RunOnFrameworkThread(() => GameUi.SelectStringChoose(db.LocalizeMenuText(S.QuitMenuText))).ConfigureAwait(false);
                     if (chosen < 0) await framework.RunOnFrameworkThread(() => GameUi.Close("SelectString")).ConfigureAwait(false);
                     await Task.Delay(800, ct).ConfigureAwait(false);
                     break;
                 default:
-                    await WalkToAndInteractAsync(S.BellObjectName, "RetainerList", ct).ConfigureAwait(false);
+                    await WalkToAndInteractAsync(db.LocalizeObjectName(S.BellObjectName), "RetainerList", ct).ConfigureAwait(false);
                     return;
             }
         }
         throw new AutoPilotException("Could not get back to the retainer list; close the retainer windows and run again");
     }
 
-    private async Task OneRetainerAsync(int index, ulong id, string name, List<QueuedAction> allRows, List<QueuedAction> listings, CancellationToken ct)
+    private async Task OneRetainerAsync(int index, ulong id, string name, List<QueuedAction> allRows, List<QueuedAction> listings, List<QueuedAction> sells, CancellationToken ct)
     {
         var rows = allRows.Where(r => r.Action != ActionKind.MarketList).ToList();
         var ownListings = allRows.Where(r => r.Action == ActionKind.MarketList).ToList();
@@ -394,7 +395,7 @@ public sealed class AutoPilot
             {
                 await Step($"Opening {name}'s inventory", async () =>
                 {
-                    await ChooseMenu(S.EntrustMenuText, ct).ConfigureAwait(false);
+                    await ChooseMenu(db.LocalizeMenuText(S.EntrustMenuText), ct).ConfigureAwait(false);
                     try
                     {
                         await WaitUntil(() => GameUi.AnyVisible("InventoryRetainer", "InventoryRetainerLarge") && GameInventoryScanner.IsRetainerOpen(id),
@@ -409,6 +410,15 @@ public sealed class AutoPilot
                     await Task.Delay(600, ct).ConfigureAwait(false);
                 }, ct);
                 if (rows.Count > 0) await Step($"Cleaning {name}", () => Execute(rows), ct);
+                if (sells.Count > 0)
+                {
+                    // The retainer buys at the vendor price, so bag items marked "sell" are handed over and sold here.
+                    var batch = sells.ToList();
+                    await Step($"Selling {batch.Count} through {name}", () => Execute(batch), ct);
+                    var sold = coordinator.LastReport?.Results.Where(r => r.Outcome == Core.Execution.ActionOutcome.Done).Select(r => r.Action).ToHashSet()
+                               ?? new HashSet<QueuedAction>();
+                    sells.RemoveAll(sold.Contains);
+                }
                 await HandleUnseen(ContainerKind.Retainer, name, ct).ConfigureAwait(false);
                 await framework.RunOnFrameworkThread(() => { GameUi.Close("InventoryRetainer"); GameUi.Close("InventoryRetainerLarge"); }).ConfigureAwait(false);
                 await WaitUntil(() => GameUi.SelectStringReady(), StepTimeout, $"{name}'s menu", ct).ConfigureAwait(false);
@@ -416,12 +426,12 @@ public sealed class AutoPilot
 
             // Market listings: first what is in the bags (shared across retainers, each takes what it has room for),
             // then what this retainer holds itself.
-            if (listings.Count > 0) await MarketStepAsync(name, S.SellFromBagsMenuText, listings, ct).ConfigureAwait(false);
-            if (ownListings.Count > 0) await MarketStepAsync(name, S.SellFromRetainerMenuText, ownListings, ct).ConfigureAwait(false);
+            if (listings.Count > 0) await MarketStepAsync(name, db.LocalizeMenuText(S.SellFromBagsMenuText), listings, ct).ConfigureAwait(false);
+            if (ownListings.Count > 0) await MarketStepAsync(name, db.LocalizeMenuText(S.SellFromRetainerMenuText), ownListings, ct).ConfigureAwait(false);
 
             await Step($"Leaving {name}", async () =>
             {
-                await ChooseMenu(S.QuitMenuText, ct).ConfigureAwait(false);
+                await ChooseMenu(db.LocalizeMenuText(S.QuitMenuText), ct).ConfigureAwait(false);
                 await WaitUntil(() => GameUi.IsVisible("RetainerList") && !GameUi.SelectStringReady(), StepTimeout, "the retainer list", ct).ConfigureAwait(false);
                 await Task.Delay(500, ct).ConfigureAwait(false);
             }, ct);
@@ -476,7 +486,7 @@ public sealed class AutoPilot
     {
         // The dresser is never cached, so its rows only exist if it was open during the scan.
         if (rows.Count == 0 && !(S.VisitContainersWithoutRows && S.UnseenRows != UnseenRowsMode.Skip)) return;
-        await WalkToAndInteractAsync(S.DresserObjectName, "MiragePrismPrismBox", ct).ConfigureAwait(false);
+        await WalkToAndInteractAsync(db.LocalizeObjectName(S.DresserObjectName), "MiragePrismPrismBox", ct).ConfigureAwait(false);
         await WaitUntil(GameInventoryScanner.IsDresserLoaded, StepTimeout, "the dresser to load", ct).ConfigureAwait(false);
         await Task.Delay(800, ct).ConfigureAwait(false);
         if (rows.Count > 0) await Step("Cleaning the glamour dresser", () => Execute(rows), ct);
@@ -488,15 +498,15 @@ public sealed class AutoPilot
     private async Task VendorAsync(List<QueuedAction> sells, CancellationToken ct)
     {
         var npc = await OnFramework(FindVendor).ConfigureAwait(false);
-        if (npc is null && S.TravelToInn && !string.IsNullOrWhiteSpace(S.VendorAetheryte))
+        if (npc is null && S.TravelToInn && !string.IsNullOrWhiteSpace(db.LocalizePlaceName(S.VendorAetheryte)))
         {
-            await Step($"Teleporting to {S.VendorAetheryte} for a merchant", async () =>
+            await Step($"Teleporting to {db.LocalizePlaceName(S.VendorAetheryte)} for a merchant", async () =>
             {
                 var before = clientState.TerritoryType;
-                if (!travel.Execute(S.VendorAetheryte)) throw new AutoPilotException("The teleport did not start");
+                if (!travel.Execute(db.LocalizePlaceName(S.VendorAetheryte))) throw new AutoPilotException("The teleport did not start");
                 await Task.Delay(1500, ct).ConfigureAwait(false);
                 await WaitUntil(() => !travel.IsBusy && !condition[ConditionFlag.BetweenAreas] && !condition[ConditionFlag.BetweenAreas51] && clientState.TerritoryType != before,
-                    TimeSpan.FromSeconds(S.TravelTimeoutSeconds), S.VendorAetheryte, ct).ConfigureAwait(false);
+                    TimeSpan.FromSeconds(S.TravelTimeoutSeconds), db.LocalizePlaceName(S.VendorAetheryte), ct).ConfigureAwait(false);
                 // NPCs stream in after the zone does; wait until the town has actually populated.
                 await WaitUntil(() => objects.Count(o => o.ObjectKind == Dalamud.Game.ClientState.Objects.Enums.ObjectKind.EventNpc) >= 5,
                     TimeSpan.FromSeconds(20), "the town to load", ct).ConfigureAwait(false);
@@ -507,7 +517,7 @@ public sealed class AutoPilot
         if (npc is null)
         {
             var nearby = await OnFramework(NearbyObjectNames).ConfigureAwait(false);
-            var reason = $"no merchant found near {S.VendorAetheryte}; nearby: {string.Join(", ", nearby.Take(6))}";
+            var reason = $"no merchant found near {db.LocalizePlaceName(S.VendorAetheryte)}; nearby: {string.Join(", ", nearby.Take(6))}";
             tally.Pending[reason] = tally.Pending.GetValueOrDefault(reason) + sells.Count;
             return;
         }
@@ -517,7 +527,7 @@ public sealed class AutoPilot
         {
             await Step("Opening the shop", async () =>
             {
-                await ChooseMenu(S.VendorMenuText, ct).ConfigureAwait(false);
+                await ChooseMenu(db.LocalizeMenuText(S.VendorMenuText), ct).ConfigureAwait(false);
                 await WaitUntil(() => GameUi.IsVisible("Shop"), StepTimeout, "the shop window", ct).ConfigureAwait(false);
             }, ct);
         }
@@ -532,17 +542,17 @@ public sealed class AutoPilot
         var gc = await OnFramework(GrandCompanyId).ConfigureAwait(false);
         if (gc == 0) throw new AutoPilotException("No Grand Company on this character");
 
-        var officer = await OnFramework(() => FindNearest(S.PersonnelOfficerName)).ConfigureAwait(false);
+        var officer = await OnFramework(() => FindNearest(db.LocalizeNpcName(S.PersonnelOfficerName))).ConfigureAwait(false);
         if (officer is null)
         {
-            if (!S.TravelToInn) throw new AutoPilotException($"No '{S.PersonnelOfficerName}' nearby and travel is off");
+            if (!S.TravelToInn) throw new AutoPilotException($"No '{db.LocalizeNpcName(S.PersonnelOfficerName)}' nearby and travel is off");
             if (!S.GcCityAetheryte.TryGetValue(gc, out var city) || string.IsNullOrEmpty(city))
                 throw new AutoPilotException("No destination is set for your Grand Company's city");
 
             await Step($"Teleporting to {city}", async () =>
             {
                 var before = clientState.TerritoryType;
-                if (!travel.Execute(city)) throw new AutoPilotException("The teleport did not start");
+                if (!travel.Execute(db.LocalizePlaceName(city))) throw new AutoPilotException("The teleport did not start");
                 await Task.Delay(1500, ct).ConfigureAwait(false);
                 await WaitUntil(() => !travel.IsBusy && !condition[ConditionFlag.BetweenAreas] && !condition[ConditionFlag.BetweenAreas51] && clientState.TerritoryType != before,
                     TimeSpan.FromSeconds(S.TravelTimeoutSeconds), city, ct).ConfigureAwait(false);
@@ -553,7 +563,7 @@ public sealed class AutoPilot
             {
                 await Step($"Aethernet to {shard}", async () =>
                 {
-                    if (!travel.AethernetTeleport(shard)) throw new AutoPilotException($"The aethernet trip to {shard} did not start");
+                    if (!travel.AethernetTeleport(db.LocalizePlaceName(shard))) throw new AutoPilotException($"The aethernet trip to {shard} did not start");
                     await Task.Delay(1500, ct).ConfigureAwait(false);
                     await WaitUntil(() => !travel.IsBusy && !condition[ConditionFlag.BetweenAreas] && !condition[ConditionFlag.BetweenAreas51],
                         TimeSpan.FromSeconds(S.TravelTimeoutSeconds), shard, ct).ConfigureAwait(false);
@@ -562,10 +572,10 @@ public sealed class AutoPilot
             }
         }
 
-        await WalkToAndInteractAsync(S.PersonnelOfficerName, "SelectString", ct, orMenu: true).ConfigureAwait(false);
+        await WalkToAndInteractAsync(db.LocalizeNpcName(S.PersonnelOfficerName), "SelectString", ct, orMenu: true).ConfigureAwait(false);
         await Step("Opening supply missions", async () =>
         {
-            await ChooseMenu(S.GcSupplyMenuText, ct).ConfigureAwait(false);
+            await ChooseMenu(db.LocalizeMenuText(S.GcSupplyMenuText), ct).ConfigureAwait(false);
             await WaitUntil(() => GameUi.IsVisible("GrandCompanySupplyList"), StepTimeout, "the supply window", ct).ConfigureAwait(false);
             await Task.Delay(800, ct).ConfigureAwait(false);
             var ints = S.ExpertDeliveryTabCallback.Split(',').Select(s => int.TryParse(s.Trim(), out var v) ? v : 0).ToList();
@@ -715,7 +725,7 @@ public sealed class AutoPilot
             if (data.GetExcelSheet<TerritoryType>()!.TryGetRow(t, out var row) && row.TerritoryIntendedUse.RowId == 2) return true;
         }
         catch { /* fall through */ }
-        return FindNearest(S.BellObjectName) is not null && FindNearest(S.DresserObjectName) is not null;
+        return FindNearest(db.LocalizeObjectName(S.BellObjectName)) is not null && FindNearest(db.LocalizeObjectName(S.DresserObjectName)) is not null;
     }
 
     private static unsafe byte GrandCompanyId()

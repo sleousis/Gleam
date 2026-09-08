@@ -283,6 +283,81 @@ public sealed class ItemDatabase
         return null;
     }
 
+    // ---------- English -> client language ----------
+    // Settings and defaults are written in English. The game's own sheets carry every language, so an
+    // English name is looked up in the English sheet and read back from the client's sheet.
+
+    private readonly Dictionary<(string Kind, string En), string> localized = new(new TupleComparer());
+
+    private sealed class TupleComparer : IEqualityComparer<(string, string)>
+    {
+        public bool Equals((string, string) a, (string, string) b) => a.Item1 == b.Item1 && string.Equals(a.Item2, b.Item2, StringComparison.OrdinalIgnoreCase);
+        public int GetHashCode((string, string) k) => HashCode.Combine(k.Item1, k.Item2.ToLowerInvariant());
+    }
+
+    private bool ClientIsEnglish => data.Language == ClientLanguage.English;
+
+    /// <summary>A placed object's name (bell, dresser) in the client language.</summary>
+    public string LocalizeObjectName(string english) => Localize("eobj", english, () =>
+    {
+        var en = data.GetExcelSheet<EObjName>(ClientLanguage.English)!;
+        var local = data.GetExcelSheet<EObjName>()!;
+        foreach (var row in en)
+            if (string.Equals(row.Singular.ExtractText(), english, StringComparison.OrdinalIgnoreCase) && local.TryGetRow(row.RowId, out var l))
+                return l.Singular.ExtractText();
+        return null;
+    });
+
+    /// <summary>An NPC's name in the client language.</summary>
+    public string LocalizeNpcName(string english) => Localize("npc", english, () =>
+    {
+        var en = data.GetExcelSheet<ENpcResident>(ClientLanguage.English)!;
+        var local = data.GetExcelSheet<ENpcResident>()!;
+        foreach (var row in en)
+            if (string.Equals(row.Singular.ExtractText(), english, StringComparison.OrdinalIgnoreCase) && local.TryGetRow(row.RowId, out var l))
+                return l.Singular.ExtractText();
+        return null;
+    });
+
+    /// <summary>An aetheryte or area name in the client language.</summary>
+    public string LocalizePlaceName(string english) => Localize("place", english, () =>
+    {
+        var en = data.GetExcelSheet<PlaceName>(ClientLanguage.English)!;
+        var local = data.GetExcelSheet<PlaceName>()!;
+        foreach (var row in en)
+            if (string.Equals(row.Name.ExtractText(), english, StringComparison.OrdinalIgnoreCase) && local.TryGetRow(row.RowId, out var l))
+                return l.Name.ExtractText();
+        return null;
+    });
+
+    /// <summary>
+    /// A menu entry, matched loosely: the shortest English Addon text containing the fragment is taken
+    /// as the entry, and its client-language text is returned for matching against the live menu.
+    /// </summary>
+    public string LocalizeMenuText(string englishFragment) => Localize("menu", englishFragment, () =>
+    {
+        var en = data.GetExcelSheet<Addon>(ClientLanguage.English)!;
+        var local = data.GetExcelSheet<Addon>()!;
+        uint? best = null; var bestLen = int.MaxValue;
+        foreach (var row in en)
+        {
+            var t = row.Text.ExtractText();
+            if (t.Length < bestLen && t.Contains(englishFragment, StringComparison.OrdinalIgnoreCase)) { best = row.RowId; bestLen = t.Length; }
+        }
+        return best is { } id && local.TryGetRow(id, out var l) ? l.Text.ExtractText() : null;
+    });
+
+    private string Localize(string kind, string english, Func<string?> lookup)
+    {
+        if (ClientIsEnglish || string.IsNullOrWhiteSpace(english)) return english;
+        if (localized.TryGetValue((kind, english), out var hit)) return hit;
+        string result;
+        try { result = lookup() ?? english; }
+        catch (Exception ex) { log.Warning(ex, "Could not localise {Kind} '{Text}'", kind, english); result = english; }
+        localized[(kind, english)] = result;
+        return result;
+    }
+
     /// <summary>Text of an Addon sheet row in the client language, or null.</summary>
     public string? AddonText(uint rowId)
     {

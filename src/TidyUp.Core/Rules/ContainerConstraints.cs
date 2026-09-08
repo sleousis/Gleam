@@ -23,7 +23,7 @@ public static class ContainerConstraints
 
     /// <summary>Actions that cannot happen where a retainer item sits; the executor moves it to the bags first.</summary>
     public static bool NeedsTripHome(ContainerKind kind, ActionKind action) =>
-        kind == ContainerKind.Retainer && action is ActionKind.VendorSell or ActionKind.ExpertDelivery;
+        kind == ContainerKind.Retainer && action == ActionKind.ExpertDelivery;
 
     public static Proposal Apply(Proposal p)
     {
