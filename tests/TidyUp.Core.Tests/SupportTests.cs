@@ -174,3 +174,22 @@ public class ItemTagTests
         Assert.Equal(ItemTag.Other, ItemTags.Of(ItemInfo.Test(8, "Phial of Fantasia", category: "Miscellany")));
     }
 }
+
+public class ArmouryPageTests
+{
+    [Fact]
+    public void Every_equip_slot_maps_to_its_armoury_page_and_nothing_else_does()
+    {
+        Assert.Equal(GameContainerIds.ArmoryMainHand, GameContainerIds.ArmouryPageFor(EquipSlot.MainHand));
+        Assert.Equal(GameContainerIds.ArmoryRings, GameContainerIds.ArmouryPageFor(EquipSlot.Ring));
+        Assert.Equal(GameContainerIds.ArmorySoulCrystal, GameContainerIds.ArmouryPageFor(EquipSlot.SoulCrystal));
+        Assert.Equal(0u, GameContainerIds.ArmouryPageFor(EquipSlot.None));
+
+        foreach (var slot in Enum.GetValues<EquipSlot>().Where(s => s != EquipSlot.None))
+            Assert.NotEqual(0u, GameContainerIds.ArmouryPageFor(slot));
+
+        Assert.Equal(GameContainerIds.ArmoryBody, ItemInfo.Test(1, "Coat", equipment: true).ArmouryPage);
+        Assert.Equal(GameContainerIds.ArmoryHead, ItemInfo.Test(2, "Hat", equipment: true, slot: EquipSlot.Head).ArmouryPage);
+        Assert.Equal(0u, ItemInfo.Test(3, "Potion").ArmouryPage);
+    }
+}

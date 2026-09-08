@@ -81,7 +81,28 @@ public sealed class ItemDatabase
             row.DyeCount > 0,
             marketable,
             VendorBuyable.Contains(itemId),
-            row.ItemAction.RowId != 0);
+            row.ItemAction.RowId != 0,
+            SlotOf(row.EquipSlotCategory.ValueNullable));
+    }
+
+    /// <summary>Which body slot an EquipSlotCategory row allows. Two-handed weapons are main-hand; rings share one page.</summary>
+    private static EquipSlot SlotOf(EquipSlotCategory? cat)
+    {
+        if (cat is null) return EquipSlot.None;
+        var c = cat.Value;
+        if (c.MainHand > 0) return EquipSlot.MainHand;
+        if (c.OffHand > 0) return EquipSlot.OffHand;
+        if (c.Head > 0) return EquipSlot.Head;
+        if (c.Body > 0) return EquipSlot.Body;
+        if (c.Gloves > 0) return EquipSlot.Hands;
+        if (c.Legs > 0) return EquipSlot.Legs;
+        if (c.Feet > 0) return EquipSlot.Feet;
+        if (c.Ears > 0) return EquipSlot.Ears;
+        if (c.Neck > 0) return EquipSlot.Neck;
+        if (c.Wrists > 0) return EquipSlot.Wrists;
+        if (c.FingerL > 0 || c.FingerR > 0) return EquipSlot.Ring;
+        if (c.SoulCrystal > 0) return EquipSlot.SoulCrystal;
+        return EquipSlot.None;
     }
 
     /// <summary>Ingredient item id → recipes using it, reduced to (craft job id, required level).</summary>

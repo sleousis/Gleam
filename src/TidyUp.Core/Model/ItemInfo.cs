@@ -23,8 +23,12 @@ public sealed record ItemInfo(
     bool IsDyeable,
     bool IsMarketable,
     bool IsVendorBuyable,
-    bool IsUsable = false)
+    bool IsUsable = false,
+    EquipSlot EquipSlot = EquipSlot.None)
 {
+    /// <summary>The armoury page this equipment lives in, or 0 for anything that is not equipment.</summary>
+    public uint ArmouryPage => GameContainerIds.ArmouryPageFor(EquipSlot);
+
     /// <summary>Stackable, undyed, non-equipment things are what the stack merge pass may combine.</summary>
     public bool IsStackable => StackSize > 1;
 
@@ -54,7 +58,9 @@ public sealed record ItemInfo(
 
     public static ItemInfo Test(uint id, string name, uint vendor = 0, bool marketable = true, bool equipment = false,
         byte levelEquip = 1, ushort ilvl = 1, string category = "Miscellany", bool untradable = false, bool unique = false,
-        bool indisposable = false, uint stack = 0, byte rarity = 1, uint cjc = 0, bool vendorBuyable = false, bool usable = false) =>
+        bool indisposable = false, uint stack = 0, byte rarity = 1, uint cjc = 0, bool vendorBuyable = false, bool usable = false,
+        EquipSlot slot = EquipSlot.None) =>
         new(id, name, 0, vendor, 0, untradable, unique, indisposable, true, rarity, levelEquip, ilvl, 0, category,
-            cjc, equipment, equipment, stack == 0 ? (equipment ? 1u : 999u) : stack, false, marketable && !untradable, vendorBuyable, usable);
+            cjc, equipment, equipment, stack == 0 ? (equipment ? 1u : 999u) : stack, false, marketable && !untradable, vendorBuyable, usable,
+            slot == EquipSlot.None && equipment ? EquipSlot.Body : slot);
 }

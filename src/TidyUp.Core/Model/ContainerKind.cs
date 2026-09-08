@@ -46,6 +46,24 @@ public static class ContainerKindExtensions
     };
 }
 
+/// <summary>Where a piece of equipment goes on the body, hence which armoury page holds it.</summary>
+public enum EquipSlot
+{
+    None,
+    MainHand,
+    OffHand,
+    Head,
+    Body,
+    Hands,
+    Legs,
+    Feet,
+    Ears,
+    Neck,
+    Wrists,
+    Ring,
+    SoulCrystal,
+}
+
 /// <summary>Raw game InventoryType ids, mirrored so Core never references the game assemblies.</summary>
 public static class GameContainerIds
 {
@@ -90,6 +108,24 @@ public static class GameContainerIds
 
     public static readonly uint[] RetainerPages =
         Enumerable.Range((int)RetainerPage1, 7).Select(i => (uint)i).ToArray();
+
+    /// <summary>The armoury chest page a piece of equipment belongs to, or 0 when it is not equipment.</summary>
+    public static uint ArmouryPageFor(EquipSlot slot) => slot switch
+    {
+        EquipSlot.MainHand => ArmoryMainHand,
+        EquipSlot.OffHand => ArmoryOffHand,
+        EquipSlot.Head => ArmoryHead,
+        EquipSlot.Body => ArmoryBody,
+        EquipSlot.Hands => ArmoryHands,
+        EquipSlot.Legs => ArmoryLegs,
+        EquipSlot.Feet => ArmoryFeets,
+        EquipSlot.Ears => ArmoryEar,
+        EquipSlot.Neck => ArmoryNeck,
+        EquipSlot.Wrists => ArmoryWrist,
+        EquipSlot.Ring => ArmoryRings,
+        EquipSlot.SoulCrystal => ArmorySoulCrystal,
+        _ => 0,
+    };
 
     public static ContainerKind? KindOf(uint gameContainerId)
     {
