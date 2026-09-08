@@ -240,14 +240,16 @@ Steps 1–5 are pure refactors and infrastructure; nothing user-visible changes 
 
 ### 2.8 Open questions and risks
 
-**Questions (answers change the design):**
+**Decisions taken (2026-09-08):**
 
-1. **Rule matching scope.** Should rules see items *everywhere* (so a "materia → saddlebag" rule also pulls materia *out of retainers*), or only items currently in the bags/armoury (organizer as a "put away" tool)? The solver and the preview are the same; the amount of retainer travel is not. Proposed default: everywhere, with a per-plan switch "Only organise what is in my bags".
-2. **Multiple retainers as one destination.** Do you want a destination like "any retainer with room" (solver picks, preferring retainers that already hold that item), or must every rule name one retainer? Proposed: support both; `Retainer(0)` means "any in scope".
-3. **Stack splitting.** Whole stacks only in v1 (a 999 stack either fits or stays)? Splitting needs the game's split dialog or `SplitItem`, both unverified. Proposed: v1 whole stacks; v2 splitting if you want it.
-4. **Armoury as a destination.** In scope for v1 (equipment → armoury page by slot), or bags/saddlebag/retainers only?
-5. **What happens to items pinned by the discard rules?** E.g. items on the Never-touch list: should the organizer also refuse to *move* them? Proposed: Never-touch means never *discard*; moving is allowed unless the rule editor's "On protect list" predicate is used.
-6. **Where does the organizer live in the UI?** A second tab-like button on the main window ("Organize") that swaps the content area, or a separate window? Proposed: separate window, same style, opened from a title-bar button and `/tidyup organize`.
+1. **Rule scope:** rules act on items everywhere — bags, armoury, saddlebag and retainers in scope.
+2. **Destinations:** a rule may name one retainer or say "any retainer with room"; the solver prefers retainers already holding that item.
+3. **Splitting:** whole stacks only in v1. A stack that cannot fit after merge headroom stays and is reported.
+4. **Armoury:** a destination in v1; equipment goes to its slot page (needs the equip-slot mapping in item data).
+5. **Never touch:** means never discard or sell; moving is allowed, and a rule may target the list explicitly.
+6. **UI:** a separate organizer window in the same style, opened from a main-window title-bar button and `/tidyup organize`.
+7. **Feasibility:** the Run button stays disabled while any container would overflow; the preview names the container and the shortfall.
+8. **Relays:** retainer-to-retainer and retainer-to-saddlebag moves relay through the bags in waves sized to a staging reserve; extra passes are shown in the preview.
 
 **Risks found in Phase 1:**
 
