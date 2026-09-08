@@ -49,7 +49,7 @@ public sealed class GameActions : IGameActions
     public bool IsContainerAvailable(ContainerKind kind, ulong ownerId) => kind switch
     {
         ContainerKind.Inventory or ContainerKind.Armoury => true,
-        ContainerKind.Saddlebag => GameInventoryScanner.IsSaddlebagLoaded(),
+        ContainerKind.Saddlebag => GameInventoryScanner.IsSaddlebagLoaded() && AddonDriver.IsAddonVisible("InventoryBuddy"),
         ContainerKind.Retainer => GameInventoryScanner.IsRetainerOpen(ownerId),
         ContainerKind.GlamourDresser => GameInventoryScanner.IsDresserLoaded() && AddonDriver.IsAddonVisible("MiragePrismPrismBox"),
         _ => false,
