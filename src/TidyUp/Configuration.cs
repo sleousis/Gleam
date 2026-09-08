@@ -36,6 +36,12 @@ public sealed class CallbackSettings
     /// <summary>Item menu entry that sorts the container the item sits in.</summary>
     public string SortLabel { get; set; } = "Sort";
 
+    /// <summary>Retainer inventory item menu entry that sells the item to the retainer for the vendor price.</summary>
+    public string RetainerSellItemLabel { get; set; } = "Have Retainer Sell Items";
+
+    /// <summary>Bag item menu entry (retainer open) that hands the stack to the retainer.</summary>
+    public string EntrustLabel { get; set; } = "Entrust to Retainer";
+
     /// <summary>RetainerSell callback value that confirms the listing (verify in spike).</summary>
     public int RetainerSellConfirm { get; set; } = 0;
 

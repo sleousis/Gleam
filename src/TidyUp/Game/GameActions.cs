@@ -62,8 +62,8 @@ public sealed class GameActions : IGameActions
     public bool IsActionAvailable(ActionKind action) => action switch
     {
         ActionKind.Discard => true,
-        // A retainer's *inventory* window offers no Sell entry; only a vendor shop or the retainer's sell list does.
-        ActionKind.VendorSell => AddonDriver.IsAddonVisible("Shop"),
+        // A merchant's shop, or a retainer's inventory: retainers buy at the vendor price too.
+        ActionKind.VendorSell => AddonDriver.IsAddonVisible("Shop") || RetainerInventoryOpen,
         ActionKind.ExpertDelivery => AddonDriver.IsAddonVisible("GrandCompanySupplyList"),
         ActionKind.Desynth => true,
         ActionKind.MarketList => AddonDriver.IsAddonVisible("RetainerSellList"),
@@ -72,7 +72,7 @@ public sealed class GameActions : IGameActions
 
     public string ActionRequirement(ActionKind action) => action switch
     {
-        ActionKind.VendorSell => "talk to a merchant NPC",
+        ActionKind.VendorSell => "talk to a merchant, or open a retainer's inventory",
         ActionKind.ExpertDelivery => "open Expert Delivery at a Grand Company personnel officer",
         ActionKind.MarketList => "open a retainer's market sell list (Sell items on the market)",
         _ => string.Empty,
@@ -265,8 +265,18 @@ public sealed class GameActions : IGameActions
 
     // ---------- sell ----------
 
-    public Task<bool> VendorSellAsync(SlotRef slot, uint itemId, CancellationToken ct) =>
-        RunAndAwaitRemoval(slot, itemId, ct,
+    private static bool RetainerInventoryOpen =>
+        (AddonDriver.IsAddonVisible("InventoryRetainer") || AddonDriver.IsAddonVisible("InventoryRetainerLarge")) && GameInventoryScanner.ActiveRetainer().Id != 0;
+
+    /// <summary>
+    /// Sells for the vendor price. At a merchant's shop that is the shop's Sell entry. With a retainer's
+    /// inventory open, the retainer buys instead: its own items directly, bag items after being entrusted.
+    /// </summary>
+    public Task<bool> VendorSellAsync(SlotRef slot, uint itemId, CancellationToken ct)
+    {
+        if (slot.Kind == ContainerKind.Retainer) return RetainerBuysAsync(slot, itemId, ct);
+        if (!AddonDriver.IsAddonVisible("Shop") && RetainerInventoryOpen) return EntrustThenRetainerBuysAsync(slot, itemId, ct);
+        return RunAndAwaitRemoval(slot, itemId, ct,
             async () =>
             {
                 var ok = await context.InvokeAsync(slot, config.Callbacks.SellLabel, ct).ConfigureAwait(false);
@@ -274,6 +284,45 @@ public sealed class GameActions : IGameActions
                 return ok;
             },
             expectDialog: ("SelectYesno", config.Callbacks.YesNoConfirm, db.Get(itemId)?.Name), dialogOptional: true);
+    }
+
+    private Task<bool> RetainerBuysAsync(SlotRef slot, uint itemId, CancellationToken ct) =>
+        RunAndAwaitRemoval(slot, itemId, ct,
+            async () =>
+            {
+                var ok = await context.InvokeAsync(slot, config.Callbacks.RetainerSellItemLabel, ct).ConfigureAwait(false);
+                if (!ok) LastFailure = context.LastFailure;
+                return ok;
+            },
+            expectDialog: ("SelectYesno", config.Callbacks.YesNoConfirm, db.Get(itemId)?.Name), dialogOptional: true);
+
+    private async Task<bool> EntrustThenRetainerBuysAsync(SlotRef slot, uint itemId, CancellationToken ct)
+    {
+        var before = scanner.ReadSlot(slot);
+        if (before is null || before.ItemId != itemId) { LastFailure = "the item is no longer where it was"; return false; }
+        var retainer = GameInventoryScanner.ActiveRetainer().Id;
+
+        var handedOver = await RunAndAwaitRemoval(slot, itemId, ct,
+            async () =>
+            {
+                var ok = await context.InvokeAsync(slot, config.Callbacks.EntrustLabel, ct).ConfigureAwait(false);
+                if (!ok) LastFailure = context.LastFailure;
+                return ok;
+            },
+            expectDialog: null).ConfigureAwait(false);
+        if (!handedOver) { LastFailure = $"the retainer did not take the item ({LastFailure ?? "no reason given"})"; return false; }
+
+        // Find where it landed with the retainer, then have the retainer sell it.
+        SlotRef? landed = null;
+        for (var i = 0; i < 20 && landed is null; i++)
+        {
+            landed = FindSlot(ContainerKind.Retainer, retainer, itemId, before.Quantity, before.IsHq, new HashSet<SlotRef>(), slot);
+            if (landed is null) await Task.Delay(100, ct).ConfigureAwait(false);
+        }
+        if (landed is null) { LastFailure = "the item was handed to the retainer but could not be found in its inventory"; return false; }
+        await Task.Delay(config.Callbacks.RateLimitMs, ct).ConfigureAwait(false);
+        return await RetainerBuysAsync(landed.Value, itemId, ct).ConfigureAwait(false);
+    }
 
     // ---------- expert delivery ----------
 
