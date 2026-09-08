@@ -1,6 +1,7 @@
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game;
 using TidyUp.Core.Model;
+using TidyUp.Core.Organizer.Capacity;
 
 namespace TidyUp.Game;
 
@@ -126,6 +127,28 @@ public sealed unsafe class GameInventoryScanner
         if (item->ItemId == 0 || item->GetQuantity() == 0) return null;
         var ownerId = slot.Kind == ContainerKind.Retainer ? ActiveRetainer().Id : 0;
         return Convert(item, slot.Kind, slot.ContainerId, slot.Slot, ownerId, string.Empty);
+    }
+
+    /// <summary>Slot counts of every container page the game currently has loaded, keyed by storage and page.</summary>
+    public static Dictionary<(StorageId, uint), int> LiveSizes()
+    {
+        var result = new Dictionary<(StorageId, uint), int>();
+        var im = InventoryManager.Instance();
+        if (im == null) return result;
+        void Read(StorageId id, uint page)
+        {
+            var c = im->GetInventoryContainer((InventoryType)page);
+            if (c != null && c->IsLoaded && c->Size > 0) result[(id, page)] = (int)c->Size;
+        }
+        foreach (var page in GameContainerIds.InventoryPages) Read(new StorageId(ContainerKind.Inventory), page);
+        foreach (var page in GameContainerIds.ArmouryPages) Read(new StorageId(ContainerKind.Armoury), page);
+        Read(new StorageId(ContainerKind.Armoury), GameContainerIds.ArmorySoulCrystal);
+        if (IsSaddlebagLoaded())
+            foreach (var page in GameContainerIds.SaddlebagPages) Read(new StorageId(ContainerKind.Saddlebag), page);
+        var (retainer, _) = ActiveRetainer();
+        if (retainer != 0)
+            foreach (var page in GameContainerIds.RetainerPages) Read(new StorageId(ContainerKind.Retainer, retainer), page);
+        return result;
     }
 
     public static bool IsSaddlebagLoaded()
