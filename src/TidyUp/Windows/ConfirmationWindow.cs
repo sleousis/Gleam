@@ -50,7 +50,7 @@ public sealed class ConfirmationWindow : StyledWindow
     private readonly List<PlanRow> visibleRows = new();
     private readonly Dictionary<string, bool> sectionOpen = new();
 
-    public ConfirmationWindow(RunCoordinator coordinator, IconCache icons, ItemDatabase db, Configuration config, IGamepadState gamepad, Action openSettings, Action openHistory)
+    public ConfirmationWindow(RunCoordinator coordinator, IconCache icons, ItemDatabase db, Configuration config, IGamepadState gamepad, Action openSettings, Action openHistory, Action? openOrganizer = null)
         : base("Tidy Up###TidyUpConfirm")
     {
         this.coordinator = coordinator;
@@ -61,6 +61,15 @@ public sealed class ConfirmationWindow : StyledWindow
         Size = new Vector2(860, 600);
         SizeCondition = ImGuiCond.FirstUseEver;
         SizeConstraints = new WindowSizeConstraints { MinimumSize = new Vector2(560, 320), MaximumSize = new Vector2(4000, 3000) };
+        if (openOrganizer is not null)
+        {
+            TitleBarButtons.Add(new TitleBarButton
+            {
+                Icon = Dalamud.Interface.FontAwesomeIcon.BoxOpen,
+                Click = _ => openOrganizer(),
+                ShowTooltip = () => ImGui.SetTooltip("Organize"),
+            });
+        }
         TitleBarButtons.Add(new TitleBarButton
         {
             Icon = Dalamud.Interface.FontAwesomeIcon.History,

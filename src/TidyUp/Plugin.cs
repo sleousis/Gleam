@@ -40,6 +40,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly HistoryWindow historyWindow;
     private readonly DebugWindow debugWindow;
     private readonly OrganizerCoordinator organizer;
+    private readonly OrganizerWindow organizerWindow;
 
     private readonly ItemDatabase db;
     private readonly AddonDriver dialogs;
@@ -87,8 +88,11 @@ public sealed class Plugin : IDalamudPlugin
         debugWindow = new DebugWindow(framework, actions, mover, scanner, contextDriver, db, allagan, market, player, config);
         settingsWindow = new SettingsWindow(config, player, db, icons, allagan, coordinator, () => debugWindow.IsOpen = true);
         historyWindow = new HistoryWindow(runLog, db, icons);
-        confirmWindow = new ConfirmationWindow(coordinator, icons, db, config, gamepad, () => settingsWindow.IsOpen = true, () => historyWindow.IsOpen = true);
+        organizerWindow = new OrganizerWindow(organizer, config, db, icons, Save);
+        confirmWindow = new ConfirmationWindow(coordinator, icons, db, config, gamepad, () => settingsWindow.IsOpen = true, () => historyWindow.IsOpen = true,
+            () => { organizerWindow.IsOpen = true; _ = organizer.PreviewAsync(); });
         windows.AddWindow(confirmWindow);
+        windows.AddWindow(organizerWindow);
         windows.AddWindow(settingsWindow);
         windows.AddWindow(historyWindow);
         windows.AddWindow(debugWindow);
@@ -129,7 +133,7 @@ public sealed class Plugin : IDalamudPlugin
 
         commands.AddHandler(Command, new CommandInfo(OnCommand)
         {
-            HelpMessage = "Open Tidy Up. /tidyup settings · history · scan · merge · spikes · stop",
+            HelpMessage = "Open Tidy Up. /tidyup organize · settings · history · scan · merge · stop",
         });
 
         pi.UiBuilder.Draw += windows.Draw;
@@ -173,6 +177,12 @@ public sealed class Plugin : IDalamudPlugin
                 break;
             case "history":
                 historyWindow.Toggle();
+                break;
+            case "organize":
+            case "organise":
+            case "sort":
+                if (organizerWindow.IsOpen) organizerWindow.IsOpen = false;
+                else { organizerWindow.IsOpen = true; _ = organizer.PreviewAsync(); }
                 break;
             case "spikes":
             case "troubleshoot":
