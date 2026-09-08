@@ -1,6 +1,14 @@
 # Tidy Up — Inventory Organizer: integration plan
 
-Status: Phase 1 (investigation) and Phase 2 (plan) complete. No organizer code written.
+Status: Phases 1–3 complete (2026-09-08). Steps 1–13 of §2.7 are committed; step 14's in-game verification is listed below.
+
+**In-game verification checklist (not yet run):**
+- Troubleshooting → "To saddlebag and back" on a junk stack: confirms `MoveItemSlot` plus the slot-watch confirmation.
+- Troubleshooting → "Live sizes" with the saddlebag and a retainer open: confirms page sizes (and premium saddlebag pages).
+- Organizer → Preview with the starter layout: cards, shortfall banner when a rule overfills something, move groups.
+- Organize here only with the saddlebag open, then a retainer open: confirms landing-slot choice and merges.
+- Hands-free organise with at least one retainer-to-retainer rule: confirms relays through the bags and the second leg finding its stack by identity.
+- Armoury destination: a piece of gear from a retainer into the armoury should land on its own slot page.
 Constraint honoured throughout: the discard feature keeps its behaviour; the organizer is additive.
 
 ---
