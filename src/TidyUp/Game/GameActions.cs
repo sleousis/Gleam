@@ -174,7 +174,9 @@ public sealed class GameActions : IGameActions
 
     // ---------- materia ----------
 
-    public bool CanRetrieveMateriaIn(ContainerKind kind) => kind is ContainerKind.Inventory or ContainerKind.Armoury;
+    // The item menu drops "Retrieve Materia" for as long as a retainer is summoned, even for items on the character.
+    public bool CanRetrieveMateriaIn(ContainerKind kind) =>
+        kind is ContainerKind.Inventory or ContainerKind.Armoury && !condition[ConditionFlag.OccupiedSummoningBell];
 
     public async Task<SlotRef?> MoveToInventoryAsync(SlotRef slot, uint itemId, int quantity, bool isHq, CancellationToken ct)
     {

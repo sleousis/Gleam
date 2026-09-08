@@ -151,7 +151,7 @@ public sealed partial class AutoPilot
             }
         }
 
-        if (atBell) await framework.RunOnFrameworkThread(() => GameUi.Close("RetainerList")).ConfigureAwait(false);
+        if (atBell) await LeaveBellAsync(ct).ConfigureAwait(false);
     }
 
     private async Task ExecuteMoves(IReadOnlyList<MoveOp> ops)

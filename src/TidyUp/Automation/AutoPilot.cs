@@ -130,7 +130,7 @@ public sealed partial class AutoPilot
             if (broughtBack.Count > 0)
             {
                 coordinator.PendingActions.RemoveAll(broughtBack.Contains);
-                await RecoverUiAsync(ct).ConfigureAwait(false);
+                await LeaveBellAsync(ct).ConfigureAwait(false);
                 sells.AddRange(broughtBack.Where(b => b.Action == ActionKind.VendorSell));
                 seals.AddRange(broughtBack.Where(b => b.Action == ActionKind.ExpertDelivery));
                 var here2 = broughtBack.Where(b => b.Action is not ActionKind.VendorSell and not ActionKind.ExpertDelivery and not ActionKind.MarketList).ToList();
@@ -226,6 +226,22 @@ public sealed partial class AutoPilot
             await RecoverUiAsync(ct).ConfigureAwait(false);
             return false;
         }
+    }
+
+    /// <summary>
+    /// Ends the retainer session completely: back to the list, list closed, and the game no longer counting the
+    /// character as at the bell. Materia retrieval and several item-menu entries are unavailable until then.
+    /// </summary>
+    private async Task LeaveBellAsync(CancellationToken ct)
+    {
+        if (!condition[ConditionFlag.OccupiedSummoningBell]) { await RecoverUiAsync(ct).ConfigureAwait(false); return; }
+        Status = "Leaving the summoning bell";
+        try { await EnsureRetainerListAsync(ct).ConfigureAwait(false); } catch (AutoPilotException) { /* fall through to closing windows */ }
+        await RecoverUiAsync(ct).ConfigureAwait(false);
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+        while (condition[ConditionFlag.OccupiedSummoningBell] && DateTime.UtcNow < deadline)
+            await Task.Delay(200, ct).ConfigureAwait(false);
+        await Task.Delay(500, ct).ConfigureAwait(false);
     }
 
     /// <summary>Closes whatever menu or window a failed leg left open so the next leg starts clean.</summary>
