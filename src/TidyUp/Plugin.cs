@@ -106,6 +106,9 @@ public sealed class Plugin : IDalamudPlugin
             IsReviewOpen = () => confirmWindow.IsOpen,
         };
         coordinator.IsPilotRunning = () => pilot.IsRunning || organizer.IsRunning;
+        organizer.IsPilotRunning = () => pilot.IsRunning;
+        pilot.Organizer = organizer;
+        organizerWindow.Pilot = pilot;
         confirmWindow.Pilot = pilot;
         settingsWindow.Pilot = pilot;
         settingsWindow.Nav = nav;
@@ -198,6 +201,7 @@ public sealed class Plugin : IDalamudPlugin
             case "stop":
                 confirmWindow.Pilot?.Stop();
                 coordinator.CancelRun();
+                organizer.CancelRun();
                 break;
             default:
                 if (confirmWindow.IsOpen) confirmWindow.IsOpen = false;

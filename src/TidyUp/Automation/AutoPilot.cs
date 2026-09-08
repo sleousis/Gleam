@@ -17,7 +17,7 @@ namespace TidyUp.Automation;
 /// re-validated at the moment it is touched; anything a container reveals that was not in the
 /// accepted plan pauses for the user instead of acting.
 /// </summary>
-public sealed class AutoPilot
+public sealed partial class AutoPilot
 {
     private readonly IFramework framework;
     private readonly IClientState clientState;
@@ -248,15 +248,22 @@ public sealed class AutoPilot
 
     // ---------- steps ----------
 
-    private async Task SaddlebagAsync(List<QueuedAction> rows, CancellationToken ct)
+    private async Task OpenSaddlebagAsync(CancellationToken ct)
     {
+        if (await OnFramework(() => GameInventoryScanner.IsSaddlebagLoaded() && GameUi.IsVisible("InventoryBuddy")).ConfigureAwait(false)) return;
         await Step("Opening the saddlebag", async () =>
         {
             var id = saddlebagCommandId ??= db.MainCommandIdForEnglishName(S.SaddlebagCommandName);
             if (id is null) throw new AutoPilotException("The saddlebag could not be opened");
             await framework.RunOnFrameworkThread(() => GameUi.ExecuteMainCommand(id.Value)).ConfigureAwait(false);
             await WaitUntil(() => GameInventoryScanner.IsSaddlebagLoaded() && GameUi.IsVisible("InventoryBuddy"), StepTimeout, "the saddlebag to open", ct).ConfigureAwait(false);
+            await Task.Delay(400, ct).ConfigureAwait(false);
         }, ct);
+    }
+
+    private async Task SaddlebagAsync(List<QueuedAction> rows, CancellationToken ct)
+    {
+        await OpenSaddlebagAsync(ct).ConfigureAwait(false);
         if (rows.Count > 0) await Step("Cleaning the saddlebag", () => Execute(rows), ct);
         await HandleUnseen(ContainerKind.Saddlebag, "the saddlebag", ct).ConfigureAwait(false);
         await framework.RunOnFrameworkThread(() => GameUi.Close("InventoryBuddy")).ConfigureAwait(false);
@@ -361,81 +368,98 @@ public sealed class AutoPilot
     {
         var rows = allRows.Where(r => r.Action != ActionKind.MarketList).ToList();
         var ownListings = allRows.Where(r => r.Action == ActionKind.MarketList).ToList();
+
+        await SummonRetainerAsync(index, name, ct).ConfigureAwait(false);
+        await OpenRetainerInventoryAsync(id, name, ct).ConfigureAwait(false);
+
+        if (rows.Count > 0) await Step($"Cleaning {name}", () => Execute(rows), ct);
+        if (sells.Count > 0)
         {
-
-            await Step($"Opening {name}", async () =>
-            {
-                var i = index;
-                await WaitUntil(() => GameUi.IsVisible("RetainerList") && !GameUi.SelectStringReady(), StepTimeout, "the retainer list", ct).ConfigureAwait(false);
-                await Task.Delay(1000, ct).ConfigureAwait(false);
-                for (var attempt = 0; attempt < 4; attempt++)
-                {
-                    if (attempt == 2)
-                    {
-                        // The list can go unresponsive after a session; reopen it from the bell once.
-                        await framework.RunOnFrameworkThread(() => GameUi.Close("RetainerList")).ConfigureAwait(false);
-                        await Task.Delay(1000, ct).ConfigureAwait(false);
-                        await EnsureRetainerListAsync(ct).ConfigureAwait(false);
-                        await Task.Delay(1000, ct).ConfigureAwait(false);
-                    }
-                    await framework.RunOnFrameworkThread(() => GameUi.RetainerListSelect(S.RetainerListSelect, i)).ConfigureAwait(false);
-                    try
-                    {
-                        await WaitUntil(() => GameUi.SelectStringReady(), TimeSpan.FromSeconds(6), $"{name}'s menu", ct).ConfigureAwait(false);
-                        return;
-                    }
-                    catch (AutoPilotException) when (attempt < 3)
-                    {
-                        await Task.Delay(800, ct).ConfigureAwait(false);
-                    }
-                }
-                throw new AutoPilotException($"{name} could not be summoned from the list");
-            }, ct);
-
-            {
-                await Step($"Opening {name}'s inventory", async () =>
-                {
-                    await ChooseMenu(db.LocalizeMenuText(S.EntrustMenuText), ct).ConfigureAwait(false);
-                    try
-                    {
-                        await WaitUntil(() => GameUi.AnyVisible("InventoryRetainer", "InventoryRetainerLarge") && GameInventoryScanner.IsRetainerOpen(id),
-                            StepTimeout, $"{name}'s inventory", ct).ConfigureAwait(false);
-                    }
-                    catch (AutoPilotException)
-                    {
-                        var (activeId, activeName) = await OnFramework(GameInventoryScanner.ActiveRetainer).ConfigureAwait(false);
-                        var windowOpen = await OnFramework(() => GameUi.AnyVisible("InventoryRetainer", "InventoryRetainerLarge")).ConfigureAwait(false);
-                        throw new AutoPilotException($"{name}'s inventory did not open (the game shows {(windowOpen ? activeName : "no retainer")})");
-                    }
-                    await Task.Delay(600, ct).ConfigureAwait(false);
-                }, ct);
-                if (rows.Count > 0) await Step($"Cleaning {name}", () => Execute(rows), ct);
-                if (sells.Count > 0)
-                {
-                    // The retainer buys at the vendor price, so bag items marked "sell" are handed over and sold here.
-                    var batch = sells.ToList();
-                    await Step($"Selling {batch.Count} through {name}", () => Execute(batch), ct);
-                    var sold = coordinator.LastReport?.Results.Where(r => r.Outcome == Core.Execution.ActionOutcome.Done).Select(r => r.Action).ToHashSet()
-                               ?? new HashSet<QueuedAction>();
-                    sells.RemoveAll(sold.Contains);
-                }
-                await HandleUnseen(ContainerKind.Retainer, name, ct).ConfigureAwait(false);
-                await framework.RunOnFrameworkThread(() => { GameUi.Close("InventoryRetainer"); GameUi.Close("InventoryRetainerLarge"); }).ConfigureAwait(false);
-                await WaitUntil(() => GameUi.SelectStringReady(), StepTimeout, $"{name}'s menu", ct).ConfigureAwait(false);
-            }
-
-            // Market listings: first what is in the bags (shared across retainers, each takes what it has room for),
-            // then what this retainer holds itself.
-            if (listings.Count > 0) await MarketStepAsync(name, db.LocalizeMenuText(S.SellFromBagsMenuText), listings, ct).ConfigureAwait(false);
-            if (ownListings.Count > 0) await MarketStepAsync(name, db.LocalizeMenuText(S.SellFromRetainerMenuText), ownListings, ct).ConfigureAwait(false);
-
-            await Step($"Leaving {name}", async () =>
-            {
-                await ChooseMenu(db.LocalizeMenuText(S.QuitMenuText), ct).ConfigureAwait(false);
-                await WaitUntil(() => GameUi.IsVisible("RetainerList") && !GameUi.SelectStringReady(), StepTimeout, "the retainer list", ct).ConfigureAwait(false);
-                await Task.Delay(500, ct).ConfigureAwait(false);
-            }, ct);
+            // The retainer buys at the vendor price, so bag items marked "sell" are handed over and sold here.
+            var batch = sells.ToList();
+            await Step($"Selling {batch.Count} through {name}", () => Execute(batch), ct);
+            var sold = coordinator.LastReport?.Results.Where(r => r.Outcome == Core.Execution.ActionOutcome.Done).Select(r => r.Action).ToHashSet()
+                       ?? new HashSet<QueuedAction>();
+            sells.RemoveAll(sold.Contains);
         }
+        await HandleUnseen(ContainerKind.Retainer, name, ct).ConfigureAwait(false);
+        await CloseRetainerInventoryAsync(name, ct).ConfigureAwait(false);
+
+        // Market listings: first what is in the bags (shared across retainers, each takes what it has room for),
+        // then what this retainer holds itself.
+        if (listings.Count > 0) await MarketStepAsync(name, db.LocalizeMenuText(S.SellFromBagsMenuText), listings, ct).ConfigureAwait(false);
+        if (ownListings.Count > 0) await MarketStepAsync(name, db.LocalizeMenuText(S.SellFromRetainerMenuText), ownListings, ct).ConfigureAwait(false);
+
+        await LeaveRetainerAsync(name, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>From the retainer list to the retainer's own menu.</summary>
+    private async Task SummonRetainerAsync(int index, string name, CancellationToken ct)
+    {
+        await Step($"Opening {name}", async () =>
+        {
+            await WaitUntil(() => GameUi.IsVisible("RetainerList") && !GameUi.SelectStringReady(), StepTimeout, "the retainer list", ct).ConfigureAwait(false);
+            await Task.Delay(1000, ct).ConfigureAwait(false);
+            for (var attempt = 0; attempt < 4; attempt++)
+            {
+                if (attempt == 2)
+                {
+                    // The list can go unresponsive after a session; reopen it from the bell once.
+                    await framework.RunOnFrameworkThread(() => GameUi.Close("RetainerList")).ConfigureAwait(false);
+                    await Task.Delay(1000, ct).ConfigureAwait(false);
+                    await EnsureRetainerListAsync(ct).ConfigureAwait(false);
+                    await Task.Delay(1000, ct).ConfigureAwait(false);
+                }
+                await framework.RunOnFrameworkThread(() => GameUi.RetainerListSelect(S.RetainerListSelect, index)).ConfigureAwait(false);
+                try
+                {
+                    await WaitUntil(() => GameUi.SelectStringReady(), TimeSpan.FromSeconds(6), $"{name}'s menu", ct).ConfigureAwait(false);
+                    return;
+                }
+                catch (AutoPilotException) when (attempt < 3)
+                {
+                    await Task.Delay(800, ct).ConfigureAwait(false);
+                }
+            }
+            throw new AutoPilotException($"{name} could not be summoned from the list");
+        }, ct);
+    }
+
+    /// <summary>From the retainer's menu into its inventory window, confirmed by the game reporting that retainer active.</summary>
+    private async Task OpenRetainerInventoryAsync(ulong id, string name, CancellationToken ct)
+    {
+        await Step($"Opening {name}'s inventory", async () =>
+        {
+            await ChooseMenu(db.LocalizeMenuText(S.EntrustMenuText), ct).ConfigureAwait(false);
+            try
+            {
+                await WaitUntil(() => GameUi.AnyVisible("InventoryRetainer", "InventoryRetainerLarge") && GameInventoryScanner.IsRetainerOpen(id),
+                    StepTimeout, $"{name}'s inventory", ct).ConfigureAwait(false);
+            }
+            catch (AutoPilotException)
+            {
+                var (activeId, activeName) = await OnFramework(GameInventoryScanner.ActiveRetainer).ConfigureAwait(false);
+                var windowOpen = await OnFramework(() => GameUi.AnyVisible("InventoryRetainer", "InventoryRetainerLarge")).ConfigureAwait(false);
+                throw new AutoPilotException($"{name}'s inventory did not open (the game shows {(windowOpen ? activeName : "no retainer")})");
+            }
+            await Task.Delay(600, ct).ConfigureAwait(false);
+        }, ct);
+    }
+
+    private async Task CloseRetainerInventoryAsync(string name, CancellationToken ct)
+    {
+        await framework.RunOnFrameworkThread(() => { GameUi.Close("InventoryRetainer"); GameUi.Close("InventoryRetainerLarge"); }).ConfigureAwait(false);
+        await WaitUntil(() => GameUi.SelectStringReady(), StepTimeout, $"{name}'s menu", ct).ConfigureAwait(false);
+    }
+
+    private async Task LeaveRetainerAsync(string name, CancellationToken ct)
+    {
+        await Step($"Leaving {name}", async () =>
+        {
+            await ChooseMenu(db.LocalizeMenuText(S.QuitMenuText), ct).ConfigureAwait(false);
+            await WaitUntil(() => GameUi.IsVisible("RetainerList") && !GameUi.SelectStringReady(), StepTimeout, "the retainer list", ct).ConfigureAwait(false);
+            await Task.Delay(500, ct).ConfigureAwait(false);
+        }, ct);
     }
 
     /// <summary>Opens one of the retainer's sell lists, lists as many rows as there are free market slots, closes it.</summary>
