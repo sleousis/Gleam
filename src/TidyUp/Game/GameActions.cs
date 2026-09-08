@@ -181,20 +181,25 @@ public sealed class GameActions : IGameActions
         LastFailure = null;
         if (slot.Kind != ContainerKind.Retainer) { LastFailure = "only items held by a retainer can be brought back"; return null; }
 
+        // The game drops retrieved gear into the armoury chest when it can; anything else lands in the bags.
         var arrived = WaitForEvent<InventoryEventArgs>(
             e => e is InventoryItemAddedArgs or InventoryItemMovedArgs
                  && e.Item.BaseItemId == itemId
-                 && GameContainerIds.KindOf((uint)e.Item.ContainerType) == ContainerKind.Inventory, ct);
+                 && GameContainerIds.KindOf((uint)e.Item.ContainerType) is ContainerKind.Inventory or ContainerKind.Armoury, ct);
         var ok = await context.InvokeAsync(slot, config.Callbacks.RetrieveFromRetainerLabel, ct).ConfigureAwait(false);
         if (!ok) { LastFailure = context.LastFailure; return null; }
 
         var landed = await arrived.ConfigureAwait(false);
         if (landed is not null)
-            return new SlotRef(ContainerKind.Inventory, (uint)landed.Item.ContainerType, (int)landed.Item.InventorySlot);
+        {
+            var kind = GameContainerIds.KindOf((uint)landed.Item.ContainerType) ?? ContainerKind.Inventory;
+            return new SlotRef(kind, (uint)landed.Item.ContainerType, (int)landed.Item.InventorySlot);
+        }
 
-        // No event seen: look for the item in the bags directly before giving up.
-        var found = FindSlot(ContainerKind.Inventory, 0, itemId, quantity, isHq, new HashSet<SlotRef>(), slot);
-        if (found is null) LastFailure = "the retainer was asked to hand it over but nothing arrived in your bags";
+        // No event seen: look on the character directly before giving up.
+        var found = FindSlot(ContainerKind.Inventory, 0, itemId, quantity, isHq, new HashSet<SlotRef>(), slot)
+                    ?? FindSlot(ContainerKind.Armoury, 0, itemId, quantity, isHq, new HashSet<SlotRef>(), slot);
+        if (found is null) LastFailure = "the retainer was asked to hand it over but nothing arrived in your bags or armoury";
         return found;
     }
 
