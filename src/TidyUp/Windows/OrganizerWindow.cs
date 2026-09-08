@@ -34,6 +34,9 @@ public sealed class OrganizerWindow : StyledWindow
 
     private static readonly IReadOnlyList<(View, string)> Views = [(View.Preview, "Preview"), (View.Rules, "Rules")];
 
+    /// <summary>Set by the plugin when hands-free mode is available.</summary>
+    public Automation.AutoPilot? Pilot { get; set; }
+
     public OrganizerWindow(OrganizerCoordinator organizer, Configuration config, ItemDatabase db, IconCache icons, Action save)
         : base("Tidy Up Organizer###TidyUpOrganizer")
     {
@@ -66,7 +69,7 @@ public sealed class OrganizerWindow : StyledWindow
         DrawPlanBar();
         Ui.Gap(0.4f);
 
-        if (organizer.IsRunning) { DrawRunning(); return; }
+        if (Pilot is { IsRunning: true } || organizer.IsRunning) { DrawRunning(); return; }
 
         var footer = ImGui.GetFrameHeight() * 2.4f + Ui.Space;
         using (var body = ImRaii.Child("##body", new Vector2(0, view == View.Preview ? -footer : 0), false, ImGuiWindowFlags.None))
@@ -511,31 +514,47 @@ public sealed class OrganizerWindow : StyledWindow
         Ui.Hint(parts.Count == 0 ? (string.IsNullOrEmpty(organizer.Status) ? "Preview a layout to see what would move." : organizer.Status) : string.Join("  ·  ", parts));
 
         var canRun = r is not null && r.Report.Feasible && r.Moves.Count > 0 && !organizer.IsPreviewing;
+        var handsFree = Pilot is not null && config.Automation.Enabled && r is not null && r.StoragesToOpen.Any();
         var buttonWidth = 200 * Ui.Scale;
         ImGui.SameLine();
-        Ui.RightAlign(buttonWidth + 180 * Ui.Scale);
+        Ui.RightAlign(buttonWidth + (handsFree ? 300 : 180) * Ui.Scale);
         if (Ui.IconButton(FontAwesomeIcon.Sync, "Preview again")) _ = organizer.PreviewAsync();
         ImGui.SameLine();
         if (Ui.LinkButton("Close")) IsOpen = false;
+        if (handsFree)
+        {
+            ImGui.SameLine();
+            using (ImRaii.Disabled(!canRun))
+            {
+                if (Ui.LinkButton("Organize here only")) _ = organizer.RunAsync();
+            }
+            Ui.Tooltip("Moves what is reachable right now; the rest waits for you to open its storage.");
+        }
         ImGui.SameLine();
         using (ImRaii.Disabled(!canRun))
         {
-            if (Ui.PrimaryButton(r is { Report.Feasible: false } ? "Make room first" : $"Organize {(r?.Moves.Count ?? 0)}", buttonWidth)) _ = organizer.RunAsync();
+            var label = r is { Report.Feasible: false } ? "Make room first" : handsFree ? $"Organize {r!.Moves.Count} everywhere" : $"Organize {(r?.Moves.Count ?? 0)}";
+            if (Ui.PrimaryButton(label, buttonWidth))
+            {
+                if (handsFree) _ = Pilot!.RunOrganizerAsync(); else _ = organizer.RunAsync();
+            }
         }
         if (r is { Report.Feasible: false }) Ui.Tooltip("A storage would overflow. Change a rule or free some space, then preview again.");
+        else if (handsFree) Ui.Tooltip("Hands-free: opens the saddlebag and visits each retainer at an inn bell as the moves need.");
         else Ui.Tooltip("Moves what is shown. Storages that are closed keep their moves waiting until you open them.");
     }
 
     private void DrawRunning()
     {
-        Ui.EmptyState(icons.Logo, "Organising…", organizer.LastProgress is { } p ? $"{p.Op.Info.Name}: {p.Message}" : null);
+        var pilotStatus = Pilot is { IsRunning: true } ? Pilot.Status : null;
+        Ui.EmptyState(icons.Logo, "Organising…", pilotStatus ?? (organizer.LastProgress is { } p ? $"{p.Op.Info.Name}: {p.Message}" : null));
         Ui.Gap(0.5f);
         var frac = organizer.RunTotal == 0 ? 0f : (float)organizer.RunDone / organizer.RunTotal;
         ImGui.SetCursorPosX(ImGui.GetWindowWidth() * 0.2f);
         Ui.Progress(frac, ImGui.GetWindowWidth() * 0.6f, $"{organizer.RunDone} / {organizer.RunTotal}");
         Ui.Gap();
         ImGui.SetCursorPosX((ImGui.GetWindowWidth() - 120 * Ui.Scale) / 2);
-        if (Ui.PrimaryButton("Stop", 120 * Ui.Scale, danger: true)) organizer.CancelRun();
+        if (Ui.PrimaryButton("Stop", 120 * Ui.Scale, danger: true)) { Pilot?.Stop(); organizer.CancelRun(); }
         Ui.Centered("Stopping finishes the current move and leaves the rest untouched.", muted: true);
     }
 

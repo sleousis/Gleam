@@ -124,11 +124,16 @@ public sealed class OrganizerCoordinator : IDisposable
     }
 
     /// <summary>Runs the current preview's moves. Only what the user saw; closed storages leave their moves waiting.</summary>
-    public Task RunAsync() => RunAsync(Current?.Moves ?? new List<MoveOp>());
+    public Task RunAsync() => RunMovesAsync(Current?.Moves ?? new List<MoveOp>(), refreshAfter: true);
 
-    private async Task RunAsync(IReadOnlyList<MoveOp> ops)
+    /// <summary>Set by the plugin so a hands-free run does not trip the "another run is going" guard on itself.</summary>
+    public Func<bool> IsPilotRunning { get; set; } = () => false;
+
+    /// <summary>Runs a subset of moves now. The hands-free pilot calls this once per open storage.</summary>
+    public async Task RunMovesAsync(IReadOnlyList<MoveOp> ops, bool refreshAfter)
     {
-        if (IsRunning || cleaner.IsRunning || cleaner.IsPilotRunning() || ops.Count == 0) return;
+        if (IsRunning || cleaner.IsRunning || ops.Count == 0) return;
+        if (!IsPilotRunning() && cleaner.IsPilotRunning()) return;
         IsRunning = true;
         RunTotal = ops.Count;
         RunDone = 0;
@@ -156,7 +161,7 @@ public sealed class OrganizerCoordinator : IDisposable
             PendingMoves.AddRange(report.Pending);
             Status = report.Summary();
 
-            if (config.ChatSummaryAfterRun)
+            if (config.ChatSummaryAfterRun && !IsPilotRunning())
             {
                 chat.Print($"Tidy Up: {report.Summary()}.", "Tidy Up");
                 foreach (var (reason, count) in report.PendingByReason())
@@ -175,7 +180,7 @@ public sealed class OrganizerCoordinator : IDisposable
         {
             IsRunning = false;
             Changed?.Invoke();
-            await PreviewAsync().ConfigureAwait(false);
+            if (refreshAfter) await PreviewAsync().ConfigureAwait(false);
         }
     }
 
@@ -188,6 +193,6 @@ public sealed class OrganizerCoordinator : IDisposable
         var ready = PendingMoves.Where(m => m.RequiresOpen is { } s && s.Kind == kind && mover.IsOpen(s)).ToList();
         if (ready.Count == 0) return;
         toast.ShowNormal($"Tidy Up: putting away {ready.Count} item{(ready.Count == 1 ? "" : "s")} you approved earlier.");
-        await RunAsync(ready).ConfigureAwait(false);
+        await RunMovesAsync(ready, refreshAfter: true).ConfigureAwait(false);
     }
 }
