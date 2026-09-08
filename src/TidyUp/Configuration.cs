@@ -152,6 +152,16 @@ public sealed class AutomationSettings
     public string ExpertDeliveryTabCallback { get; set; } = "0,2";
 }
 
+/// <summary>Named organizer layouts and which one is in use.</summary>
+public sealed class OrganizerSettings
+{
+    public List<Core.Organizer.Model.OrganizerPlan> Plans { get; set; } = new();
+    public Guid? ActivePlanId { get; set; }
+
+    public Core.Organizer.Model.OrganizerPlan? Active =>
+        Plans.FirstOrDefault(p => p.Id == ActivePlanId) ?? Plans.FirstOrDefault();
+}
+
 public sealed class Configuration : IPluginConfiguration
 {
     public int Version { get; set; } = 3;
@@ -161,6 +171,7 @@ public sealed class Configuration : IPluginConfiguration
     public ItemList AlwaysDiscardList { get; set; } = new();
     public CallbackSettings Callbacks { get; set; } = new();
     public AutomationSettings Automation { get; set; } = new();
+    public OrganizerSettings Organizer { get; set; } = new();
 
     /// <summary>When materia cannot be retrieved from an item: leave the item, or act and lose the materia.</summary>
     public bool ActWhenMateriaFails { get; set; } = false;
@@ -226,6 +237,17 @@ public sealed class Configuration : IPluginConfiguration
             Profiles.Account.EnabledRules.Add(Core.Rules.RegisteredDuplicateRule.RuleId);
             foreach (var o in Profiles.Overrides) o.Values.EnabledRules.Add(Core.Rules.RegisteredDuplicateRule.RuleId);
             Version = 6;
+            changed = true;
+        }
+        if (Version < 7)
+        {
+            if (Organizer.Plans.Count == 0)
+            {
+                var starter = Core.Organizer.Model.OrganizerPlan.Starter();
+                Organizer.Plans.Add(starter);
+                Organizer.ActivePlanId = starter.Id;
+            }
+            Version = 7;
             changed = true;
         }
         return changed;
