@@ -15,6 +15,7 @@ public sealed class DebugWindow : StyledWindow
 {
     private readonly IFramework framework;
     private readonly GameActions actions;
+    private readonly MoveActions mover;
     private readonly InventoryContextDriver context;
     private readonly ItemDatabase db;
     private readonly AllaganToolsSource allagan;
@@ -31,12 +32,13 @@ public sealed class DebugWindow : StyledWindow
     private DateTime discardArmedAt;
     private bool forceDangerous;
 
-    public DebugWindow(IFramework framework, GameActions actions, GameInventoryScanner scanner, InventoryContextDriver context,
+    public DebugWindow(IFramework framework, GameActions actions, MoveActions mover, GameInventoryScanner scanner, InventoryContextDriver context,
         ItemDatabase db, AllaganToolsSource allagan, IMarketPriceSource market, IPlayerState player, Configuration config)
         : base("Tidy Up Troubleshooting###TidyUpDebug")
     {
         this.framework = framework;
         this.actions = actions;
+        this.mover = mover;
         this.context = context;
         this.db = db;
         this.allagan = allagan;
@@ -104,6 +106,26 @@ public sealed class DebugWindow : StyledWindow
         if (Ui.Button("Sell to vendor")) Spike("sell", ct => actions.VendorSellAsync(target, actions.ReadSlot(target)?.ItemId ?? 0, ct));
         ImGui.SameLine();
         if (Ui.Button("Expert delivery")) Spike("seals", ct => actions.ExpertDeliveryAsync(target, actions.ReadSlot(target)?.ItemId ?? 0, ct));
+
+        Ui.Section("Move (organizer)");
+        if (Ui.Button("To saddlebag and back")) RunAsync(async ct =>
+        {
+            var item = mover.ReadSlot(target);
+            if (item is null) return "slot is empty";
+            var saddle = new Core.Organizer.Capacity.StorageId(ContainerKind.Saddlebag);
+            if (!mover.IsOpen(saddle)) return "open the saddlebag first";
+            var landing = mover.FindLanding(saddle, item.ItemId, item.IsHq, 0, new HashSet<SlotRef>());
+            if (landing is null) return "no room in the saddlebag";
+            var there = await mover.MoveAsync(target, landing.Value, item.ItemId, item.Quantity, ct);
+            if (there.Status != Core.Organizer.Execution.MoveStatus.Done) return $"to saddlebag: {there.Status} · {there.Message}";
+            await Task.Delay(400, ct);
+            var back = await mover.MoveAsync(landing.Value, target, item.ItemId, item.Quantity, ct);
+            return back.Status == Core.Organizer.Execution.MoveStatus.Done
+                ? $"moved to {landing} and back: yes"
+                : $"moved to {landing}; back: {back.Status} · {back.Message}";
+        });
+        ImGui.SameLine();
+        if (Ui.Button("Live sizes")) Run(() => string.Join("  ", mover.LiveSizes().OrderBy(kv => kv.Key.Page).Select(kv => $"{kv.Key.Storage}/{kv.Key.Page}={kv.Value}")));
 
         Ui.Section("Integrations");
         if (Ui.Button("Allagan Tools")) Run(() =>

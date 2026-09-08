@@ -71,7 +71,8 @@ public sealed class Plugin : IDalamudPlugin
         dialogs = new AddonDriver(addonLifecycle, framework, log);
         var contextDriver = new InventoryContextDriver(framework, db, log);
         var actions = new GameActions(framework, inventory, scanner, dialogs, contextDriver, db, config, log, condition);
-        var merger = new StackMerger(framework, log);
+        var mover = new MoveActions(framework, scanner, log, config);
+        var merger = new StackMerger(mover, log);
         var runLog = new JsonLinesRunLog(new ReliableTextStorage(storage, pi.GetPluginConfigDirectory()), "tidyup-history.jsonl");
         allagan = new AllaganToolsSource(pi, log) { Enabled = config.UseAllaganTools, RetainerNames = GameInventoryScanner.KnownRetainers, CanHoldMateria = id => db.Get(id)?.IsEquipment == true };
         IMarketPriceSource market = new UniversalisClient();
@@ -80,7 +81,7 @@ public sealed class Plugin : IDalamudPlugin
         coordinator = new RunCoordinator(framework, player, chat, toast, log, config, db, scanner, contextBuilder, actions, merger, runLog, allagan, market, snapshots, Save);
 
         var icons = new IconCache(textures, Path.Combine(pi.AssemblyLocation.Directory?.FullName ?? ".", "images", "icon.png"));
-        debugWindow = new DebugWindow(framework, actions, scanner, contextDriver, db, allagan, market, player, config);
+        debugWindow = new DebugWindow(framework, actions, mover, scanner, contextDriver, db, allagan, market, player, config);
         settingsWindow = new SettingsWindow(config, player, db, icons, allagan, coordinator, () => debugWindow.IsOpen = true);
         historyWindow = new HistoryWindow(runLog, db, icons);
         confirmWindow = new ConfirmationWindow(coordinator, icons, db, config, gamepad, () => settingsWindow.IsOpen = true, () => historyWindow.IsOpen = true);
