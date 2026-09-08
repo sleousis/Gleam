@@ -63,99 +63,67 @@ public sealed class ExecutionEngine
             .ThenBy(q => q.Slot.Slot)
             .ToList();
 
-        var first = true;
-        var consecutiveFailures = 0;
-        foreach (var action in ordered)
+        var core = new ExecutionCore(delay, options.RateLimit, options.MaxConsecutiveFailures);
+        ActionResult? last = null;
+
+        var summary = await core.RunAsync(ordered, new ExecutionCore.Hooks<QueuedAction>
         {
-            if (ct.IsCancellationRequested)
+            BlockedReason = action =>
             {
-                Park(report, action, "the run was stopped before reaching it");
-                continue;
-            }
-
-            if (report.Aborted)
+                if (!game.IsContainerAvailable(action.Kind, action.Slot.OwnerId)) return action.Kind.RequirementText();
+                // A retainer item that must be turned in only needs the retainer open here; the NPC comes later.
+                var tripHome = ContainerConstraints.NeedsTripHome(action.Kind, action.Action);
+                if (action.Action != ActionKind.Discard && !tripHome && !game.IsActionAvailable(action.Action)) return game.ActionRequirement(action.Action);
+                return null;
+            },
+            Execute = async (action, token) =>
             {
-                Park(report, action, "the run stopped at an earlier failure");
-                continue;
-            }
-
-            if (!game.IsContainerAvailable(action.Kind, action.Slot.OwnerId))
+                var result = await ExecuteOneAsync(action, token).ConfigureAwait(false);
+                last = result;
+                if (result.Outcome == ActionOutcome.Done)
+                    await log.AppendAsync(RunLogEntry.From(action, identity, result.Outcome)).ConfigureAwait(false);
+                if (result.Outcome == ActionOutcome.Moved && result.Followup is { } follow)
+                    report.Moved.Add(follow);
+                return new StepOutcome(ToStep(result.Outcome), result.Message);
+            },
+            Park = (action, reason) => Park(report, action, reason),
+            Report = (action, outcome) =>
             {
-                Park(report, action, action.Kind.RequirementText());
-                Emit(report, progress, new ActionResult(action, ActionOutcome.Pending, $"Needs: {action.Kind.RequirementText()}"));
-                continue;
-            }
+                // Reuse the rich result when this outcome came from ExecuteOneAsync; synthesise one otherwise.
+                var result = last is not null && ReferenceEquals(last.Action, action) && ToStep(last.Outcome) == outcome.Status && last.Message == outcome.Message
+                    ? last
+                    : new ActionResult(action, FromStep(outcome.Status), outcome.Message);
+                Emit(report, progress, result);
+            },
+            Describe = action => action.ItemName,
+        }, ct).ConfigureAwait(false);
 
-            // A retainer item that must be sold or turned in only needs the retainer open here; the NPC comes later.
-            var tripHome = ContainerConstraints.NeedsTripHome(action.Kind, action.Action);
-            if (action.Action != ActionKind.Discard && !tripHome && !game.IsActionAvailable(action.Action))
-            {
-                Park(report, action, game.ActionRequirement(action.Action));
-                Emit(report, progress, new ActionResult(action, ActionOutcome.Pending, $"Needs: {game.ActionRequirement(action.Action)}"));
-                continue;
-            }
-
-            if (!first)
-            {
-                try { await delay.Wait(options.RateLimit, ct).ConfigureAwait(false); }
-                catch (OperationCanceledException)
-                {
-                    Park(report, action, "the run was stopped before reaching it");
-                    report.Aborted = true;
-                    report.AbortReason = "cancelled";
-                    continue;
-                }
-            }
-            first = false;
-
-            ActionResult result;
-            try
-            {
-                result = await ExecuteOneAsync(action, ct).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-            {
-                result = new ActionResult(action, ActionOutcome.Cancelled, "Cancelled");
-            }
-            catch (Exception ex)
-            {
-                result = new ActionResult(action, ActionOutcome.Failed, ex.Message);
-            }
-
-            if (result.Outcome == ActionOutcome.Done)
-                await log.AppendAsync(RunLogEntry.From(action, identity, result.Outcome)).ConfigureAwait(false);
-
-            if (result.Outcome == ActionOutcome.Moved && result.Followup is { } follow)
-                report.Moved.Add(follow);
-
-            // A pre-condition discovered mid-action (no free slot, etc.) parks the item rather than failing the run.
-            if (result.Outcome == ActionOutcome.Pending)
-                Park(report, action, result.Message);
-
-            Emit(report, progress, result);
-
-            if (result.Outcome == ActionOutcome.Failed)
-            {
-                consecutiveFailures++;
-                if (consecutiveFailures >= options.MaxConsecutiveFailures)
-                {
-                    report.Aborted = true;
-                    report.AbortReason = $"{consecutiveFailures} items failed in a row, last: {action.ItemName}: {result.Message}";
-                }
-            }
-            else if (result.Outcome == ActionOutcome.Done)
-            {
-                consecutiveFailures = 0;
-            }
-            if (result.Outcome == ActionOutcome.Cancelled)
-            {
-                report.Aborted = true;
-                report.AbortReason = "cancelled";
-            }
-        }
-
+        report.Aborted = summary.Aborted;
+        report.AbortReason = summary.AbortReason;
         return report;
     }
+
+    private static StepStatus ToStep(ActionOutcome o) => o switch
+    {
+        ActionOutcome.Done => StepStatus.Done,
+        ActionOutcome.Pending => StepStatus.Pending,
+        ActionOutcome.SkippedChanged => StepStatus.SkippedChanged,
+        ActionOutcome.Failed => StepStatus.Failed,
+        ActionOutcome.Cancelled => StepStatus.Cancelled,
+        ActionOutcome.Moved => StepStatus.Moved,
+        _ => StepStatus.Failed,
+    };
+
+    private static ActionOutcome FromStep(StepStatus s) => s switch
+    {
+        StepStatus.Done => ActionOutcome.Done,
+        StepStatus.Pending => ActionOutcome.Pending,
+        StepStatus.SkippedChanged => ActionOutcome.SkippedChanged,
+        StepStatus.Failed => ActionOutcome.Failed,
+        StepStatus.Cancelled => ActionOutcome.Cancelled,
+        StepStatus.Moved => ActionOutcome.Moved,
+        _ => ActionOutcome.Failed,
+    };
 
     private readonly HashSet<SlotRef> touched = new();
 
