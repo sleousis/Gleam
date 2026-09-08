@@ -39,6 +39,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly SettingsWindow settingsWindow;
     private readonly HistoryWindow historyWindow;
     private readonly DebugWindow debugWindow;
+    private readonly OrganizerCoordinator organizer;
 
     private readonly ItemDatabase db;
     private readonly AddonDriver dialogs;
@@ -79,6 +80,8 @@ public sealed class Plugin : IDalamudPlugin
 
         var snapshots = new InventorySnapshotService(framework, player, log, config, db, scanner, contextBuilder, allagan, market);
         coordinator = new RunCoordinator(framework, player, chat, toast, log, config, db, scanner, contextBuilder, actions, merger, runLog, allagan, market, snapshots, Save);
+        var moveLog = new JsonLinesMoveLog(new ReliableTextStorage(storage, pi.GetPluginConfigDirectory()), "tidyup-moves.jsonl");
+        organizer = new OrganizerCoordinator(framework, player, chat, toast, log, config, db, snapshots, mover, moveLog, coordinator);
 
         var icons = new IconCache(textures, Path.Combine(pi.AssemblyLocation.Directory?.FullName ?? ".", "images", "icon.png"));
         debugWindow = new DebugWindow(framework, actions, mover, scanner, contextDriver, db, allagan, market, player, config);
@@ -98,7 +101,7 @@ public sealed class Plugin : IDalamudPlugin
         {
             IsReviewOpen = () => confirmWindow.IsOpen,
         };
-        coordinator.IsPilotRunning = () => pilot.IsRunning;
+        coordinator.IsPilotRunning = () => pilot.IsRunning || organizer.IsRunning;
         confirmWindow.Pilot = pilot;
         settingsWindow.Pilot = pilot;
         settingsWindow.Nav = nav;
@@ -106,6 +109,7 @@ public sealed class Plugin : IDalamudPlugin
 
         watcher = new AddonWatcher(addonLifecycle, framework);
         watcher.ContainerOpened += kind => _ = coordinator.OnContainerOpenedAsync(kind);
+        watcher.ContainerOpened += kind => _ = organizer.OnContainerOpenedAsync(kind);
         watcher.ActionWindowOpened += coordinator.OnActionWindowOpened;
 
         contextMenu = new ContextMenuIntegration(contextMenuService, player, chat, config, db, Save);
@@ -120,7 +124,7 @@ public sealed class Plugin : IDalamudPlugin
         config.Saved += ApplyProfileToServices;
         ApplyProfileToServices();
 
-        clientState.Logout += (_, _) => coordinator.OnLogout();
+        clientState.Logout += (_, _) => { coordinator.OnLogout(); organizer.OnLogout(); };
         clientState.Login += () => framework.RunOnTick(() => _ = coordinator.RefreshPlanAsync(false), delay: TimeSpan.FromSeconds(8));
 
         commands.AddHandler(Command, new CommandInfo(OnCommand)
@@ -198,6 +202,7 @@ public sealed class Plugin : IDalamudPlugin
         commands.RemoveHandler(Command);
         windows.RemoveAllWindows();
         coordinator.Dispose();
+        organizer.Dispose();
         dutyNudge.Dispose();
         dtr.Dispose();
         contextMenu.Dispose();
