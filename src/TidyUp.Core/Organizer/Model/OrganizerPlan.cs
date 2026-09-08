@@ -55,6 +55,8 @@ public sealed class OrganizerPredicate
     public int? MaxEquipLevel { get; set; }
     /// <summary>Gear a job the character has levelled past 1 can wear.</summary>
     public bool? ForJobsPlayed { get; set; }
+    /// <summary>Gear that one of the character's gear sets uses.</summary>
+    public bool? InGearset { get; set; }
     public bool? IsHq { get; set; }
     public bool? HasMateria { get; set; }
     public bool? IsStackable { get; set; }
@@ -65,7 +67,7 @@ public sealed class OrganizerPredicate
 
     public bool IsEmpty =>
         Tags is null or { Count: 0 } && UiCategories is null or { Count: 0 } && MinItemLevel is null && MaxItemLevel is null
-        && MinEquipLevel is null && MaxEquipLevel is null && ForJobsPlayed is null && IsHq is null && HasMateria is null
+        && MinEquipLevel is null && MaxEquipLevel is null && ForJobsPlayed is null && InGearset is null && IsHq is null && HasMateria is null
         && IsStackable is null && IsUntradable is null && IsUnique is null && OnNeverTouchList is null && ItemIds is null or { Count: 0 };
 
     public bool Matches(ScannedItem item, ItemInfo info, ItemContext ctx, Func<uint, bool, bool> onNeverTouch)
@@ -77,6 +79,7 @@ public sealed class OrganizerPredicate
         if (MinEquipLevel is { } minLv && (!info.IsEquipment || info.LevelEquip < minLv)) return false;
         if (MaxEquipLevel is { } maxLv && (!info.IsEquipment || info.LevelEquip > maxLv)) return false;
         if (ForJobsPlayed is { } played && (!info.IsEquipment || ctx.AnyJobPlayedForCategory(info.ClassJobCategoryId) != played)) return false;
+        if (InGearset is { } inSet && (!info.IsEquipment || ctx.GearsetItemIds.Contains(info.ItemId) != inSet)) return false;
         if (IsHq is { } hq && item.IsHq != hq) return false;
         if (HasMateria is { } mat && item.HasMateria != mat) return false;
         if (IsStackable is { } st && info.IsStackable != st) return false;
@@ -100,6 +103,7 @@ public sealed class OrganizerPredicate
         else if (MinEquipLevel is { } c2) parts.Add($"Lv ≥ {c2}");
         else if (MaxEquipLevel is { } d2) parts.Add($"Lv ≤ {d2}");
         if (ForJobsPlayed is { } j) parts.Add(j ? "jobs I play" : "jobs I don't play");
+        if (InGearset is { } g) parts.Add(g ? "in a gear set" : "not in a gear set");
         if (IsHq is { } hq) parts.Add(hq ? "HQ" : "NQ");
         if (HasMateria is { } m) parts.Add(m ? "with materia" : "no materia");
         if (IsStackable is { } s) parts.Add(s ? "stackable" : "single");
@@ -159,7 +163,7 @@ public sealed class OrganizerPlan
                     UiCategories = r.When.UiCategories is null ? null : new HashSet<string>(r.When.UiCategories),
                     MinItemLevel = r.When.MinItemLevel, MaxItemLevel = r.When.MaxItemLevel,
                     MinEquipLevel = r.When.MinEquipLevel, MaxEquipLevel = r.When.MaxEquipLevel,
-                    ForJobsPlayed = r.When.ForJobsPlayed, IsHq = r.When.IsHq, HasMateria = r.When.HasMateria,
+                    ForJobsPlayed = r.When.ForJobsPlayed, InGearset = r.When.InGearset, IsHq = r.When.IsHq, HasMateria = r.When.HasMateria,
                     IsStackable = r.When.IsStackable, IsUntradable = r.When.IsUntradable, IsUnique = r.When.IsUnique,
                     OnNeverTouchList = r.When.OnNeverTouchList,
                     ItemIds = r.When.ItemIds is null ? null : new HashSet<uint>(r.When.ItemIds),
@@ -178,7 +182,8 @@ public sealed class OrganizerPlan
             new OrganizerRule { Name = "Materia to the saddlebag", When = new OrganizerPredicate { Tags = [ItemTag.Materia] }, Then = Destination.Saddlebag },
             new OrganizerRule { Name = "Crystals to the saddlebag", When = new OrganizerPredicate { Tags = [ItemTag.Crystals] }, Then = Destination.Saddlebag },
             new OrganizerRule { Name = "Consumables in the bags", When = new OrganizerPredicate { Tags = [ItemTag.Consumables] }, Then = Destination.Bags },
-            new OrganizerRule { Name = "Gear I can wear in the armoury", When = new OrganizerPredicate { Tags = [ItemTag.Gear], ForJobsPlayed = true }, Then = Destination.Armoury },
+            new OrganizerRule { Name = "Gear set pieces in the armoury", When = new OrganizerPredicate { Tags = [ItemTag.Gear], InGearset = true }, Then = Destination.Armoury },
+            new OrganizerRule { Name = "Other gear to a retainer", When = new OrganizerPredicate { Tags = [ItemTag.Gear], InGearset = false }, Then = Destination.AnyRetainer },
             new OrganizerRule { Name = "Housing to a retainer", When = new OrganizerPredicate { Tags = [ItemTag.Housing] }, Then = Destination.AnyRetainer },
         },
     };
