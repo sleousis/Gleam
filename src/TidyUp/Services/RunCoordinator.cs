@@ -30,6 +30,7 @@ public sealed class RunCoordinator : IDisposable
     private readonly IRunLog runLog;
     private readonly IOfflineInventorySource offline;
     private readonly IMarketPriceSource market;
+    private readonly InventorySnapshotService snapshots;
     private readonly RunPlanner planner = new();
     private readonly Action save;
 
@@ -63,8 +64,10 @@ public sealed class RunCoordinator : IDisposable
 
     public RunCoordinator(IFramework framework, IPlayerState player, IChatGui chat, IToastGui toast, IPluginLog log,
         Configuration config, ItemDatabase db, GameInventoryScanner scanner, ItemContextBuilder contextBuilder,
-        GameActions actions, StackMerger merger, IRunLog runLog, IOfflineInventorySource offline, IMarketPriceSource market, Action save)
+        GameActions actions, StackMerger merger, IRunLog runLog, IOfflineInventorySource offline, IMarketPriceSource market,
+        InventorySnapshotService snapshots, Action save)
     {
+        this.snapshots = snapshots;
         this.framework = framework;
         this.player = player;
         this.chat = chat;
@@ -118,21 +121,11 @@ public sealed class RunCoordinator : IDisposable
                 if (merged > 0) chat.Print($"Tidy Up: merged {merged} split stack{(merged == 1 ? "" : "s")}.", "Tidy Up");
             }
 
-            var (items, ctx, retainerNames) = await framework.RunOnFrameworkThread(() =>
-            {
-                var live = focus is null
-                    ? scanner.ScanAll(profile.IsContainerEnabled(ContainerKind.Saddlebag), profile.IsContainerEnabled(ContainerKind.Retainer), profile.IsContainerEnabled(ContainerKind.GlamourDresser))
-                    : scanner.ScanKind(focus.Value);
-                return (live, contextBuilder.Build(), GameInventoryScanner.KnownRetainers());
-            }).ConfigureAwait(false);
-            RetainerNames = retainerNames;
+            var snapshot = await snapshots.CaptureAsync(profile, focus).ConfigureAwait(false);
+            RetainerNames = snapshot.RetainerNames;
+            var withMarket = snapshot.Context;
 
-            var all = new List<ScannedItem>(items);
-            if (focus is null) all.AddRange(OfflineItems(items, ctx.CharacterId));
-
-            var withMarket = await AddMarketPricesAsync(all, ctx, profile).ConfigureAwait(false);
-
-            var plan = planner.Build(all, new PlannerInputs
+            var plan = planner.Build(snapshot.Items, new PlannerInputs
             {
                 Context = withMarket,
                 Profile = profile,
@@ -141,7 +134,7 @@ public sealed class RunCoordinator : IDisposable
                 AlwaysDiscardList = config.AlwaysDiscardList,
                 SessionSkips = SessionSkips,
                 IsAvailable = actions.IsContainerAvailable,
-                RetainerNames = retainerNames,
+                RetainerNames = snapshot.RetainerNames,
                 IncludeUnproposed = true,
             });
 
@@ -162,41 +155,6 @@ public sealed class RunCoordinator : IDisposable
         finally
         {
             scanGate.Release();
-        }
-    }
-
-    /// <summary>
-    /// Everything the cache knows about this character that is not live right now: the saddlebag when
-    /// closed, and every retainer's pages. Retainers are separate entries in the cache, recognised by
-    /// their items living in retainer pages that name them as owner.
-    /// </summary>
-    private IEnumerable<ScannedItem> OfflineItems(IReadOnlyList<ScannedItem> live, ulong characterId)
-    {
-        if (!offline.IsAvailable) yield break;
-        var liveKinds = new HashSet<(ContainerKind, ulong)>(live.Select(i => (i.Slot.Kind, i.Slot.OwnerId)));
-
-        IEnumerable<ScannedItem> Filter(IEnumerable<ScannedItem> items)
-        {
-            foreach (var item in items)
-            {
-                // Never mix a live container with its cached copy; live always wins.
-                if (item.Slot.Kind.IsAlwaysLoaded()) continue;
-                if (item.Slot.Kind == ContainerKind.Retainer && item.Slot.OwnerId == 0) continue;
-                if (liveKinds.Contains((item.Slot.Kind, item.Slot.OwnerId))) continue;
-                if (item.Slot.Kind == ContainerKind.Saddlebag && GameInventoryScanner.IsSaddlebagLoaded()) continue;
-                yield return item;
-            }
-        }
-
-        foreach (var item in Filter(offline.Items(characterId))) yield return item;
-
-        foreach (var entry in offline.Characters())
-        {
-            if (entry.CharacterId == characterId) continue;
-            var items = offline.Items(entry.CharacterId);
-            // A retainer's cache entry holds only retainer pages owned by that same id.
-            if (items.Count == 0 || !items.All(i => i.Slot.Kind == ContainerKind.Retainer && i.Slot.OwnerId == entry.CharacterId)) continue;
-            foreach (var item in Filter(items)) yield return item;
         }
     }
 
@@ -230,57 +188,7 @@ public sealed class RunCoordinator : IDisposable
     }
 
     /// <summary>Where market prices come from: the character's home world, e.g. "Omega".</summary>
-    public string MarketScope { get; private set; } = string.Empty;
-
-    private async Task<ItemContext> AddMarketPricesAsync(IReadOnlyList<ScannedItem> items, ItemContext ctx, Profile profile)
-    {
-        var distinct = items.Select(i => i.ItemId).Distinct().ToList();
-
-        // Registration: which collectibles this character already has.
-        var registered = await framework.RunOnFrameworkThread(() =>
-        {
-            var map = new Dictionary<uint, bool>();
-            foreach (var id in distinct)
-                if (UnlockState.Of(id) is { } state) map[id] = state;
-            return map;
-        }).ConfigureAwait(false);
-
-        // Prices: lowest listing on the home world, where the retainers will list.
-        IReadOnlyDictionary<uint, MarketPrice> prices = new Dictionary<uint, MarketPrice>();
-        var lookedUp = false;
-        if (config.UseUniversalis)
-        {
-            var world = player.HomeWorld.ValueNullable?.Name.ExtractText();
-            if (string.IsNullOrEmpty(world)) world = player.CurrentWorld.ValueNullable?.Name.ExtractText();
-            var ids = distinct.Where(id => db.Get(id)?.IsMarketable == true).ToList();
-            if (!string.IsNullOrEmpty(world) && ids.Count > 0)
-            {
-                MarketScope = world;
-                lookedUp = true;
-                try
-                {
-                    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(12));
-                    prices = await market.GetPricesAsync(ids, world, cts.Token).ConfigureAwait(false);
-                }
-                catch (Exception ex)
-                {
-                    log.Debug(ex, "Market prices unavailable; rows will say so");
-                }
-            }
-        }
-
-        return new ItemContext
-        {
-            CharacterId = ctx.CharacterId, CharacterName = ctx.CharacterName,
-            GearsetItemIds = ctx.GearsetItemIds, PlateItemIds = ctx.PlateItemIds, PlatesLoaded = ctx.PlatesLoaded,
-            JobLevels = ctx.JobLevels, ClassJobCategoryJobs = ctx.ClassJobCategoryJobs,
-            MaxGearsetItemLevel = ctx.MaxGearsetItemLevel, RecipesUsing = ctx.RecipesUsing,
-            SeasonalItemIds = ctx.SeasonalItemIds, RetiredCurrencyGearIds = ctx.RetiredCurrencyGearIds,
-            MarketPrices = prices,
-            MarketLookupAttempted = lookedUp,
-            Registered = registered,
-        };
-    }
+    public string MarketScope => snapshots.MarketScope;
 
     public async Task<int> CountCleanableAsync()
     {
