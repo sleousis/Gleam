@@ -121,7 +121,7 @@ public sealed class ConfirmationWindow : StyledWindow
         this.gamepad = gamepad;
         Size = new Vector2(860, 600);
         SizeCondition = ImGuiCond.FirstUseEver;
-        SizeConstraints = new WindowSizeConstraints { MinimumSize = new Vector2(560, 320), MaximumSize = new Vector2(4000, 3000) };
+        SizeConstraints = new WindowSizeConstraints { MinimumSize = new Vector2(600, 380), MaximumSize = new Vector2(4000, 3000) };
         AddNav(FontAwesomeIcon.History, "What Gleam did", () => Show(Ui.AppMode.History));
         AddNav(FontAwesomeIcon.Cog, "Settings", () => Show(Ui.AppMode.Settings));
     }
