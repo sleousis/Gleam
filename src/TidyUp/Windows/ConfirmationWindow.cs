@@ -65,8 +65,6 @@ public sealed class ConfirmationWindow : StyledWindow
 
     /// <summary>The simple layer: no filters, no per-row choices, plain words. Advanced adds everything back.</summary>
     private bool Simple => !config.AdvancedMode;
-    private int firstRunStep;
-    private ListEditor? keepEditor;
     private readonly Action openSettings;
 
     /// <summary>The one way a row gets ticked or unticked: keeps the session skip in step and gives the row a brief glow.</summary>
@@ -135,6 +133,7 @@ public sealed class ConfirmationWindow : StyledWindow
         }
         DrawLastRunBanner();
         DrawPilotErrorBanner();
+        DrawOrganizeOffer();
         Ui.Gap(0.5f);
 
         var footer = ImGui.GetFrameHeight() * 2.4f + Ui.Space;
@@ -143,19 +142,11 @@ public sealed class ConfirmationWindow : StyledWindow
             if (child)
             {
                 visibleRows.Clear();
-                var sections = coordinator.FocusContainer is { } f ? plan.Sections.Where(s => s.Kind == f) : plan.Sections;
-                var drewAny = false;
-                foreach (var section in sections.OrderBy(s => s.Kind.ExecutionOrder()).ThenBy(s => s.OwnerName))
-                {
-                    var rows = Filter(section.Rows, $"{section.Kind}:{section.OwnerId}").ToList();
-                    if (rows.Count == 0) continue;
-                    drewAny = true;
-                    DrawSection(section, rows);
-                }
-                if (coordinator.FocusContainer is null && plan.Alts.Count > 0) DrawAlts(plan);
+                var drewAny = Simple ? DrawSimpleGroups(plan) : DrawContainerSections(plan);
+                if (!Simple && coordinator.FocusContainer is null && plan.Alts.Count > 0) DrawAlts(plan);
                 if (!drewAny)
                 {
-                    if (plan.AllRows.Any()) Ui.EmptyState(icons.LogoMedium, "Nothing matches your filters.", "Clear a chip or the search box to see more.");
+                    if (plan.AllRows.Any()) Ui.EmptyState(icons.LogoMedium, "Nothing matches your search.", Simple ? "Clear the search box to see everything." : "Clear a chip or the search box to see more.");
                     else
                     {
                         Ui.EmptyState(icons.LogoMedium, "Nothing to clean.", "Everything looks tidy.");
@@ -168,7 +159,7 @@ public sealed class ConfirmationWindow : StyledWindow
                         }
                     }
                 }
-                DrawExcludedNote(plan);
+                if (Simple) DrawOutOfReachNote(plan); else DrawExcludedNote(plan);
             }
         }
 
@@ -190,6 +181,19 @@ public sealed class ConfirmationWindow : StyledWindow
     }
 
     /// <summary>One quiet line after a run: what happened and what is still waiting. Dismissed with a click.</summary>
+    /// <summary>After the first clean, offer the other half once. Simple mode hides Organize until this is answered.</summary>
+    private void DrawOrganizeOffer()
+    {
+        if (!Simple || Organizer is null || !config.HasCleanedOnce || config.AnsweredOrganizeOffer) return;
+        Ui.Gap(0.3f);
+        if (Ui.Banner(Ui.Accent, "One more thing", "Gleam can also put away what you keep. Materia in the saddlebag, spare gear with a retainer, that sort of thing.",
+                dismissLabel: "No thanks", link: ("Show me", () => { config.AnsweredOrganizeOffer = true; config.Save(PluginServices.PluginInterface); Show(Ui.AppMode.Organize); })))
+        {
+            config.AnsweredOrganizeOffer = true;
+            config.Save(PluginServices.PluginInterface);
+        }
+    }
+
     private void DrawLastRunBanner()
     {
         var report = coordinator.LastReport;
@@ -238,7 +242,8 @@ public sealed class ConfirmationWindow : StyledWindow
             var sentence = total == 0 ? "Nothing looks like junk right now."
                 : $"Gleam found {total} item{(total == 1 ? "" : "s")} of junk." + (freed > 0 ? $" Cleaning them frees {freed} slot{(freed == 1 ? "" : "s")}" : string.Empty)
                   + (summary.GilRecovered + summary.MarketGil > 0 ? $"{(freed > 0 ? " and recovers" : " Cleaning them recovers")} about {Ui.Gil(summary.GilRecovered + summary.MarketGil)}." : freed > 0 ? "." : string.Empty);
-            Ui.Header(icons.LogoSmall, "Gleam", sentence, 0f, null, null, Organizer is null ? null : () => { if (Ui.ModeSwitch(Ui.AppMode.Clean)) Show(Ui.AppMode.Organize); });
+            var offerOrganize = Organizer is not null && config.AnsweredOrganizeOffer;
+            Ui.Header(icons.LogoSmall, "Gleam", sentence, 0f, null, null, !offerOrganize ? null : () => { if (Ui.ModeSwitch(Ui.AppMode.Clean)) Show(Ui.AppMode.Organize); });
             ImGui.AlignTextToFramePadding();
             Ui.Hint(profile.Thresholds.Policy.Describe());
             ImGui.SameLine();
@@ -517,6 +522,145 @@ public sealed class ConfirmationWindow : StyledWindow
     }
 
     // ---------- sections ----------
+
+    /// <summary>Advanced: one collapsing section per container, as the run itself is organised.</summary>
+    private bool DrawContainerSections(RunPlan plan)
+    {
+        var sections = coordinator.FocusContainer is { } f ? plan.Sections.Where(s => s.Kind == f) : plan.Sections;
+        var drewAny = false;
+        foreach (var section in sections.OrderBy(s => s.Kind.ExecutionOrder()).ThenBy(s => s.OwnerName))
+        {
+            var rows = Filter(section.Rows, $"{section.Kind}:{section.OwnerId}").ToList();
+            if (rows.Count == 0) continue;
+            drewAny = true;
+            DrawSection(section, rows);
+        }
+        return drewAny;
+    }
+
+    /// <summary>
+    /// Simple: one card per outcome, so the screen reads "sell these, throw these away" instead of listing
+    /// seven containers. Only what can be reached now is listed; the rest is one line underneath.
+    /// </summary>
+    private bool DrawSimpleGroups(RunPlan plan)
+    {
+        var handsFree = Pilot is not null && config.Automation.Enabled;
+        var reachable = plan.Sections.Where(s => handsFree || s.IsAvailableNow).SelectMany(s => s.Rows);
+        if (coordinator.FocusContainer is { } f) reachable = plan.Sections.Where(s => s.Kind == f).SelectMany(s => s.Rows);
+        var groups = Filter(reachable)
+            .GroupBy(r => r.ChosenAction)
+            .OrderBy(g => g.Key == ActionKind.Discard ? 1 : 0)
+            .ThenBy(g => g.Key.Label(), StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        foreach (var group in groups) DrawOutcomeGroup(group.Key, group.ToList());
+        return groups.Count > 0;
+    }
+
+    /// <summary>One outcome card: a tick for the whole group, what it does, what it is worth, and the items inside.</summary>
+    private void DrawOutcomeGroup(ActionKind action, List<PlanRow> rows)
+    {
+        var key = $"grp:{action}";
+        if (!sectionOpen.TryGetValue(key, out var open)) open = false;
+        var checkedHere = rows.Count(r => r.Checked);
+        var value = rows.Where(r => r.Checked).Sum(r => r.Proposal.ValueGil);
+        var word = action switch
+        {
+            ActionKind.Discard => "Throw away",
+            ActionKind.VendorSell => "Sell to a vendor",
+            ActionKind.MarketList => "Sell on the market board",
+            ActionKind.ExpertDelivery => "Turn in for seals",
+            ActionKind.Desynth => "Break down",
+            _ => action.Label(),
+        };
+
+        using (Ui.Card(key))
+        {
+            // A tick for the whole group is the only control most players will ever need.
+            var all = checkedHere == rows.Count;
+            var some = checkedHere > 0 && !all;
+            var box = all;
+            using (ImRaii.PushStyle(ImGuiStyleVar.Alpha, ImGui.GetStyle().Alpha * (some ? 0.65f : 1f)))
+            {
+                if (ImGui.Checkbox($"##all{key}", ref box))
+                    foreach (var r in rows) SetChecked(r, box);
+            }
+            ImGui.SameLine();
+            ImGui.AlignTextToFramePadding();
+            Ui.TextColored(Ui.ActionColor(action), word);
+            ImGui.SameLine();
+            Ui.Text($"{rows.Count} item{(rows.Count == 1 ? "" : "s")}");
+            if (value > 0)
+            {
+                ImGui.SameLine();
+                Ui.TextColored(Ui.Market, $"about {Ui.Gil(value)}");
+            }
+            ImGui.SameLine();
+            Ui.RightAlign(110 * Ui.Scale);
+            if (Ui.LinkButton(open ? "Hide the list" : "See the list")) sectionOpen[key] = !open;
+
+            if (!open) return;
+            Ui.Gap(0.3f);
+            using var table = ImRaii.Table($"##t{key}", 4, ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingFixedFit | ImGuiTableFlags.NoSavedSettings | ImGuiTableFlags.PadOuterX);
+            if (!table) return;
+            ImGui.TableSetupColumn("##chk", ImGuiTableColumnFlags.WidthFixed, 24 * Ui.Scale, 0);
+            ImGui.TableSetupColumn("##icon", ImGuiTableColumnFlags.WidthFixed, 30 * Ui.Scale, 0);
+            ImGui.TableSetupColumn("##item", ImGuiTableColumnFlags.WidthStretch, 5f, 0);
+            ImGui.TableSetupColumn("##market", ImGuiTableColumnFlags.WidthFixed, 96 * Ui.Scale, 0);
+            foreach (var row in rows.OrderBy(r => r.Info.Name, StringComparer.OrdinalIgnoreCase))
+            {
+                var index = visibleRows.Count;
+                visibleRows.Add(row);
+                DrawGroupRow(row, index);
+            }
+        }
+    }
+
+    private void DrawGroupRow(PlanRow row, int index)
+    {
+        using var id = ImRaii.PushId(row.Key);
+        ImGui.TableNextRow(ImGuiTableRowFlags.None, 30 * Ui.Scale);
+        var glow = rowFlash.TryGetValue(row.Key, out var at) ? (float)Math.Clamp(1 - (ImGui.GetTime() - at) / 0.7, 0, 1) : 0f;
+        if (glow > 0f) ImGui.TableSetBgColor(ImGuiTableBgTarget.RowBg0, ImGui.GetColorU32(Ui.Accent * new Vector4(1, 1, 1, 0.22f * glow * glow)));
+
+        ImGui.TableNextColumn();
+        ImGui.AlignTextToFramePadding();
+        var chk = row.Checked;
+        using (ImRaii.Disabled(!row.IsExecutable))
+        {
+            if (ImGui.Checkbox("##c", ref chk)) SetChecked(row, chk);
+        }
+
+        ImGui.TableNextColumn();
+        Ui.ImageRounded(icons.Get(row.Info.IconId, row.Item.IsHq), new Vector2(26 * Ui.Scale, 26 * Ui.Scale), 4 * Ui.Scale);
+
+        ImGui.TableNextColumn();
+        ImGui.AlignTextToFramePadding();
+        if (ImGui.Selectable(row.Info.Name + (row.Item.IsHq ? " " : ""), false, ImGuiSelectableFlags.AllowItemOverlap, Vector2.Zero) && row.IsExecutable)
+            SetChecked(row, !row.Checked);
+        if (ImGui.IsItemHovered()) DrawRowTooltip(row);
+        DrawRowContextMenu(row);
+        if (row.Item.Quantity > 1) { ImGui.SameLine(); Ui.Hint($"× {row.Item.Quantity}"); }
+
+        ImGui.TableNextColumn();
+        DrawMarketPrice(row);
+        _ = index;
+    }
+
+    /// <summary>Simple: everything that cannot be reached from here, in one line rather than dead sections.</summary>
+    private void DrawOutOfReachNote(RunPlan plan)
+    {
+        var handsFree = Pilot is not null && config.Automation.Enabled;
+        if (handsFree || coordinator.FocusContainer is not null) return;
+        var away = plan.Sections.Where(s => !s.IsAvailableNow && s.Rows.Count > 0).ToList();
+        if (away.Count == 0) return;
+        var total = away.Sum(s => s.Rows.Count);
+        var where = string.Join(" and ", away.Select(s => s.Kind.DisplayName().ToLowerInvariant()).Distinct());
+        Ui.Gap(0.6f);
+        Ui.Hint($"{total} more item{(total == 1 ? "" : "s")} in your {where}. Gleam cleans them when you open it, or it can go there for you.");
+        ImGui.SameLine();
+        if (Ui.LinkButton("Let Gleam go")) openSettings();
+        Ui.Tooltip("Opens Settings, where you can let Gleam walk and travel for you.");
+    }
 
     private void DrawSection(PlanSection section, List<PlanRow> rows)
     {
@@ -937,58 +1081,34 @@ public sealed class ConfirmationWindow : StyledWindow
 
     private static readonly (Core.Rules.PresetName Preset, string Title, string Text)[] FirstRunPresets =
     [
-        (Core.Rules.PresetName.MarketBoard, "Sell it on the market board", "Marketable junk is listed through your retainers at the going price. The rest is sold to vendors or discarded."),
-        (Core.Rules.PresetName.Vendor, "Sell it to vendors", "Junk that has a vendor price is sold. Untradeable junk is discarded."),
-        (Core.Rules.PresetName.DiscardAll, "Just discard it", "Everything Gleam finds is thrown away. Fastest, and nothing comes back."),
+        (Core.Rules.PresetName.Vendor, "Sell it to vendors", "The safe choice. Junk worth gil is sold, the rest is thrown away."),
+        (Core.Rules.PresetName.MarketBoard, "Sell it on the market board", "Earns the most. Your retainers list what other players buy."),
+        (Core.Rules.PresetName.DiscardAll, "Just throw it away", "Fastest. Nothing is sold and nothing comes back."),
     ];
 
+    /// <summary>One screen, once: pick what happens to junk, then straight into the list.</summary>
     private void DrawFirstRun(RunPlan plan)
     {
-        var width = Math.Min(560 * Ui.Scale, ImGui.GetContentRegionAvail().X - 20 * Ui.Scale);
+        var width = Math.Min(520 * Ui.Scale, ImGui.GetContentRegionAvail().X - 20 * Ui.Scale);
         var left = (ImGui.GetWindowWidth() - width) / 2;
-        Ui.Gap(1.5f);
-        Ui.RunningHeader(icons.LogoMedium, firstRunStep switch { 0 => "What should happen to junk?", 1 => "Anything you never want touched?", _ => "Ready." },
-            firstRunStep switch { 0 => "You can change this any time in Settings.", 1 => "Add items here and Gleam will never list them. You can skip this.", _ => "Gleam shows you a list first and does nothing until you press Clean." });
+        Ui.RunningHeader(icons.LogoMedium, "What should Gleam do with junk?", "Gleam always shows you the list first. Nothing happens until you press the button.");
         Ui.Gap(1f);
-        ImGui.SetCursorPosX(left);
-        using (ImRaii.Child("##firstrun", new Vector2(width, 0), false, ImGuiWindowFlags.AlwaysAutoResize))
+        foreach (var (preset, title, text) in FirstRunPresets)
         {
-            switch (firstRunStep)
+            ImGui.SetCursorPosX(left);
+            if (OptionCard(title, text, false, width))
             {
-                case 0:
-                    var current = Core.Rules.Presets.Detect(coordinator.EffectiveProfile.Thresholds);
-                    foreach (var (preset, title, text) in FirstRunPresets)
-                    {
-                        if (OptionCard(title, text, current == preset, width))
-                        {
-                            config.Profiles.Account.ApplyPreset(preset);
-                            config.Save(PluginServices.PluginInterface);
-                            _ = coordinator.RefreshPlanAsync(openWindow: false);
-                            firstRunStep = 1;
-                        }
-                        Ui.Gap(0.3f);
-                    }
-                    break;
-                case 1:
-                    keepEditor ??= new ListEditor(db, icons, () => config.ProtectList, "Keep these", "Search for an item and add it. Gleam will never list it.", () => plan.CharacterId, () => config.Save(PluginServices.PluginInterface));
-                    using (Ui.Card("keep")) keepEditor.Draw();
-                    Ui.Gap(0.6f);
-                    ImGui.SetCursorPosX(left + width - 240 * Ui.Scale);
-                    if (Ui.LinkButton("Skip")) firstRunStep = 2;
-                    ImGui.SameLine();
-                    if (Ui.PrimaryButton("Next", 150 * Ui.Scale)) firstRunStep = 2;
-                    break;
-                default:
-                    ImGui.SetCursorPosX(left + (width - 220 * Ui.Scale) / 2);
-                    if (Ui.PrimaryButton("Show me the list", 220 * Ui.Scale))
-                    {
-                        config.SeenFirstRun = true;
-                        config.SeenCleanIntro = true;
-                        config.Save(PluginServices.PluginInterface);
-                    }
-                    break;
+                config.Profiles.Account.ApplyPreset(preset);
+                config.SeenFirstRun = true;
+                config.SeenCleanIntro = true;
+                config.Save(PluginServices.PluginInterface);
+                _ = coordinator.RefreshPlanAsync(openWindow: false);
             }
+            Ui.Gap(0.35f);
         }
+        Ui.Gap(0.4f);
+        Ui.Centered("You can change this later in Settings.", muted: true);
+        _ = plan;
     }
 
     /// <summary>A wide choice card: title, one line, a tick when it is the current choice. Returns true when clicked.</summary>
