@@ -527,7 +527,16 @@ internal static class Ui
 
     // ---------- buttons ----------
 
-    public static bool Button(string label, float width = 0f) => ImGui.Button(label, new Vector2(width, 0f));
+    /// <summary>A plain button. Its fill warms under the cursor, like every other control in the plugin.</summary>
+    public static bool Button(string label, float width = 0f)
+    {
+        var key = $"btn:{ImGui.GetID(label)}";
+        var hv = Hover(key);
+        using var b = ImRaii.PushColor(ImGuiCol.Button, new Vector4(1, 1, 1, 0.07f + 0.05f * hv));
+        var clicked = ImGui.Button(label, new Vector2(width, 0f));
+        RecordHover(key);
+        return clicked;
+    }
 
     /// <summary>A turning arc. Says "working" without pretending to know how far along it is.</summary>
     public static void Spinner(Vector2 centre, float radius, float thickness, Vector4 colour, float speed = 2.6f)
@@ -683,11 +692,12 @@ internal static class Ui
         ImGui.CalcTextSize(text, false, 0).X + 8f * Scale * 2 + (icon is null ? 0f : IconWidth(icon.Value) + 5f * Scale);
 
     /// <summary>A toggle chip for filters. Active chips fill with the accent.</summary>
-    public static bool Chip(string label, bool active)
+    public static bool Chip(string label, bool active, FontAwesomeIcon? icon = null)
     {
         var textW = ImGui.CalcTextSize(label, false, 0).X;
+        var iconW = icon is null ? 0f : IconWidth(icon.Value) + 5f * Scale;
         var h = ImGui.GetTextLineHeight() + 5f * Scale;
-        var w = textW + 18f * Scale;
+        var w = textW + iconW + 18f * Scale;
         var pos = ImGui.GetCursorScreenPos();
         var clicked = ImGui.InvisibleButton(label, new Vector2(w, h));
         var key = $"chip:{ImGui.GetID(label)}";
@@ -701,9 +711,20 @@ internal static class Ui
         var dl = ImGui.GetWindowDrawList();
         dl.AddRectFilled(pos, pos + new Vector2(w, h), ImGui.GetColorU32(Mix(idle, lit, on)), h / 2);
         if (on > 0.01f) dl.AddRect(pos, pos + new Vector2(w, h), ImGui.GetColorU32(AccentSoft * new Vector4(1, 1, 1, 0.35f * on)), h / 2);
-        dl.AddText(pos + new Vector2(9f * Scale, (h - ImGui.GetTextLineHeight()) / 2), ImGui.GetColorU32(text), label);
+        var tx = pos.X + 9f * Scale;
+        if (icon is { } g)
+        {
+            using (ImRaii.PushFont(UiBuilder.IconFont))
+                dl.AddText(new Vector2(tx, pos.Y + (h - ImGui.GetTextLineHeight()) / 2), ImGui.GetColorU32(text), g.ToIconString());
+            tx += iconW;
+        }
+        dl.AddText(new Vector2(tx, pos.Y + (h - ImGui.GetTextLineHeight()) / 2), ImGui.GetColorU32(text), label);
         return clicked;
     }
+
+    /// <summary>Width a chip occupies, so a wrapping row of them can be laid out before drawing.</summary>
+    public static float ChipWidth(string label, FontAwesomeIcon? icon = null) =>
+        ImGui.CalcTextSize(label, false, 0).X + 18f * Scale + (icon is null ? 0f : IconWidth(icon.Value) + 5f * Scale);
 
     /// <summary>
     /// A text link the height of a <see cref="Chip"/>. A framed button among chips is several pixels taller
@@ -1224,6 +1245,64 @@ internal static class Ui
         if (Reduced) return Danger;
         var pulse = 0.5f + 0.5f * MathF.Sin((float)ImGui.GetTime() * 5f);
         return Mix(Danger, Cream, 0.28f * pulse);
+    }
+
+    /// <summary>
+    /// One glyph per place Gleam can look. The same five names appear on the filter chips, the section
+    /// headers, the organizer's destinations and its route lines, so they carry the same picture in all of
+    /// them. Every glyph here is in the free solid font: names the enum offers but the font does not ship
+    /// render as nothing at all.
+    /// </summary>
+    public static FontAwesomeIcon ContainerIcon(ContainerKind kind) => kind switch
+    {
+        ContainerKind.Inventory => FontAwesomeIcon.Suitcase,
+        ContainerKind.Armoury => FontAwesomeIcon.Tshirt,
+        ContainerKind.Saddlebag => FontAwesomeIcon.Horse,
+        ContainerKind.Retainer => FontAwesomeIcon.UserTie,
+        ContainerKind.GlamourDresser => FontAwesomeIcon.Magic,
+        _ => FontAwesomeIcon.Box,
+    };
+
+    /// <summary>One glyph per junk rule, so the list of them in Settings can be scanned rather than read.</summary>
+    public static FontAwesomeIcon RuleIcon(string ruleId) => ruleId switch
+    {
+        "vendor-only-junk" => FontAwesomeIcon.Coins,
+        "obsolete-gear" => FontAwesomeIcon.Tshirt,
+        "dresser-zero-plates" => FontAwesomeIcon.Magic,
+        "outleveled-consumables" => FontAwesomeIcon.Flask,
+        "unusable-crafting-mats" => FontAwesomeIcon.Cubes,
+        "past-seasonal-items" => FontAwesomeIcon.CalendarAlt,
+        "retired-currency-gear" => FontAwesomeIcon.Medal,
+        "registered-duplicate" => FontAwesomeIcon.Copy,
+        "vendor-vs-market" => FontAwesomeIcon.Store,
+        _ => FontAwesomeIcon.Box,
+    };
+
+    /// <summary>One glyph per coarse item type, for the filter chips.</summary>
+    public static FontAwesomeIcon TagIcon(ItemTag tag) => tag switch
+    {
+        ItemTag.Gear => FontAwesomeIcon.Tshirt,
+        ItemTag.Materia => FontAwesomeIcon.Gem,
+        ItemTag.Materials => FontAwesomeIcon.Cubes,
+        ItemTag.Consumables => FontAwesomeIcon.Flask,
+        ItemTag.Crystals => FontAwesomeIcon.Bolt,
+        ItemTag.Housing => FontAwesomeIcon.Couch,
+        ItemTag.Collectibles => FontAwesomeIcon.Star,
+        _ => FontAwesomeIcon.Box,
+    };
+
+    /// <summary>
+    /// A gil figure with the plugin's own coin glyph beside it. The game's real gil texture is a photograph
+    /// of coins next to flat interface type, so this uses the same drawn coin the sell action uses and stays
+    /// in one visual language.
+    /// </summary>
+    public static void GilLabel(long value, Vector4? color = null)
+    {
+        var c = color ?? Market;
+        if (value <= 0) { TextColored(c, "\u2014"); return; }
+        Icon(FontAwesomeIcon.Coins, c);
+        ImGui.SameLine(0, 5f * Scale);
+        TextColored(c, $"{value:N0}");
     }
 
     /// <summary>

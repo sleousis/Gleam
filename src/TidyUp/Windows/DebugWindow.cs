@@ -50,10 +50,15 @@ public sealed class DebugWindow : StyledWindow
         SizeCondition = ImGuiCond.FirstUseEver;
     }
 
+    private double lastLogAt;
+
     private void Log(string s)
     {
         lines.Insert(0, $"{DateTime.Now:HH:mm:ss}  {s}");
         if (lines.Count > 200) lines.RemoveAt(lines.Count - 1);
+        lastLogAt = Environment.TickCount64 / 1000.0;
+        // Every spike ends with exactly one line, but clamp anyway: a stuck counter would spin forever.
+        if (Volatile.Read(ref running) > 0) Interlocked.Decrement(ref running);
     }
 
     public override void Draw()
@@ -169,9 +174,26 @@ public sealed class DebugWindow : StyledWindow
         if (changed) config.Save(PluginServices.PluginInterface);
 
         Ui.Section("Log");
+        ImGui.SameLine();
+        if (Volatile.Read(ref running) > 0)
+        {
+            var mid = ImGui.GetCursorScreenPos() + new Vector2(9 * Ui.Scale, ImGui.GetTextLineHeight() / 2);
+            ImGui.Dummy(new Vector2(20 * Ui.Scale, ImGui.GetTextLineHeight()));
+            Ui.Spinner(mid, 6 * Ui.Scale, 2f * Ui.Scale, Ui.AccentSoft);
+            ImGui.SameLine();
+            Ui.Hint("working…");
+        }
         using var child = ImRaii.Child("##log", new Vector2(0, 0), true, ImGuiWindowFlags.None);
         if (lines.Count == 0) Ui.Hint("Results appear here.");
-        foreach (var l in lines) ImGui.TextWrapped(l);
+        // The newest line arrives lit and settles, so a result that lands while you are reading is not missed.
+        var fresh = (float)Math.Clamp(1 - (Environment.TickCount64 / 1000.0 - lastLogAt) / 0.9, 0, 1);
+        for (var i = 0; i < lines.Count; i++)
+        {
+            if (i == 0 && fresh > 0f && !Ui.Reduced)
+                using (ImRaii.PushColor(ImGuiCol.Text, Ui.Mix(ImGui.GetStyle().Colors[(int)ImGuiCol.Text], Ui.AccentSoft, fresh)))
+                    ImGui.TextWrapped(lines[i]);
+            else ImGui.TextWrapped(lines[i]);
+        }
     }
 
     /// <summary>Two clicks, names the item, refuses anything the planner would hard-block unless forced.</summary>
@@ -185,7 +207,8 @@ public sealed class DebugWindow : StyledWindow
                                              || (!info.IsEquipment && info.IsUntradable && info.VendorPrice == 0));
         using (ImRaii.Disabled(item is null || (dangerous && !forceDangerous)))
         {
-            if (Ui.PrimaryButton(label, armed ? 260 * Ui.Scale : 100 * Ui.Scale, danger: true))
+            // One width for both states: growing from 100 to 260 the moment it arms made the row lurch.
+            if (Ui.PrimaryButton(label, 260 * Ui.Scale, danger: true))
             {
                 if (!armed) { discardArmedFor = target.ToString(); discardArmedAt = DateTime.UtcNow; }
                 else
@@ -216,13 +239,21 @@ public sealed class DebugWindow : StyledWindow
         return ok ? $"{name}: yes" : $"{name}: no · {actions.LastFailure ?? "no reason recorded"}";
     });
 
-    private void Run(Func<string> f) => framework.RunOnFrameworkThread(() =>
+    /// <summary>How many spikes are in flight, so the log can show that something is happening.</summary>
+    private int running;
+
+    private void Run(Func<string> f)
     {
-        try { Log(f()); } catch (Exception ex) { Log($"error {ex.GetType().Name}: {ex.Message}"); }
-    });
+        Interlocked.Increment(ref running);
+        framework.RunOnFrameworkThread(() =>
+        {
+            try { Log(f()); } catch (Exception ex) { Log($"error {ex.GetType().Name}: {ex.Message}"); }
+        });
+    }
 
     private void RunAsync(Func<CancellationToken, Task<string>> f) => Task.Run(async () =>
     {
+        Interlocked.Increment(ref running);
         try
         {
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));

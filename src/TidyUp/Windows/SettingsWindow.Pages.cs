@@ -20,7 +20,12 @@ public sealed partial class SettingsWindow
         {
             using var id = ImRaii.PushId(rule.Id);
             var on = p.EnabledRules.Contains(rule.Id);
-            if (Ui.Check(rule.Name, ref on)) { if (on) p.EnabledRules.Add(rule.Id); else p.EnabledRules.Remove(rule.Id); dirty = true; }
+            if (Ui.Check("##on", ref on)) { if (on) p.EnabledRules.Add(rule.Id); else p.EnabledRules.Remove(rule.Id); dirty = true; }
+            ImGui.SameLine(0, 6 * Ui.Scale);
+            ImGui.AlignTextToFramePadding();
+            Ui.Icon(Ui.RuleIcon(rule.Id), on ? Ui.AccentSoft : Ui.Muted);
+            ImGui.SameLine(0, 8 * Ui.Scale);
+            Ui.Text(rule.Name);
             Ui.Tooltip(rule.Description);
         }
 
@@ -116,7 +121,7 @@ public sealed partial class SettingsWindow
             {
                 var junk = lists!.Discard.Count(id => config.AlwaysDiscardList.Add(id, note: "From Discard Helper"));
                 var kept = lists.Keep.Count(id => config.ProtectList.Add(id, note: "From Discard Helper"));
-                importResult = junk + kept == 0 ? "You already have all of them." : $"Added {junk + kept}.";
+                ImportResult = junk + kept == 0 ? "You already have all of them." : $"Added {junk + kept}.";
                 dirty = true;
             }
             Ui.Tooltip("What it throws away joins your always-junk list. What it protects joins your never-touch list.");
@@ -133,10 +138,13 @@ public sealed partial class SettingsWindow
         if (Ui.LinkButton("Pick a file")) BrowseForDiscardHelper();
         Ui.Tooltip(string.IsNullOrEmpty(importFound) ? "Find its settings file yourself." : $"Currently reading {Path.GetFileName(importFound)}.");
 
-        if (!string.IsNullOrEmpty(importResult))
+        // The result has its say and then fades, rather than sitting beside the links for the rest of the session.
+        var resultLeft = (importResultUntil - DateTime.UtcNow).TotalSeconds;
+        if (!string.IsNullOrEmpty(ImportResult) && resultLeft > 0)
         {
             ImGui.SameLine();
-            Ui.Hint(importResult);
+            using var fade = ImRaii.PushStyle(ImGuiStyleVar.Alpha, ImGui.GetStyle().Alpha * (float)Math.Clamp(resultLeft / 0.6, 0, 1));
+            Ui.TextSwap("ImportResult", ImportResult, Ui.Muted * new Vector4(1, 1, 1, 0.8f));
         }
     }
 
@@ -146,7 +154,7 @@ public sealed partial class SettingsWindow
         var mine = new Core.Integrations.DiscardHelperLists(
             config.AlwaysDiscardList.Entries.Select(e => e.ItemId).Distinct().ToList(),
             config.ProtectList.Entries.Select(e => e.ItemId).Distinct().ToList());
-        if (mine.IsEmpty) { importResult = "Your lists are empty."; return; }
+        if (mine.IsEmpty) { ImportResult = "Your lists are empty."; return; }
 
         FileDialogs.SaveFileDialog("Where should Gleam write it?", ".json", "ARDiscard.json", ".json", (ok, path) =>
         {
@@ -154,11 +162,11 @@ public sealed partial class SettingsWindow
             try
             {
                 File.WriteAllText(path, Core.Integrations.DiscardHelperImport.Write(mine));
-                importResult = $"Wrote {mine.Discard.Count + mine.Keep.Count}.";
+                ImportResult = $"Wrote {mine.Discard.Count + mine.Keep.Count}.";
             }
             catch (Exception)
             {
-                importResult = "Could not write there.";
+                ImportResult = "Could not write there.";
             }
         });
     }
@@ -171,7 +179,7 @@ public sealed partial class SettingsWindow
             if (!ok || paths.Count == 0) return;
             importFound = paths[0];
             importLists = ReadDiscardHelper(importFound);
-            importResult = importLists.IsEmpty ? "No lists in that file." : string.Empty;
+            ImportResult = importLists.IsEmpty ? "No lists in that file." : string.Empty;
         }, 1, start, true);
     }
 
@@ -183,7 +191,7 @@ public sealed partial class SettingsWindow
         }
         catch (Exception)
         {
-            importResult = "Could not read that file.";
+            ImportResult = "Could not read that file.";
             return Core.Integrations.DiscardHelperLists.Empty;
         }
     }
