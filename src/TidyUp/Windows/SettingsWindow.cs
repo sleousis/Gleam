@@ -101,6 +101,10 @@ public sealed partial class SettingsWindow : StyledWindow
             if (Ui.Segmented("##preset", ref preset, PresetOptions)) { p.ApplyPreset(preset); dirty = true; }
             Ui.TextColored(Ui.Accent, p.Thresholds.Policy.Describe());
             Ui.Hint("You always see the full list and can change any row before anything happens.");
+            Ui.Gap(0.3f);
+            var sortAfter = config.SortAfterRun;
+            if (ImGui.Checkbox(ConfirmationWindow.SortAfterLabel, ref sortAfter)) { config.SortAfterRun = sortAfter; dirty = true; }
+            Ui.Tooltip(ConfirmationWindow.SortAfterHint);
         }
 
         using (Ui.Card("where"))
@@ -115,10 +119,6 @@ public sealed partial class SettingsWindow : StyledWindow
                 if (ImGui.Checkbox($"{kind.DisplayName()}##en{kind}", ref on)) { p.ContainerEnabled[kind] = on; dirty = true; }
                 if (i < kinds.Length - 1 && i != 2) ImGui.SameLine();
             }
-            Ui.Gap(0.3f);
-            var sortAfter = config.SortAfterRun;
-            if (ImGui.Checkbox(ConfirmationWindow.SortAfterLabel, ref sortAfter)) { config.SortAfterRun = sortAfter; dirty = true; }
-            Ui.Tooltip(ConfirmationWindow.SortAfterHint);
         }
 
         using (Ui.Card("auto"))

@@ -77,11 +77,9 @@ public sealed class ConfirmationWindow : StyledWindow
     public override void Draw()
     {
         var plan = coordinator.CurrentPlan;
-        var pilotCleaning = Pilot is { IsRunning: true, Mode: Automation.PilotMode.Clean };
-        if (pilotCleaning && !Pilot!.Status.StartsWith("Waiting for you", StringComparison.Ordinal)) { DrawPilotRunning(); return; }
+        if (Pilot is { IsRunning: true, Mode: Automation.PilotMode.Clean }) { DrawPilotRunning(); return; }
         if (coordinator.IsRunning) { DrawRunning(); return; }
         if (plan is null) { DrawCentered(string.IsNullOrEmpty(coordinator.Status) ? "Scanning your containers…" : coordinator.Status); return; }
-        if (pilotCleaning) { Ui.TextColored(Ui.Accent, Pilot!.Status); Ui.Hint("Clean what you agree with, or close this window to skip it. The run continues either way."); Ui.Gap(0.5f); }
 
         DrawTopBar(plan);
         DrawLastRunBanner();
@@ -306,30 +304,12 @@ public sealed class ConfirmationWindow : StyledWindow
         using var popup = ImRaii.Popup("##filters");
         if (!popup) return;
 
-        Ui.Hint("Container");
-        if (ImGui.MenuItem("All containers", string.Empty, filterContainer is null, true)) filterContainer = null;
-        foreach (var k in Enum.GetValues<ContainerKind>())
-            if (ImGui.MenuItem(k.DisplayName(), string.Empty, filterContainer == k, true)) filterContainer = k;
-
-        ImGui.Separator();
         Ui.Hint("Rule");
         if (ImGui.MenuItem("All rules", string.Empty, filterRule is null, true)) filterRule = null;
         foreach (var r in Core.Rules.RuleEngine.AllRules)
             if (ImGui.MenuItem(r.Name, string.Empty, filterRule == r.Id, true)) filterRule = r.Id;
         if (ImGui.MenuItem("Always clean list", string.Empty, filterRule == "always-discard", true)) filterRule = "always-discard";
         if (ImGui.MenuItem("Not suggested by any rule", string.Empty, filterRule == "manual", true)) filterRule = "manual";
-
-        ImGui.Separator();
-        Ui.Hint("Type");
-        if (ImGui.MenuItem("All types", string.Empty, filterTags.Count == 0, true)) filterTags.Clear();
-        foreach (var t in Enum.GetValues<ItemTag>())
-            if (ImGui.MenuItem(t.Label(), string.Empty, filterTags.Contains(t), true)) { if (!filterTags.Remove(t)) filterTags.Add(t); }
-
-        ImGui.Separator();
-        Ui.Hint("Trade");
-        if (ImGui.MenuItem("Tradeable and untradeable", string.Empty, filterTradeable is null, true)) filterTradeable = null;
-        if (ImGui.MenuItem("Tradeable only", string.Empty, filterTradeable == true, true)) filterTradeable = true;
-        if (ImGui.MenuItem("Untradeable only", string.Empty, filterTradeable == false, true)) filterTradeable = false;
 
         ImGui.Separator();
         Ui.Hint("Action");
@@ -536,11 +516,16 @@ public sealed class ConfirmationWindow : StyledWindow
         ImGui.TableNextColumn();
         ImGui.AlignTextToFramePadding();
         var name = row.Info.Name + (row.Item.IsHq ? " " : "");
-        ImGui.Selectable(name, index == cursor, ImGuiSelectableFlags.AllowItemOverlap, Vector2.Zero);
+        // Clicking the name ticks the row, so the whole line is a target, not just the small box.
+        if (ImGui.Selectable(name, index == cursor, ImGuiSelectableFlags.AllowItemOverlap, Vector2.Zero) && row.IsExecutable)
+        {
+            row.Checked = !row.Checked;
+            if (row.Checked) coordinator.SessionSkips.Remove(row.Key); else coordinator.SessionSkips.Add(row.Key);
+            cursor = index;
+        }
         if (ImGui.IsItemHovered()) DrawRowTooltip(row);
         DrawRowContextMenu(row);
-        ImGui.SameLine();
-        Ui.Hint($"× {row.Item.Quantity}");
+        if (row.Item.Quantity > 1) { ImGui.SameLine(); Ui.Hint($"× {row.Item.Quantity}"); }
 
         ImGui.TableNextColumn();
         DrawActionPicker(row);
@@ -736,7 +721,7 @@ public sealed class ConfirmationWindow : StyledWindow
             sectionOpen[key] = expanded;
             ImGui.SameLine();
             Ui.RightAlign(90 * Ui.Scale);
-            Ui.Pill("read-only", Ui.Muted);
+            Ui.Pill("View only", Ui.Muted);
             if (!expanded) continue;
             using var table = ImRaii.Table($"##alt{alt.CharacterId}", 3, ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingFixedFit | ImGuiTableFlags.NoSavedSettings | ImGuiTableFlags.PadOuterX);
             if (!table) continue;
@@ -749,7 +734,7 @@ public sealed class ConfirmationWindow : StyledWindow
                 ImGui.TableNextColumn();
                 var tex = icons.Get(p.Info.IconId, p.Item.IsHq);
                 if (!tex.IsNull) ImGui.Image(tex, new Vector2(26 * Ui.Scale, 26 * Ui.Scale));
-                ImGui.TableNextColumn(); ImGui.AlignTextToFramePadding(); Ui.Text(p.Info.Name); ImGui.SameLine(); Ui.Hint($"× {p.Item.Quantity}");
+                ImGui.TableNextColumn(); ImGui.AlignTextToFramePadding(); Ui.Text(p.Info.Name); if (p.Item.Quantity > 1) { ImGui.SameLine(); Ui.Hint($"× {p.Item.Quantity}"); }
                 ImGui.TableNextColumn(); ImGui.AlignTextToFramePadding(); Ui.Hint($"{p.Item.Slot.Kind.DisplayName()} · {p.Reason}");
             }
         }
@@ -802,13 +787,14 @@ public sealed class ConfirmationWindow : StyledWindow
             ? $"Clean {items} anyway"
             : handsFree && needsTravel ? $"Clean {items} everywhere" : $"Clean {items}";
         var buttonWidth = 240 * Ui.Scale;
+        var style = ImGui.GetStyle();
+        var sortW = ImGui.CalcTextSize(SortAfterLabel, false, 0).X + ImGui.GetFrameHeight() + style.ItemInnerSpacing.X;
+        var hereW = handsFree && needsTravel ? ImGui.CalcTextSize("Clean here only", false, 0).X + style.FramePadding.X * 2 + style.ItemSpacing.X : 0;
         ImGui.SameLine();
-        Ui.RightAlign(buttonWidth + (handsFree && needsTravel ? 170 : 70) * Ui.Scale + 170 * Ui.Scale);
+        Ui.RightAlign(sortW + style.ItemSpacing.X * 2 + hereW + buttonWidth);
         var sortAfter = config.SortAfterRun;
         if (ImGui.Checkbox(SortAfterLabel, ref sortAfter)) { config.SortAfterRun = sortAfter; config.Save(PluginServices.PluginInterface); }
         Ui.Tooltip(SortAfterHint);
-        ImGui.SameLine();
-        if (Ui.LinkButton("Close")) IsOpen = false;
         if (handsFree && needsTravel)
         {
             ImGui.SameLine();
