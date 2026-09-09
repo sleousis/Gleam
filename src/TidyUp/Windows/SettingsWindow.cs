@@ -59,8 +59,8 @@ public sealed partial class SettingsWindow
         this.allagan = allagan;
         this.coordinator = coordinator;
         this.openDebug = openDebug;
-        protectEditor = new ListEditor(db, icons, () => config.ProtectList, "Keep these", "Gleam never lists these, whatever else you choose.", () => player.ContentId, MarkDirty);
-        alwaysEditor = new ListEditor(db, icons, () => config.AlwaysDiscardList, "Always junk", "Gleam lists these every time, even when no rule picks them.", () => player.ContentId, MarkDirty);
+        protectEditor = new ListEditor(db, icons, () => config.ProtectList, "Anything Gleam must never touch?", "Add an item and Gleam leaves it alone, whatever the rules say.", () => player.ContentId, MarkDirty);
+        alwaysEditor = new ListEditor(db, icons, () => config.AlwaysDiscardList, "Anything that is always junk?", "Add an item and Gleam lists it every time, even when no rule picks it.", () => player.ContentId, MarkDirty);
     }
 
     private void MarkDirty() => dirty = true;
@@ -79,8 +79,14 @@ public sealed partial class SettingsWindow
             {
                 Ui.Gap(0.2f);
                 DrawEssentials();
-                Ui.Gap(0.5f);
-                if (config.AdvancedMode && ImGui.CollapsingHeader("More", ImGuiTreeNodeFlags.None)) DrawAdvancedFold();
+                if (config.AdvancedMode)
+                {
+                    Ui.Gap(0.3f);
+                    if (ImGui.CollapsingHeader("Fine detail", ImGuiTreeNodeFlags.None)) DrawAdvancedFold();
+                }
+                Ui.Gap(0.6f);
+                DrawPageFooter();
+                Ui.Gap(0.4f);
             }
         }
 
@@ -95,14 +101,18 @@ public sealed partial class SettingsWindow
 
     // ---------- the page most people see ----------
 
+    /// <summary>
+    /// The page reads as a short interview: every card asks one question in plain words and explains what
+    /// the answer changes. The order is the order a player thinks in. What Gleam should do, what happens to
+    /// junk, where it looks, what it needs, what it must never touch, and finally how much of this to show.
+    /// </summary>
     private void DrawEssentials()
     {
         var p = Editing;
 
         using (Ui.Card("purpose"))
         {
-            Ui.TextColored(Ui.Muted, "WHAT GLEAM DOES FOR YOU");
-            ImGui.Spacing();
+            Ui.Ask("What would you like Gleam to do?", "Turn one off and Gleam stops offering it. You can turn it back on any time.");
             var clean = config.UseClean;
             if (Ui.Check("Clear out my junk", ref clean)) { config.UseClean = clean || !config.UseOrganize; dirty = true; }
             Ui.Tooltip("Off: Gleam never suggests throwing anything away or selling it.");
@@ -115,72 +125,90 @@ public sealed partial class SettingsWindow
         if (config.UseClean)
         using (Ui.Card("junk"))
         {
-            Ui.TextColored(Ui.Muted, "WHAT TO DO WITH JUNK");
-            ImGui.Spacing();
+            Ui.Ask("What should happen to the junk it finds?", "Gleam shows you the whole list first. Nothing leaves your bags until you press the button.");
             var preset = Presets.Detect(p.Thresholds);
             if (Ui.Segmented("##preset", ref preset, PresetOptions)) { p.ApplyPreset(preset); dirty = true; }
-            Ui.TextColored(Ui.Accent, p.Thresholds.Policy.Describe());
-            Ui.Hint("You always see the full list and can change any row before anything happens.");
+            Ui.Gap(0.25f);
+            Ui.TextColoredWrapped(Ui.Cream, p.Thresholds.Policy.Describe());
+
             if (p.Thresholds.Policy == ActionPolicy.MarketListTradeable)
             {
                 Ui.Gap(0.3f);
                 ImGui.AlignTextToFramePadding();
-                Ui.Hint("List in stacks of");
+                Ui.Hint("Put it up for sale in stacks of");
                 ImGui.SameLine();
                 ImGui.SetNextItemWidth(70 * Ui.Scale);
                 var per = config.MarketListStackSize;
                 if (ImGui.InputInt("##mstack", ref per, 0, 0, "%d", ImGuiInputTextFlags.None)) { config.MarketListStackSize = Math.Clamp(per, 0, 9999); dirty = true; }
-                Ui.Tooltip("Smaller listings sell faster. 0 lists the whole stack at once.");
+                Ui.Tooltip("Smaller lots sell faster. 0 puts the whole stack up at once.");
                 ImGui.SameLine();
-                Ui.Hint(per == 0 ? "(whole stacks)" : "per listing");
+                Ui.Hint(per == 0 ? "(the whole stack)" : "at a time");
             }
-            Ui.Gap(0.3f);
-            var sortAfter = config.SortAfterRun;
-            if (Ui.Check(ConfirmationWindow.SortAfterLabel, ref sortAfter)) { config.SortAfterRun = sortAfter; dirty = true; }
-            Ui.Tooltip(ConfirmationWindow.SortAfterHint);
         }
 
         if (config.AdvancedMode)
         using (Ui.Card("where"))
         {
-            Ui.TextColored(Ui.Muted, "WHERE TO LOOK");
-            ImGui.Spacing();
-            var kinds = Enum.GetValues<ContainerKind>();
-            for (var i = 0; i < kinds.Length; i++)
-            {
-                var kind = kinds[i];
-                var on = p.IsContainerEnabled(kind);
-                if (Ui.Check($"{kind.DisplayName()}##en{kind}", ref on)) { p.ContainerEnabled[kind] = on; dirty = true; }
-                if (i < kinds.Length - 1 && i != 2) ImGui.SameLine();
-            }
+            Ui.Ask("Where should Gleam look?", "It only ever opens the places ticked here.");
+            DrawContainerChecks(p);
         }
 
         DrawRequiredPlugins();
 
-        if (config.AdvancedMode)
-        using (Ui.Card("ventures"))
-        {
-            Ui.TextColored(Ui.Muted, "AFTER VENTURES");
-            ImGui.Spacing();
-            var a = config.Automation;
-            var after = a.CleanAfterVentures;
-            if (Ui.Check("Discard junk from my bags when AutoRetainer finishes a retainer", ref after)) { a.CleanAfterVentures = after; dirty = true; }
-            ImGui.SameLine();
-            if (AutoRetainer is null || !AutoRetainer.IsInstalled) Ui.Pill("needs the AutoRetainer plugin", Ui.Warn); else Ui.Pill("AutoRetainer", Ui.Ok, Dalamud.Interface.FontAwesomeIcon.Check);
-            Ui.HintWrapped("Only rows the rules would tick on their own, and only discards. Selling and listing still wait for your review.");
-        }
-
         using (Ui.Card("protect")) protectEditor.Draw();
         if (config.AdvancedMode) using (Ui.Card("always")) alwaysEditor.Draw();
 
-        using (Ui.Card("mode"))
+        if (config.AdvancedMode)
+        using (Ui.Card("ventures"))
         {
-            Ui.TextColored(Ui.Muted, "SHOW MORE");
-            ImGui.Spacing();
-            var adv = config.AdvancedMode;
-            if (Ui.Check("Show advanced options", ref adv)) { config.AdvancedMode = adv; dirty = true; }
-            Ui.HintWrapped("Filters and sorting, a choice of action on every row, layouts and rules, and every other setting. Off keeps Gleam to one list and one button.");
+            Ui.Ask("Should Gleam tidy up after your retainers?", "Needs the AutoRetainer plugin. It only discards, and only what the rules would tick on their own.");
+            var a = config.Automation;
+            var after = a.CleanAfterVentures;
+            if (Ui.Check("Throw away junk a finished venture leaves in my bags", ref after)) { a.CleanAfterVentures = after; dirty = true; }
+            ImGui.SameLine();
+            if (AutoRetainer is null || !AutoRetainer.IsInstalled) Ui.Pill("not installed", Ui.Warn); else Ui.Pill("AutoRetainer", Ui.Ok, Dalamud.Interface.FontAwesomeIcon.Check);
         }
+
+        using (Ui.Card("finish"))
+        {
+            Ui.Ask("Anything to do once a run has finished?");
+            var sortAfter = config.SortAfterRun;
+            if (Ui.Check(ConfirmationWindow.SortAfterLabel, ref sortAfter)) { config.SortAfterRun = sortAfter; dirty = true; }
+            Ui.Tooltip(ConfirmationWindow.SortAfterHint);
+        }
+    }
+
+    /// <summary>The containers Gleam may open, in a row that wraps rather than running off the card.</summary>
+    private void DrawContainerChecks(Profile p)
+    {
+        var used = 0f;
+        var room = ImGui.GetContentRegionAvail().X;
+        foreach (var kind in Enum.GetValues<ContainerKind>())
+        {
+            var label = kind.DisplayName();
+            var w = Ui.CheckWidth(label);
+            if (used > 0f && used + ImGui.GetStyle().ItemSpacing.X + w <= room) { ImGui.SameLine(); used += ImGui.GetStyle().ItemSpacing.X + w; }
+            else used = w;
+            var on = p.IsContainerEnabled(kind);
+            if (Ui.Check($"{label}##en{kind}", ref on)) { p.ContainerEnabled[kind] = on; dirty = true; }
+        }
+    }
+
+    /// <summary>
+    /// The last line of the page, and the only part of it that is not a setting: how much of the page you
+    /// want to see, and the way out when something is broken. Both stay reachable in either mode.
+    /// </summary>
+    private void DrawPageFooter()
+    {
+        var adv = config.AdvancedMode;
+        if (Ui.Check("Show me every setting", ref adv)) { config.AdvancedMode = adv; dirty = true; }
+        Ui.Tooltip("Adds filters and sorting, a choice of action on every row, layouts and rules, and the rest of the settings. Off keeps Gleam to one list and one button.");
+
+        var link = "Something is not working";
+        var linkWidth = ImGui.CalcTextSize(link, false, 0).X + ImGui.GetStyle().FramePadding.X * 2;
+        Ui.RightAlignOrWrap(linkWidth, 260f * Ui.Scale);
+        if (Ui.LinkButton(link)) openDebug();
+        Ui.Tooltip("Opens the log of what Gleam tried. Only needed when a step keeps failing after a game update.");
     }
 
     /// <summary>
@@ -194,26 +222,23 @@ public sealed partial class SettingsWindow
 
         using (Ui.Card("auto"))
         {
-            Ui.TextColored(Ui.Muted, "PLUGINS GLEAM NEEDS");
-            ImGui.Spacing();
-            Ui.HintWrapped("Gleam does the walking itself. It opens the saddlebag, goes to your retainers and the glamour dresser, visits your Grand Company for anything to be turned in, and finds a merchant for anything your retainers would not buy. Two free plugins make that possible.");
-            Ui.Gap(0.4f);
+            Ui.Ask("What Gleam needs to work", "Gleam travels and walks to every bell, dresser, merchant and Grand Company a run needs. Two free plugins do that part, so both have to be installed.");
 
-            Requirement("vnavmesh", haveNav, "Needed. Walks your character to the bell, the dresser and the merchant.");
-            Requirement("Lifestream", haveTravel, "Needed to travel. Without it, start a run in an inn and Gleam manages there.");
+            Requirement("vnavmesh", haveNav, "Walks you to the bell, the dresser and the merchant.");
+            Requirement("Lifestream", haveTravel, "Teleports you to the places a run needs.");
 
             if (!haveNav || !haveTravel)
             {
                 Ui.Gap(0.4f);
                 if (!haveNav)
                 {
-                    Ui.TextColored(Ui.Danger, "Install vnavmesh to let Gleam finish a run.");
-                    Ui.HintWrapped("Without it Gleam still cleans and moves whatever you open yourself. Anything further away waits until you go there.");
+                    Ui.TextColored(Ui.Danger, "Install vnavmesh to let a run finish.");
+                    Ui.HintWrapped("Without it Gleam only handles what you open yourself.");
                 }
                 else
                 {
-                    Ui.TextColored(Ui.Warn, "Install Lifestream to let Gleam travel between places.");
-                    Ui.HintWrapped("Without it a run cannot teleport. Start one while you are already in an inn and Gleam reaches the bell and the dresser by itself.");
+                    Ui.TextColored(Ui.Warn, "Install Lifestream to let Gleam travel.");
+                    Ui.HintWrapped("Without it, start a run in an inn and Gleam manages from there.");
                 }
             }
 
@@ -222,37 +247,42 @@ public sealed partial class SettingsWindow
                 Ui.Gap(0.4f);
                 var a = config.Automation;
                 var cleanUnseen = a.UnseenRows != UnseenRowsMode.Skip;
-                if (Ui.Check("Also clean items found along the way", ref cleanUnseen)) { a.UnseenRows = cleanUnseen ? UnseenRowsMode.Clean : UnseenRowsMode.Skip; dirty = true; }
-                Ui.Tooltip("Retainers and the dresser only show their contents once open. On: those items are cleaned by the same rules on the spot. Off: they wait for your next review.");
+                if (Ui.Check("Also clean junk it only finds once it gets there", ref cleanUnseen)) { a.UnseenRows = cleanUnseen ? UnseenRowsMode.Clean : UnseenRowsMode.Skip; dirty = true; }
+                Ui.Tooltip("A retainer or the dresser only shows what it holds once it is open. On: Gleam applies the same rules on the spot. Off: those items wait for your next review.");
             }
         }
     }
 
-    /// <summary>One required plugin: its state first, then its name, then what Gleam uses it for.</summary>
+    /// <summary>
+    /// One required plugin: its state first, then its name, then what Gleam uses it for. The sentence sits
+    /// beside the name while there is room for it and drops underneath when the window is narrow, so the
+    /// row never runs off the card.
+    /// </summary>
     private static void Requirement(string name, bool installed, string what)
     {
+        var left = ImGui.GetCursorScreenPos().X;
+        var room = ImGui.GetContentRegionAvail().X;
         if (installed) Ui.Pill("installed", Ui.Ok, Dalamud.Interface.FontAwesomeIcon.Check);
         else Ui.Pill("missing", Ui.Danger, Dalamud.Interface.FontAwesomeIcon.ExclamationTriangle);
         ImGui.SameLine();
         ImGui.AlignTextToFramePadding();
         Ui.Text(name);
-        ImGui.SameLine();
-        Ui.Hint(what);
+
+        var spacing = ImGui.GetStyle().ItemSpacing.X;
+        var spare = room - (ImGui.GetItemRectMax().X - left) - spacing;
+        if (ImGui.CalcTextSize(what, false, 0).X <= spare) { ImGui.SameLine(); Ui.Hint(what); }
+        else { using var indent = ImRaii.PushIndent(6f, true, true); Ui.HintWrapped(what); }
     }
 
     // ---------- everything else, folded ----------
 
     private void DrawAdvancedFold()
     {
-        Ui.Gap(0.5f);
-        Fold("What counts as junk", DrawRules);
-        Fold("Retainers", DrawContainers);
-        Fold("Notifications", DrawNotifications);
-        Fold("Other characters", DrawIntegrations);
-
-        Ui.Gap(0.5f);
-        if (Ui.LinkButton("Troubleshooting")) openDebug();
-        Ui.Tooltip("Only needed when a step keeps failing after a game update.");
+        Ui.Gap(0.4f);
+        Fold("What Gleam treats as junk", DrawRules);
+        Fold("Which retainers it may use", DrawContainers);
+        Fold("When Gleam speaks up", DrawNotifications);
+        Fold("Other plugins", DrawIntegrations);
     }
 
     private static void Fold(string title, Action body)

@@ -59,6 +59,63 @@ for W in WIDTHS:
     fixed = 24 + 30 + 128 + 96 + 24                 # tick, icon, action, market, cell padding
     check("review table", W, fixed + 160 * SCALE, inner, "item name column falls under 160px")
 
+    # ---- settings: every card is the window less its padding, less the card's own
+    card = inner - 24 * SCALE
+    check_box = lambda t: w(t) + FRAME_H + 4 * SCALE
+
+    # what would you like Gleam to do: two ticks with a wide gap between them
+    check("settings purpose", W, check_box("Clear out my junk") + 24 * SCALE + check_box("Put my things away"), card,
+          "the two purpose ticks collide")
+
+    # what should happen to junk: the preset group, then the market stack row
+    seg = sum(w(t) + FRAME_PAD * 2 + 6 * SCALE for t in ("Sell on market board", "Sell to vendors", "Discard all")) + 8 * SCALE
+    check("settings presets", W, seg, card, "the preset pills run off the card")
+    check("settings market stack", W, w("Put it up for sale in stacks of") + ITEM + 70 * SCALE + ITEM + w("(the whole stack)"), card,
+          "the stack-size row runs off the card")
+
+    # where should Gleam look: the ticks wrap, so only the widest single one has to fit
+    for name in ("Bags", "Armoury chest", "Chocobo saddlebag", "Retainer", "Glamour dresser"):
+        check("settings container tick", W, check_box(name), card, f"'{name}' does not fit on a line of its own")
+
+    # what Gleam needs: pill, name, and the sentence beside it or wrapped under it
+    for pill, name, what in [("installed", "vnavmesh", "Walks you to the bell, the dresser and the merchant."),
+                             ("missing", "Lifestream", "Teleports you to the places a run needs.")]:
+        head = w(pill) + FRAME_PAD * 2 + 16 * SCALE + ITEM + w(name)
+        check("settings requirement head", W, head, card, "the plugin name alone does not fit")
+        # when it does not fit beside the name the C# drops it under, indented, where it wraps freely;
+        # what has to hold is that the indented column is still wide enough to read.
+        if head + ITEM + w(what) > card:
+            check("settings requirement wrapped", W, 220 * SCALE, card - 6 * SCALE,
+                  "the wrapped sentence has under 220px to wrap into")
+
+    # after your retainers, and the run-finished tick
+    check("settings ventures", W,
+          check_box("Throw away junk a finished venture leaves in my bags") + ITEM + w("not installed") + FRAME_PAD * 2, card,
+          "the venture tick and its pill collide")
+    check("settings finish", W, check_box("Sort bags afterwards"), card, "the sort tick does not fit")
+
+    # the page footer: a tick on the left, a link pushed to the right
+    foot_tick = check_box("Show me every setting")
+    foot_link = w("Something is not working") + FRAME_PAD * 2
+    check("settings footer", W, foot_tick + ITEM + foot_link, inner, "the advanced tick and the help link collide")
+
+    # the folds, indented under their header
+    fold = inner - 12 * SCALE
+    check("fold rules stack guard", W, w("Leave stacks of") + ITEM + 70 * SCALE + ITEM + w("or more alone (off)"), fold,
+          "the large-stack row runs off the fold")
+    check("fold notifications slider", W, 180 * SCALE + ITEM + w("Nudge when bags are this full"), fold,
+          "the fullness slider and its label collide")
+    check("fold notifications tick", W, check_box("Open the review when a saddlebag, retainer or dresser opens"), fold,
+          "the auto-open tick does not fit")
+    check("fold discard helper", W,
+          200 * SCALE + ITEM + w("Give it mine") + FRAME_PAD * 2 + ITEM + w("Pick a file") + FRAME_PAD * 2 + ITEM + w("Added 12."), fold,
+          "the Discard Helper row runs off the fold")
+
+    # the two list editors: search box, scope tick, then the table's fixed columns
+    check("list editor search", W, 240 * SCALE + ITEM + check_box("This character only"), card,
+          "the search box and its scope tick collide")
+    check("list editor table", W, (28 + 90 + 70) * SCALE + 160 * SCALE, card, "the item name column falls under 160px")
+
     # ---- run screen bars
     bar = min(max(W * 0.6, 260 * SCALE), 720 * SCALE)
     check("run bar", W, bar, inner, "bar wider than the window")

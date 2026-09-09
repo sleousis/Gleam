@@ -14,6 +14,8 @@ public sealed partial class SettingsWindow
     private void DrawRules()
     {
         var p = Editing;
+        Ui.HintWrapped("Each line is one reason Gleam calls something junk. Untick one and it stops looking for that.");
+        Ui.Gap(0.3f);
         foreach (var rule in RuleEngine.AllRules)
         {
             using var id = ImRaii.PushId(rule.Id);
@@ -22,7 +24,7 @@ public sealed partial class SettingsWindow
             Ui.Tooltip(rule.Description);
         }
 
-        Ui.Gap(0.3f);
+        Ui.Gap(0.4f);
         ImGui.AlignTextToFramePadding();
         Ui.Hint("Leave stacks of");
         ImGui.SameLine();
@@ -40,13 +42,14 @@ public sealed partial class SettingsWindow
     {
         var p = Editing;
         var known = coordinator.RetainerNames;
+        Ui.HintWrapped("An unticked retainer is left completely alone: nothing is cleaned from it and nothing is moved to it.");
+        Ui.Gap(0.3f);
         if (known.Count == 0) { Ui.Hint("Summon a retainer once and they will appear here."); return; }
         foreach (var (id, name) in known)
         {
             var included = !p.ExcludedRetainerIds.Contains(id);
             if (Ui.Check($"{name}##ret{id}", ref included)) { if (included) p.ExcludedRetainerIds.Remove(id); else p.ExcludedRetainerIds.Add(id); dirty = true; }
         }
-        Ui.Hint("Unticked retainers are left alone.");
     }
 
     // ---------- Notifications ----------
@@ -54,6 +57,8 @@ public sealed partial class SettingsWindow
     private void DrawNotifications()
     {
         var p = Editing;
+        Ui.HintWrapped("Gleam never acts on its own. These only decide when it mentions that there is something to do.");
+        Ui.Gap(0.3f);
         var dtr = p.ShowDtrEntry;
         if (Ui.Check("Show bag space in the server info bar", ref dtr)) { p.ShowDtrEntry = dtr; dirty = true; }
         Ui.Tooltip("Click it to open the review.");
@@ -79,24 +84,21 @@ public sealed partial class SettingsWindow
 
     private void DrawIntegrations()
     {
+        Ui.HintWrapped("Extras for plugins you may already have. Gleam works without every one of them.");
+        Ui.Gap(0.3f);
         using (ImRaii.Disabled(!allagan.IsInstalled))
         {
             var alts = config.ShowAltSections;
             if (Ui.Check("Show other characters in the review", ref alts)) { config.ShowAltSections = alts; dirty = true; }
         }
         ImGui.SameLine();
-        if (!allagan.IsInstalled) Ui.Pill("needs the Allagan Tools plugin", Ui.Warn);
+        if (!allagan.IsInstalled) Ui.Pill("not installed", Ui.Warn);
         else Ui.Pill("Allagan Tools", Ui.Ok, Dalamud.Interface.FontAwesomeIcon.Check);
 
         Ui.Gap(0.4f);
         DrawDiscardHelperImport();
     }
 
-    /// <summary>
-    /// Brings across the lists from Discard Helper. Its file lives in a known place, so there is nothing to
-    /// type: Gleam finds it, says what is in it, and only then offers to bring it in. Browsing is there for
-    /// anyone whose game keeps its settings somewhere else.
-    /// </summary>
     /// <summary>
     /// Two lists can come across from Discard Helper, and go back. Almost nobody needs this, so it is one
     /// line and one button: what is in the file, and whether to take it. Everything else is a quiet link.
@@ -117,7 +119,7 @@ public sealed partial class SettingsWindow
                 importResult = junk + kept == 0 ? "You already have all of them." : $"Added {junk + kept}.";
                 dirty = true;
             }
-            Ui.Tooltip("What it throws away joins your Always junk list. What it protects joins Keep these.");
+            Ui.Tooltip("What it throws away joins your always-junk list. What it protects joins your never-touch list.");
         }
         else
         {

@@ -674,7 +674,7 @@ public sealed class OrganizerPanel
         ImGui.SameLine(); TriState("Unique", ref when, w => w.IsUnique, (w, v) => w.IsUnique = v, "Unique", "Not unique");
         ImGui.SameLine(); TriState("Jobs", ref when, w => w.ForJobsPlayed, (w, v) => w.ForJobsPlayed = v, "Jobs I play", "Jobs I don't play");
         TriState("Gear set", ref when, w => w.InGearset, (w, v) => w.InGearset = v, "In a gear set", "Not in a gear set");
-        ImGui.SameLine(); TriState("Keep these", ref when, w => w.OnNeverTouchList, (w, v) => w.OnNeverTouchList = v, "On the list", "Not on the list");
+        ImGui.SameLine(); TriState("Never touch", ref when, w => w.OnNeverTouchList, (w, v) => w.OnNeverTouchList = v, "On the list", "Not on the list");
 
         // Levels
         Range("Item level", ref when, w => w.MinItemLevel, w => w.MaxItemLevel, (w, v) => w.MinItemLevel = v, (w, v) => w.MaxItemLevel = v, 999);
