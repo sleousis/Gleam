@@ -240,19 +240,31 @@ internal static class Ui
         var r = 5f * Scale;
         var dim = disabled ? 0.45f : 1f;
         dl.AddRectFilled(pos, pos + new Vector2(size, size), ImGui.GetColorU32(Mix(new Vector4(1, 1, 1, (0.06f + 0.06f * hv) * dim), Accent * new Vector4(1, 1, 1, dim), on)), r);
-        dl.AddRect(pos, pos + new Vector2(size, size), ImGui.GetColorU32(Mix(InkEdge * new Vector4(1, 1, 1, dim), Accent, on)), r);
+        // The border fades out as the box fills: an outline over a solid fill is what makes the edge look ragged.
+        dl.AddRect(pos, pos + new Vector2(size, size), ImGui.GetColorU32(Mix(InkEdge * new Vector4(1, 1, 1, dim), Accent * new Vector4(1, 1, 1, 0f), on)), r, ImDrawFlags.None, 1f * Scale);
         if (on > 0.01f)
         {
             // The short leg draws first, then the long one: a tick being made, not a tick appearing.
-            var p1 = pos + new Vector2(size * 0.26f, size * 0.52f);
-            var p2 = pos + new Vector2(size * 0.43f, size * 0.70f);
-            var p3 = pos + new Vector2(size * 0.77f, size * 0.29f);
+            // Plain lines meet in a hard notch and end in square edges, so each end and the corner gets a
+            // small filled circle. Those are anti-aliased, which is what keeps the tick smooth at this size.
+            var p1 = pos + new Vector2(size * 0.26f, size * 0.53f);
+            var p2 = pos + new Vector2(size * 0.44f, size * 0.71f);
+            var p3 = pos + new Vector2(size * 0.77f, size * 0.30f);
             var col = ImGui.GetColorU32(OnAccent * new Vector4(1, 1, 1, on * dim));
-            var w = 2.3f * Scale;
+            var w = Math.Max(2f, size * 0.135f);
+            var cap = w / 2f;
             var a = Math.Clamp(on * 2f, 0f, 1f);
-            dl.AddLine(p1, p1 + (p2 - p1) * a, col, w);
+            var end1 = p1 + (p2 - p1) * a;
+            dl.AddLine(p1, end1, col, w);
+            dl.AddCircleFilled(p1, cap, col, 12);
+            dl.AddCircleFilled(end1, cap, col, 12);
             var b = Math.Clamp(on * 2f - 1f, 0f, 1f);
-            if (b > 0) dl.AddLine(p2, p2 + (p3 - p2) * b, col, w);
+            if (b > 0)
+            {
+                var end2 = p2 + (p3 - p2) * b;
+                dl.AddLine(p2, end2, col, w);
+                dl.AddCircleFilled(end2, cap, col, 12);
+            }
         }
         return clicked;
     }
