@@ -30,6 +30,12 @@ Market prices come from Universalis and need an internet connection.</Descriptio
     <AssemblyName>TidyUp</AssemblyName>
     <LangVersion>14.0</LangVersion>
     <ImplicitUsings>enable</ImplicitUsings>
+    <!--
+      Pin the output path. Without this MSBuild appends the platform whenever it is not AnyCPU, so building
+      the solution (which maps this project to x64) wrote bind\Release while building the project alone
+      wrote bin\Release. The dev plugin loads one of them, so the other silently went stale.
+    -->
+    <OutputPath>bin\$(Configuration)\</OutputPath>
   </PropertyGroup>
 
   <ItemGroup>
