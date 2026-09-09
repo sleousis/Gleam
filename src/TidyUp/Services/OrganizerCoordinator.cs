@@ -155,6 +155,7 @@ public sealed class OrganizerCoordinator : IDisposable
             var identity = new RunIdentity(player.ContentId, player.CharacterName);
             var report = await executor.ExecuteAsync(ops, identity, runCts.Token, progress).ConfigureAwait(false);
             LastReport = report;
+            if (report.Done > 0 && !config.HasOrganizedOnce) { config.HasOrganizedOnce = true; config.Save(PluginServices.PluginInterface); }
             PendingMoves.RemoveAll(ops.Contains);
             PendingMoves.AddRange(report.Pending);
             Status = report.Summary();

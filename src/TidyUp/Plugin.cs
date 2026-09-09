@@ -106,7 +106,7 @@ public sealed class Plugin : IDalamudPlugin
             History = historyWindow,
             SettingsPage = settingsWindow,
         };
-        void OpenReview() => confirmWindow.Show(Ui.AppMode.Clean);
+        void OpenReview() => confirmWindow.Show(confirmWindow.HomePage);
         organizerPanel.SwitchToClean = OpenReview;
         organizerPanel.OpenSettings = () => confirmWindow.Show(Ui.AppMode.Settings);
         historyWindow.Back = OpenReview;
@@ -114,7 +114,7 @@ public sealed class Plugin : IDalamudPlugin
         windows.AddWindow(confirmWindow);
         windows.AddWindow(debugWindow);
 
-        coordinator.RequestOpenWindow += () => confirmWindow.Show(Ui.AppMode.Clean);
+        coordinator.RequestOpenWindow += () => confirmWindow.Show(Ui.AppMode.Clean);   // a container opened: that is a cleaning prompt
 
         var nav = new VnavmeshIpc(pi);
         var travel = new LifestreamIpc(pi);
@@ -246,7 +246,7 @@ public sealed class Plugin : IDalamudPlugin
                 break;
             default:
                 if (confirmWindow.IsOpen) confirmWindow.IsOpen = false;
-                else confirmWindow.Show(Ui.AppMode.Clean);
+                else confirmWindow.Show(confirmWindow.HomePage);
                 break;
         }
     }
@@ -264,7 +264,7 @@ public sealed class Plugin : IDalamudPlugin
         config.Save(pi);
         chat.Print("Gleam is ready. Type /gleam (or just /gl) to see what it thinks is junk. Nothing is discarded or sold until you press Clean.", "Gleam");
     }
-    private void OpenMain() => confirmWindow.Show(Ui.AppMode.Clean);
+    private void OpenMain() => confirmWindow.Show(confirmWindow.HomePage);
     private void OpenConfig() => confirmWindow.Show(Ui.AppMode.Settings);
 
     public void Dispose()
