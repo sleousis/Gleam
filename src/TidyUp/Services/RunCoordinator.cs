@@ -341,25 +341,29 @@ public sealed class RunCoordinator : IDisposable
 
     // ---------- resume ----------
 
-    /// <summary>A closed container just opened: re-evaluate it live and show its own confirmation.</summary>
     /// <summary>True while the hands-free pilot owns the flow; container-open triggers stay quiet then.</summary>
     public Func<bool> IsPilotRunning { get; set; } = () => false;
 
     /// <summary>The pilot reports once at the end; per-queue chat lines would only confuse.</summary>
     public bool SuppressChatSummary { get; set; }
 
+    /// <summary>A closed container just opened: re-evaluate it live and show its own confirmation.</summary>
     public async Task OnContainerOpenedAsync(ContainerKind kind)
     {
         if (IsRunning || IsPilotRunning() || !player.IsLoaded) return;
         var profile = EffectiveProfile;
         if (!profile.IsContainerEnabled(kind)) return;
 
-        var hasPending = PendingActions.Any(p => p.Kind == kind);
+        // Only this retainer's rows are in play; the other retainers keep theirs.
+        var owner = kind == ContainerKind.Retainer ? GameInventoryScanner.ActiveRetainer().Id : 0UL;
+        bool Here(QueuedAction p) => p.Kind == kind && (owner == 0 || p.Slot.OwnerId == owner);
+
+        var hasPending = PendingActions.Any(Here);
         if (!hasPending && !profile.IsAutoOpen(kind)) return;
 
         // Pending actions for this container are dropped: the live re-plan supersedes them and the
         // per-container confirmation is what the user sees. Nothing runs without that click.
-        PendingActions.RemoveAll(p => p.Kind == kind);
+        PendingActions.RemoveAll(Here);
         await RefreshPlanAsync(openWindow: false, focus: kind).ConfigureAwait(false);
         if (CurrentPlan is not null && CurrentPlan.AllRows.Any(r => r.IsExecutable))
             RequestOpenWindow?.Invoke();

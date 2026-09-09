@@ -440,8 +440,7 @@ public sealed class ConfirmationWindow : StyledWindow
     private void DrawSection(PlanSection section, List<PlanRow> rows)
     {
         var key = $"{section.Kind}:{section.OwnerId}";
-        var defaultOpen = !(section.Kind == ContainerKind.Retainer && coordinator.EffectiveProfile.RetainerSectionsCollapsed);
-        if (!sectionOpen.TryGetValue(key, out var open)) open = defaultOpen;
+        if (!sectionOpen.TryGetValue(key, out var open)) open = true;
 
         ImGui.SetNextItemOpen(open, ImGuiCond.Always);
         var checkedHere = rows.Count(r => r.Checked);
@@ -910,14 +909,11 @@ public sealed class ConfirmationWindow : StyledWindow
         var accept = ImGui.IsKeyPressed(ImGuiKey.Enter, false);
         var cancel = ImGui.IsKeyPressed(ImGuiKey.Escape, false);
 
-        if (config.GamepadNavigation)
-        {
-            down |= gamepad.Pressed(GamepadButtons.DpadDown) > 0;
-            up |= gamepad.Pressed(GamepadButtons.DpadUp) > 0;
-            toggle |= gamepad.Pressed(GamepadButtons.South) > 0;
-            accept |= gamepad.Pressed(GamepadButtons.West) > 0;
-            cancel |= gamepad.Pressed(GamepadButtons.East) > 0;
-        }
+        down |= gamepad.Pressed(GamepadButtons.DpadDown) > 0;
+        up |= gamepad.Pressed(GamepadButtons.DpadUp) > 0;
+        toggle |= gamepad.Pressed(GamepadButtons.South) > 0;
+        accept |= gamepad.Pressed(GamepadButtons.West) > 0;
+        cancel |= gamepad.Pressed(GamepadButtons.East) > 0;
 
         if (down) cursor = Math.Min(count - 1, cursor + 1);
         if (up) cursor = Math.Max(0, cursor - 1);
