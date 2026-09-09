@@ -99,7 +99,7 @@ public sealed partial class SettingsWindow
             {
                 var ids = Core.Integrations.DiscardHelperImport.ParseItemIds(File.ReadAllText(importPath));
                 var added = ids.Count(id => config.AlwaysDiscardList.Add(id, note: "Imported from Discard Helper"));
-                importResult = $"Added {added} item{(added == 1 ? "" : "s")} to Always clean.";
+                importResult = $"Added {added} item{(added == 1 ? "" : "s")} to Always junk.";
                 dirty = true;
             }
             catch (Exception ex)

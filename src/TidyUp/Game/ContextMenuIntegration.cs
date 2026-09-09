@@ -49,7 +49,7 @@ public sealed class ContextMenuIntegration : IDisposable
             {
                 new MenuItem
                 {
-                    Name = isProtected ? "Gleam: allow again" : "Gleam: never touch",
+                    Name = isProtected ? "Gleam: stop keeping this" : "Gleam: keep this, always",
                     PrefixChar = 'T',
                     OnClicked = _ =>
                     {
@@ -61,7 +61,7 @@ public sealed class ContextMenuIntegration : IDisposable
                 },
                 new MenuItem
                 {
-                    Name = isAlways ? "Gleam: stop always cleaning" : "Gleam: always clean",
+                    Name = isAlways ? "Gleam: stop treating as junk" : "Gleam: treat as junk, always",
                     PrefixChar = 'T',
                     OnClicked = _ =>
                     {
