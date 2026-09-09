@@ -1279,11 +1279,11 @@ public sealed class ConfirmationWindow : StyledWindow
         var total = pilot.PlannedTotal;
         ImGui.SetCursorPosX(left);
         Ui.ProgressBar("pilot", total > 0 ? (float)pilot.PlannedDone / total : null, width, Ui.ProgressLabel(pilot.PlannedDone, total), "Whole run");
-        Ui.Gap(0.6f);
+        Ui.Gap(0.5f);
         ImGui.SetCursorPosX(left);
         var stopTotal = coordinator.IsRunning ? coordinator.RunTotal : 0;
         Ui.ProgressBar("pilot-stop", stopTotal > 0 ? (float)coordinator.RunDone / stopTotal : null, width,
-            stopTotal > 0 ? Ui.ProgressLabel(coordinator.RunDone, stopTotal) : null, coordinator.IsRunning ? "At this stop" : "On the way");
+            stopTotal > 0 ? Ui.ProgressLabel(coordinator.RunDone, stopTotal) : null, coordinator.IsRunning ? "At this stop" : "On the way", primary: false);
         if (current is not null) { Ui.Gap(0.3f); ImGui.SetCursorPosX(left); Ui.Hint(current); }
         Ui.Gap(1.2f);
         ImGui.SetCursorPosX((ImGui.GetWindowWidth() - 120 * Ui.Scale) / 2);

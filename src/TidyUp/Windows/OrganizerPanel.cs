@@ -995,11 +995,11 @@ public sealed class OrganizerPanel
             // Hands-free: the whole plan on top, the storage being worked on underneath.
             ImGui.SetCursorPosX(left);
             Ui.ProgressBar("organize", pilot.PlannedTotal > 0 ? (float)pilot.PlannedDone / pilot.PlannedTotal : null, width, Ui.ProgressLabel(pilot.PlannedDone, pilot.PlannedTotal), "Whole run");
-            Ui.Gap(0.6f);
+            Ui.Gap(0.5f);
             ImGui.SetCursorPosX(left);
             var stopTotal = organizer.IsRunning ? organizer.RunTotal : 0;
             Ui.ProgressBar("organize-stop", stopTotal > 0 ? (float)organizer.RunDone / stopTotal : null, width,
-                stopTotal > 0 ? Ui.ProgressLabel(organizer.RunDone, stopTotal) : null, organizer.IsRunning ? "At this stop" : "On the way");
+                stopTotal > 0 ? Ui.ProgressLabel(organizer.RunDone, stopTotal) : null, organizer.IsRunning ? "At this stop" : "On the way", primary: false);
             if (current is not null) { Ui.Gap(0.3f); ImGui.SetCursorPosX(left); Ui.Hint(current); }
         }
         Ui.Gap(1.2f);
