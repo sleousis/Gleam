@@ -274,6 +274,7 @@ public sealed class RunCoordinator : IDisposable
                 {
                     RateLimit = TimeSpan.FromMilliseconds(config.Callbacks.RateLimitMs),
                     OnMateriaFailure = config.ActWhenMateriaFails ? MateriaFailurePolicy.ActAnyway : MateriaFailurePolicy.LeaveItem,
+                    MarketStackSize = config.MarketListStackSize,
                 });
             var progress = new Progress<ActionResult>(r =>
             {
@@ -299,8 +300,10 @@ public sealed class RunCoordinator : IDisposable
                 chat.Print($"{report.Summary()}.", "Tidy Up");
                 foreach (var (reason, count) in report.PendingByReason())
                     chat.Print($"{count} waiting: {(string.IsNullOrEmpty(reason) ? "its storage is not open" : reason)}.", "Tidy Up");
-                if (report.Moved.Count > 0)
+                if (report.Moved.Any(m => m.BroughtHome))
                     chat.Print("Close the retainer and clean again to finish the items brought back.", "Tidy Up");
+                if (report.Moved.Any(m => !m.BroughtHome))
+                    chat.Print("Some stacks are only partly listed. A retainer with free market slots can finish them.", "Tidy Up");
                 if (report.Aborted && report.Failed > 0)
                     chat.PrintError($"Stopped: {report.AbortReason}. Nothing after that was touched.", "Tidy Up");
             }

@@ -93,11 +93,24 @@ public sealed class RunPlanner
 
         var proposals = new List<Proposal>(engine.Evaluate(candidates, inputs.InfoLookup, ctx, profile.Thresholds, profile.EnabledRules));
 
+        // A big stack is a hoard, not junk: no rule may propose it, but it stays on the list for hand-picking.
+        if (profile.LargeStackGuard > 0)
+        {
+            foreach (var p in proposals.Where(p => p.Action.IsDestructive() && p.Item.Quantity >= profile.LargeStackGuard).ToList())
+            {
+                proposals.Remove(p);
+                var why = $"Stack of {p.Item.Quantity}; rules leave stacks of {profile.LargeStackGuard} or more alone";
+                if (inputs.IncludeUnproposed) guarded.Add((p.Item, p.Info, why));
+                else plan.Excluded.Add(new ExcludedItem(p.Item, p.Info, why, false));
+            }
+        }
+
         if (inputs.IncludeUnproposed)
         {
             var proposedSlots = new HashSet<SlotRef>(proposals.Select(p => p.Item.Slot));
+            var guardedSlots = new HashSet<SlotRef>(guarded.Select(g => g.Item.Slot));
             var handPick = candidates
-                .Where(c => !proposedSlots.Contains(c.Slot))
+                .Where(c => !proposedSlots.Contains(c.Slot) && !guardedSlots.Contains(c.Slot))
                 .Select(c => (Item: c, Info: inputs.InfoLookup(c.ItemId), Why: (string?)null))
                 .Concat(guarded.Select(g => (g.Item, Info: (ItemInfo?)g.Info, Why: (string?)g.Why)));
             foreach (var (item, info, why) in handPick)

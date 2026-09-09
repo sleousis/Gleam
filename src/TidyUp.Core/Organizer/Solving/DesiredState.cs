@@ -40,6 +40,7 @@ public static class DesiredStateBuilder
         var retainersInScope = plan.RetainersInScope.Count == 0 ? new HashSet<ulong>(knownRetainers) : plan.RetainersInScope;
         var rules = plan.Rules.Where(r => r.Enabled).ToList();
 
+        var matched = new List<Match>();
         foreach (var item in items)
         {
             if (item.Slot.Kind == ContainerKind.GlamourDresser) continue;
@@ -48,7 +49,13 @@ public static class DesiredStateBuilder
             if (info is null) continue;
 
             var rule = rules.FirstOrDefault(r => r.When.Matches(item, info, ctx, onNeverTouch));
-            var destination = rule?.Then ?? plan.Fallback;
+            matched.Add(new Match(item, info, rule, rule?.Then ?? plan.Fallback));
+        }
+
+        var kept = StacksKeptInBags(matched);
+        foreach (var (item, info, rule, wanted) in matched)
+        {
+            var destination = kept.Contains(item.Slot) ? Destination.Bags : wanted;
 
             if (destination.Kind == DestinationKind.Retainer && destination.RetainerId != 0 && !retainersInScope.Contains(destination.RetainerId))
             {
@@ -67,6 +74,33 @@ public static class DesiredStateBuilder
         }
 
         return state;
+    }
+
+    private readonly record struct Match(ScannedItem Item, ItemInfo Info, OrganizerRule? Rule, Destination Destination);
+
+    /// <summary>
+    /// For rules with a "keep N in the bags" number: the bag stacks of each matched item that stay behind.
+    /// Smallest stacks first so the kept amount lands as close to N as whole stacks allow; when even the
+    /// smallest stack is over N, that one stays, because stacks are never split.
+    /// </summary>
+    private static HashSet<SlotRef> StacksKeptInBags(List<Match> matched)
+    {
+        var keep = new HashSet<SlotRef>();
+        var eligible = matched.Where(m =>
+            m.Rule is { KeepInBags: > 0 } && m.Item.Slot.Kind == ContainerKind.Inventory
+            && m.Destination.Kind is not (DestinationKind.Bags or DestinationKind.Stay));
+        foreach (var group in eligible.GroupBy(m => (m.Rule!.Id, m.Item.ItemId, m.Item.IsHq)))
+        {
+            var limit = group.First().Rule!.KeepInBags;
+            var kept = 0;
+            foreach (var m in group.OrderBy(m => m.Item.Quantity))
+            {
+                if (kept > 0 && kept + m.Item.Quantity > limit) break;
+                keep.Add(m.Item.Slot);
+                kept += m.Item.Quantity;
+            }
+        }
+        return keep;
     }
 
     /// <summary>A reason the stack cannot go to the destination, or null. Staying put is always allowed.</summary>

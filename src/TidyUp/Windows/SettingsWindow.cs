@@ -37,6 +37,7 @@ public sealed partial class SettingsWindow : StyledWindow
     public Automation.AutoPilot? Pilot { get; set; }
     public VnavmeshIpc? Nav { get; set; }
     public LifestreamIpc? Travel { get; set; }
+    public AutoRetainerIpc? AutoRetainer { get; set; }
 
     private static readonly IReadOnlyList<(PresetName, string)> PresetOptions =
     [
@@ -101,6 +102,19 @@ public sealed partial class SettingsWindow : StyledWindow
             if (Ui.Segmented("##preset", ref preset, PresetOptions)) { p.ApplyPreset(preset); dirty = true; }
             Ui.TextColored(Ui.Accent, p.Thresholds.Policy.Describe());
             Ui.Hint("You always see the full list and can change any row before anything happens.");
+            if (p.Thresholds.Policy == ActionPolicy.MarketListTradeable)
+            {
+                Ui.Gap(0.3f);
+                ImGui.AlignTextToFramePadding();
+                Ui.Hint("List in stacks of");
+                ImGui.SameLine();
+                ImGui.SetNextItemWidth(70 * Ui.Scale);
+                var per = config.MarketListStackSize;
+                if (ImGui.InputInt("##mstack", ref per, 0, 0, "%d", ImGuiInputTextFlags.None)) { config.MarketListStackSize = Math.Clamp(per, 0, 9999); dirty = true; }
+                Ui.Tooltip("Smaller listings sell faster. 0 lists the whole stack at once.");
+                ImGui.SameLine();
+                Ui.Hint(per == 0 ? "(whole stacks)" : "per listing");
+            }
             Ui.Gap(0.3f);
             var sortAfter = config.SortAfterRun;
             if (ImGui.Checkbox(ConfirmationWindow.SortAfterLabel, ref sortAfter)) { config.SortAfterRun = sortAfter; dirty = true; }
@@ -139,6 +153,18 @@ public sealed partial class SettingsWindow : StyledWindow
                 if (ImGui.Checkbox("Also clean items discovered along the way", ref cleanUnseen)) { a.UnseenRows = cleanUnseen ? UnseenRowsMode.Clean : UnseenRowsMode.Skip; dirty = true; }
                 Ui.Tooltip("Retainers and the dresser only show their contents once open. On: those items are cleaned by the same rules on the spot. Off: they wait for your next review.");
             }
+        }
+
+        using (Ui.Card("ventures"))
+        {
+            Ui.TextColored(Ui.Muted, "AFTER VENTURES");
+            ImGui.Spacing();
+            var a = config.Automation;
+            var after = a.CleanAfterVentures;
+            if (ImGui.Checkbox("Discard junk from my bags when AutoRetainer finishes a retainer", ref after)) { a.CleanAfterVentures = after; dirty = true; }
+            ImGui.SameLine();
+            if (AutoRetainer is null || !AutoRetainer.IsInstalled) Ui.Pill("needs the AutoRetainer plugin", Ui.Warn); else Ui.Pill("AutoRetainer", Ui.Ok, Dalamud.Interface.FontAwesomeIcon.Check);
+            Ui.HintWrapped("Only rows the rules would tick on their own, and only discards. Selling and listing still wait for your review.");
         }
 
         using (Ui.Card("protect")) protectEditor.Draw();

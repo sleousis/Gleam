@@ -14,6 +14,8 @@ public enum HardBlockReason
     Currency,
     /// <summary>Untradeable, no vendor value, not equipment: Fantasia, tokens, vouchers. Cannot be bought back with gil.</summary>
     IrreplaceableUntradeable,
+    /// <summary>On the curated list of things that can never be regained (Ultimate tokens and weapons, the special earrings). Never shown, never touched.</summary>
+    Protected,
 }
 
 public static class HardBlocks
@@ -24,11 +26,16 @@ public static class HardBlocks
     /// item by hand, with the reason shown as a warning.
     /// </summary>
     public static bool IsImmovable(HardBlockReason reason) =>
-        reason is HardBlockReason.Indisposable or HardBlockReason.InGearset or HardBlockReason.InGlamourPlate;
+        reason is HardBlockReason.Indisposable or HardBlockReason.InGearset or HardBlockReason.InGlamourPlate or HardBlockReason.Protected;
+
+    /// <summary>Ultimate weapons by shape rather than by id: blue rarity with three materia slots, outside the Bozjan relic range.</summary>
+    public static bool IsUltimateWeapon(ItemInfo info) =>
+        info.IsEquipment && info.Rarity == 3 && info.MateriaSlotCount == 3 && (info.ItemId < 33154 || info.ItemId > 33358);
 
     public static HardBlockReason Check(ScannedItem item, ItemInfo info, ItemContext ctx)
     {
         if (info.IsIndisposable) return HardBlockReason.Indisposable;
+        if (ctx.ProtectedItemIds.Contains(info.ItemId) || IsUltimateWeapon(info)) return HardBlockReason.Protected;
 
         // A spare copy of something already registered (minion, mount, roll, card...) is plain clutter; the
         // guards below exist to protect things that cannot be regained, which does not apply to it.
@@ -63,6 +70,7 @@ public static class HardBlocks
         HardBlockReason.NeverProposedCategory => "Never suggested by any rule",
         HardBlockReason.Currency => "Currency",
         HardBlockReason.IrreplaceableUntradeable => "Untradeable with no vendor value; cannot be bought back",
+        HardBlockReason.Protected => "Can never be regained; Tidy Up never touches it",
         _ => string.Empty,
     };
 }

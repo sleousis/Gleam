@@ -24,7 +24,8 @@ public sealed record ItemInfo(
     bool IsMarketable,
     bool IsVendorBuyable,
     bool IsUsable = false,
-    EquipSlot EquipSlot = EquipSlot.None)
+    EquipSlot EquipSlot = EquipSlot.None,
+    byte MateriaSlotCount = 0)
 {
     /// <summary>The armoury page this equipment lives in, or 0 for anything that is not equipment.</summary>
     public uint ArmouryPage => GameContainerIds.ArmouryPageFor(EquipSlot);

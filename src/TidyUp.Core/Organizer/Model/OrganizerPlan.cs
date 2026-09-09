@@ -122,6 +122,12 @@ public sealed class OrganizerRule
     public bool Enabled { get; set; } = true;
     public OrganizerPredicate When { get; set; } = new();
     public Destination Then { get; set; } = Destination.Stay;
+
+    /// <summary>
+    /// Keep up to this many of each matched item in the bags and move only the rest; 0 moves everything.
+    /// Whole stacks only, so one stack bigger than the number still stays.
+    /// </summary>
+    public int KeepInBags { get; set; }
 }
 
 /// <summary>A named, ordered set of rules. First matching rule wins; unmatched items follow <see cref="Fallback"/>.</summary>
@@ -156,7 +162,7 @@ public sealed class OrganizerPlan
         {
             c.Rules.Add(new OrganizerRule
             {
-                Id = Guid.NewGuid(), Name = r.Name, Enabled = r.Enabled, Then = r.Then,
+                Id = Guid.NewGuid(), Name = r.Name, Enabled = r.Enabled, Then = r.Then, KeepInBags = r.KeepInBags,
                 When = new OrganizerPredicate
                 {
                     Tags = r.When.Tags is null ? null : new HashSet<ItemTag>(r.When.Tags),

@@ -33,6 +33,10 @@ public sealed class OrganizerWindow : StyledWindow
     private bool dirty;
     private bool confirmDelete;
     private Guid? confirmRemove;
+    private string note = string.Empty;
+    private DateTime noteUntil;
+
+    private void Note(string text) { note = text; noteUntil = DateTime.UtcNow.AddSeconds(5); }
 
     private static readonly IReadOnlyList<(View, string)> Views = [(View.Preview, "Preview"), (View.Rules, "Rules")];
 
@@ -175,7 +179,30 @@ public sealed class OrganizerWindow : StyledWindow
                 }
             }
             if (!ImGui.IsItemHovered() && confirmDelete && ImGui.IsMouseClicked(ImGuiMouseButton.Left)) confirmDelete = false;
+            ImGui.SameLine();
+            if (Ui.LinkButton("Export"))
+            {
+                ImGui.SetClipboardText(OrganizerPlanCodec.Export(active));
+                Note("Copied. Paste it anywhere to share this layout.");
+            }
+            Ui.Tooltip("Copies this layout as text you can share.");
         }
+        ImGui.SameLine();
+        if (Ui.LinkButton("Import"))
+        {
+            var imported = OrganizerPlanCodec.TryImport(ImGui.GetClipboardText(), organizer.RetainerNames.Keys.ToList());
+            if (imported is null) Note("Nothing to import. Copy a Tidy Up layout first.");
+            else
+            {
+                plans.Add(imported);
+                config.Organizer.ActivePlanId = imported.Id;
+                view = View.Rules;
+                dirty = true;
+                Note($"Imported \"{imported.Name}\".");
+            }
+        }
+        Ui.Tooltip("Adds a layout from text on your clipboard.");
+        if (noteUntil > DateTime.UtcNow) { ImGui.SameLine(); Ui.Hint(note); }
         if (view == View.Preview && active is not null)
         {
             ImGui.SameLine();
@@ -231,7 +258,7 @@ public sealed class OrganizerWindow : StyledWindow
                 ImGui.SameLine();
                 using (ImRaii.Disabled(!on))
                 {
-                    ImGui.SetNextItemWidth(220 * Ui.Scale);
+                    ImGui.SetNextItemWidth(190 * Ui.Scale);
                     var name = rule.Name;
                     if (Ui.InputText("##name", "Rule name", ref name, 48)) { rule.Name = name; dirty = true; }
                     ImGui.SameLine();
@@ -239,6 +266,22 @@ public sealed class OrganizerWindow : StyledWindow
                     ImGui.SameLine();
                     var dest = rule.Then;
                     if (DestinationCombo("##dest", ref dest, allowStay: true)) { rule.Then = dest; dirty = true; }
+                    if (rule.Then.Kind is not (DestinationKind.Stay or DestinationKind.Bags))
+                    {
+                        ImGui.SameLine(0, 12 * Ui.Scale);
+                        ImGui.AlignTextToFramePadding();
+                        Ui.Hint("keep");
+                        ImGui.SameLine();
+                        ImGui.SetNextItemWidth(56 * Ui.Scale);
+                        var keep = rule.KeepInBags;
+                        using (ImRaii.PushColor(ImGuiCol.FrameBg, new Vector4(1, 1, 1, 0.06f)))
+                        {
+                            if (ImGui.InputInt("##keep", ref keep, 0, 0, "%d", ImGuiInputTextFlags.None)) { rule.KeepInBags = Math.Clamp(keep, 0, 9999); dirty = true; }
+                        }
+                        Ui.Tooltip("Keep up to this many in your bags and move only the rest. 0 moves everything. Whole stacks only, so one big stack stays.");
+                        ImGui.SameLine();
+                        Ui.Hint("in bags");
+                    }
                 }
 
                 ImGui.SameLine();
@@ -276,7 +319,7 @@ public sealed class OrganizerWindow : StyledWindow
                     var y = pos.Y + (ImGui.GetFrameHeight() - ImGui.GetTextLineHeight()) / 2;
                     using (ImRaii.PushFont(UiBuilder.IconFont))
                         dl.AddText(new Vector2(pos.X + 2 * Ui.Scale, y), ImGui.GetColorU32(Ui.Muted), (selected ? FontAwesomeIcon.ChevronDown : FontAwesomeIcon.ChevronRight).ToIconString());
-                    dl.AddText(new Vector2(pos.X + chevronW + 6 * Ui.Scale, y), ImGui.GetColorU32(on ? Ui.Muted : Ui.Muted * new Vector4(1, 1, 1, 0.6f)), $"{(when(rule).IsEmpty ? "Everything" : when(rule).Describe())} → {DestinationLabel(rule.Then)}");
+                    dl.AddText(new Vector2(pos.X + chevronW + 6 * Ui.Scale, y), ImGui.GetColorU32(on ? Ui.Muted : Ui.Muted * new Vector4(1, 1, 1, 0.6f)), $"{(when(rule).IsEmpty ? "Everything" : when(rule).Describe())} → {DestinationLabel(rule.Then)}{(rule.KeepInBags > 0 ? $", keep {rule.KeepInBags} in the bags" : "")}");
                 }
                 if (selected) DrawPredicateEditor(rule.When);
             }

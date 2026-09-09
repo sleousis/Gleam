@@ -58,6 +58,12 @@ internal sealed class FakeGame : IGameActions
     public Task<bool> MarketListAsync(SlotRef slot, uint itemId, long unitPrice, int quantity, CancellationToken ct)
     {
         MarketSlots--;
+        if (Slots.TryGetValue(slot, out var item) && quantity < item.Quantity && !FailWhen(slot))
+        {
+            Calls.Add($"list@{unitPrice}x{quantity}:{slot}");
+            Slots[slot] = item with { Quantity = item.Quantity - quantity };
+            return Task.FromResult(true);
+        }
         return Do($"list@{unitPrice}", slot);
     }
     public int FreeMarketSlots() => MarketSlots;
@@ -276,6 +282,42 @@ public class ExecutionEngineTests
 
         Assert.Equal(1, second.Done);
         Assert.Contains(game.Calls, c => c == $"materia:{follow.Slot}");
+        Assert.Empty(game.Slots);
+    }
+
+    [Fact]
+    public async Task Split_listings_go_up_in_pieces_and_the_rest_waits_when_slots_run_out()
+    {
+        var game = new FakeGame { MarketSlots = 2 };
+        game.AvailableActions.Add(ActionKind.MarketList);
+        game.Slots[Inv(0)] = ScannedItem.Simple(Inv(0), 12, 5);
+        var log = new MemoryRunLog();
+
+        var report = await new ExecutionEngine(game, log, new NoDelay(), new ExecutionOptions { MarketStackSize = 2 })
+            .ExecuteAsync([Q(Inv(0), 12, 5, ActionKind.MarketList) with { UnitPrice = 400 }], Who, CancellationToken.None);
+
+        Assert.Equal([$"list@400x2:{Inv(0)}", $"list@400x2:{Inv(0)}"], game.Calls);
+        Assert.Equal(0, report.Done);
+        var rest = Assert.Single(report.Moved);
+        Assert.Equal(1, rest.Quantity);
+        Assert.False(rest.BroughtHome);
+        Assert.Equal(1, game.Slots[Inv(0)].Quantity);
+        Assert.Equal(4, Assert.Single(log.Entries).Quantity);
+        Assert.Contains("partly listed", report.Summary());
+    }
+
+    [Fact]
+    public async Task Split_listings_finish_as_done_when_every_piece_goes_up()
+    {
+        var game = new FakeGame { MarketSlots = 5 };
+        game.AvailableActions.Add(ActionKind.MarketList);
+        game.Slots[Inv(0)] = ScannedItem.Simple(Inv(0), 12, 5);
+
+        var report = await new ExecutionEngine(game, new MemoryRunLog(), new NoDelay(), new ExecutionOptions { MarketStackSize = 2 })
+            .ExecuteAsync([Q(Inv(0), 12, 5, ActionKind.MarketList) with { UnitPrice = 400 }], Who, CancellationToken.None);
+
+        Assert.Equal(1, report.Done);
+        Assert.Equal(3, game.Calls.Count);
         Assert.Empty(game.Slots);
     }
 

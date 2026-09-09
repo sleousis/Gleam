@@ -62,6 +62,32 @@ public class OrganizerModelTests
     }
 
     [Fact]
+    public void Layouts_export_to_text_and_import_with_fresh_ids_and_local_retainers()
+    {
+        var plan = OrganizerPlan.Starter();
+        plan.Rules[0].Then = Destination.RetainerNamed(0xBEEF);
+        plan.Rules[1].KeepInBags = 20;
+        plan.RetainersInScope.Add(0xBEEF);
+        plan.RetainersInScope.Add(0xCAFE);
+
+        var text = OrganizerPlanCodec.Export(plan);
+        Assert.StartsWith("TIDYUP1:", text);
+
+        var back = OrganizerPlanCodec.TryImport(text, new[] { 0xCAFEul })!;
+        Assert.NotNull(back);
+        Assert.NotEqual(plan.Id, back.Id);
+        Assert.Equal(plan.Name, back.Name);
+        Assert.Equal(plan.Rules.Count, back.Rules.Count);
+        Assert.True(back.Rules[0].Then.IsAnyRetainer);          // unknown retainer becomes "any"
+        Assert.Equal(20, back.Rules[1].KeepInBags);
+        Assert.Equal([0xCAFEul], back.RetainersInScope);
+
+        Assert.Null(OrganizerPlanCodec.TryImport("hello", []));
+        Assert.Null(OrganizerPlanCodec.TryImport("TIDYUP1:not base64!", []));
+        Assert.Null(OrganizerPlanCodec.TryImport(null, []));
+    }
+
+    [Fact]
     public void Plans_round_trip_through_json_and_clone_deeply()
     {
         var plan = OrganizerPlan.Starter();
