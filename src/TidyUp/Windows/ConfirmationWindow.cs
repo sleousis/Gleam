@@ -445,7 +445,16 @@ public sealed class ConfirmationWindow : StyledWindow
             Ui.Tooltip("Only items that cannot be sold or traded. Discarding is the only way out for these.");
             ImGui.SameLine();
         }
-        if ((filterTags.Count > 0 || filterTradeable is not null) && Ui.LinkButton("Clear")) { filterTags.Clear(); filterTradeable = null; }
+        // Clear is always on the row, faded out when there is nothing to clear. Drawing it only when a filter
+        // is on changed what the row contained, and the row grew the moment you ticked a chip, which pushed
+        // the whole list down. It matches the chips' height too, for the same reason.
+        var canClear = filterTags.Count > 0 || filterTradeable is not null;
+        using (ImRaii.PushStyle(ImGuiStyleVar.Alpha, ImGui.GetStyle().Alpha * Ui.Smooth("clearchip", canClear ? 1f : 0f, 14f)))
+        using (ImRaii.Disabled(!canClear))
+        {
+            if (Ui.ChipLink("Clear") && canClear) { filterTags.Clear(); filterTradeable = null; }
+            if (canClear) Ui.Tooltip("Shows every type again.");
+        }
         ImGui.NewLine();
         Ui.Gap(0.2f);
     }
@@ -641,7 +650,7 @@ public sealed class ConfirmationWindow : StyledWindow
             }
             ImGui.SameLine();
             ImGui.AlignTextToFramePadding();
-            Ui.TextColored(Ui.ActionColor(action), word);
+            Ui.ActionLabel(action, word);
             ImGui.SameLine();
             var shownRows = (int)Ui.Count($"grpn:{action}", rows.Count);
             Ui.Text($"{shownRows} item{(shownRows == 1 ? "" : "s")}");
@@ -775,7 +784,7 @@ public sealed class ConfirmationWindow : StyledWindow
         ImGui.TableSetupColumn("##chk", ImGuiTableColumnFlags.WidthFixed, 24 * Ui.Scale, 0);
         ImGui.TableSetupColumn("##icon", ImGuiTableColumnFlags.WidthFixed, 30 * Ui.Scale, 0);
         ImGui.TableSetupColumn("##item", ImGuiTableColumnFlags.WidthStretch, 5f, 0);
-        ImGui.TableSetupColumn("##action", Simple ? ImGuiTableColumnFlags.WidthStretch : ImGuiTableColumnFlags.WidthFixed, Simple ? 2f : 128 * Ui.Scale, 0);
+        ImGui.TableSetupColumn("##action", Simple ? ImGuiTableColumnFlags.WidthStretch : ImGuiTableColumnFlags.WidthFixed, Simple ? 2f : 168 * Ui.Scale, 0);
         ImGui.TableSetupColumn("##market", ImGuiTableColumnFlags.WidthFixed, 96 * Ui.Scale, 0);
         if (!Simple) ImGui.TableSetupColumn("##attrs", ImGuiTableColumnFlags.WidthStretch, 5f, 0);
 
@@ -843,7 +852,7 @@ public sealed class ConfirmationWindow : StyledWindow
         {
             // The preset decides; the row only says what will happen. Advanced mode offers the alternatives.
             ImGui.AlignTextToFramePadding();
-            Ui.TextColored(Ui.ActionColor(row.ChosenAction), row.ChosenAction.Label());
+            Ui.ActionLabel(row.ChosenAction);
         }
         else DrawActionPicker(row);
 
@@ -913,10 +922,15 @@ public sealed class ConfirmationWindow : StyledWindow
         // Just the verb; prices live in the market column and the tooltip.
         var labels = options.Select(a => a.Label()).ToList();
         var idx = options.IndexOf(row.ChosenAction);
+        // The glyph leads the cell on every row, so the column reads as one thing whether or not the row
+        // offers a choice, and so the outcome is legible without relying on the colour.
+        ImGui.AlignTextToFramePadding();
+        Ui.Icon(Ui.ActionIcon(row.ChosenAction), Ui.ActionColor(row.ChosenAction));
+        ImGui.SameLine(0, 6f * Ui.Scale);
+
         if (options.Count == 1)
         {
             // Nothing to choose: plain coloured text, aligned with the dropdowns on other rows.
-            ImGui.SetCursorPosX(ImGui.GetCursorPosX() + ImGui.GetStyle().FramePadding.X);
             ImGui.AlignTextToFramePadding();
             Ui.TextColored(Ui.ActionColor(row.ChosenAction), labels[0]);
             return;

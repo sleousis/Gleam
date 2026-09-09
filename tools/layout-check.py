@@ -52,12 +52,19 @@ for W in WIDTHS:
     # ---- outcome card header: tick, verb, count, worth, link
     link = w("Hide the list") + FRAME_PAD * 2 + 8 * SCALE
     card = inner - 24 * SCALE                       # card padding
-    head = 19 * SCALE + ITEM + w("Sell on the market board") + ITEM + w("89 items") + ITEM + link
+    GLYPH = 14 * SCALE + 6 * SCALE                  # an action glyph and the gap after it
+    head = 19 * SCALE + ITEM + GLYPH + w("Sell on the market board") + ITEM + w("89 items") + ITEM + link
     check("outcome card", W, head, card, "verb, count and link collide before the worth is dropped")
 
     # ---- review table: fixed columns plus a workable stretch
-    fixed = 24 + 30 + 128 + 96 + 24                 # tick, icon, action, market, cell padding
+    fixed = 24 + 30 + 168 + 96 + 24                 # tick, icon, action (glyph + word), market, cell padding
     check("review table", W, fixed + 160 * SCALE, inner, "item name column falls under 160px")
+
+    # the action cell: glyph, then either the word or a dropdown showing the widest word
+    for verb in ("Expert delivery", "Market board", "Discard", "Sell", "Desynth"):
+        check("action cell", W, GLYPH + w(verb), 168 * SCALE, f"'{verb}' does not fit beside its glyph")
+    check("action dropdown", W, GLYPH + w("Expert delivery") + FRAME_H + FRAME_PAD * 2, 168 * SCALE,
+          "the action dropdown does not fit the column")
 
     # ---- settings: every card is the window less its padding, less the card's own
     card = inner - 24 * SCALE
