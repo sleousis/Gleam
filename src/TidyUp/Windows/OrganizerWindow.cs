@@ -176,6 +176,17 @@ public sealed class OrganizerWindow : StyledWindow
             }
             if (!ImGui.IsItemHovered() && confirmDelete && ImGui.IsMouseClicked(ImGuiMouseButton.Left)) confirmDelete = false;
         }
+        if (view == View.Preview && active is not null)
+        {
+            ImGui.SameLine();
+            var w = ImGui.CalcTextSize("Refresh", false, 0).X + ImGui.GetFrameHeight() + 20 * Ui.Scale;
+            Ui.RightAlign(w);
+            using (ImRaii.Disabled(organizer.IsPreviewing))
+            {
+                if (Ui.IconButton(FontAwesomeIcon.Sync, "Refresh", w)) _ = organizer.PreviewAsync();
+            }
+            Ui.Tooltip("Looks through your storage again.");
+        }
     }
 
     // ---------- rules ----------
@@ -566,8 +577,7 @@ public sealed class OrganizerWindow : StyledWindow
             ImGui.TableNextColumn();
             ImGui.AlignTextToFramePadding();
             Ui.Text(m.Info.Name);
-            ImGui.SameLine();
-            Ui.Hint($"× {m.Item.Quantity}");
+            if (m.Item.Quantity > 1) { ImGui.SameLine(); Ui.Hint($"× {m.Item.Quantity}"); }
             ImGui.TableNextColumn();
             ImGui.AlignTextToFramePadding();
             Ui.Hint($"{Name(m.From)}  →  {Name(m.To)}");
@@ -599,16 +609,13 @@ public sealed class OrganizerWindow : StyledWindow
 
         var canRun = r is not null && r.Report.Feasible && r.Moves.Count > 0 && !organizer.IsPreviewing;
         var handsFree = Pilot is not null && config.Automation.Enabled && r is not null && r.StoragesToOpen.Any();
-        var buttonWidth = 200 * Ui.Scale;
+        var buttonWidth = 220 * Ui.Scale;
+        var style = ImGui.GetStyle();
+        var hereW = handsFree ? ImGui.CalcTextSize("Organize here only", false, 0).X + style.FramePadding.X * 2 + style.ItemSpacing.X : 0;
         ImGui.SameLine();
-        Ui.RightAlign(buttonWidth + (handsFree ? 300 : 180) * Ui.Scale);
-        if (Ui.IconButton(FontAwesomeIcon.Sync, "Refresh")) _ = organizer.PreviewAsync();
-        Ui.Tooltip("Looks through your storage again.");
-        ImGui.SameLine();
-        if (Ui.LinkButton("Close")) IsOpen = false;
+        Ui.RightAlign(hereW + buttonWidth);
         if (handsFree)
         {
-            ImGui.SameLine();
             using (ImRaii.Disabled(!canRun))
             {
                 if (Ui.LinkButton("Organize here only")) _ = organizer.RunAsync();

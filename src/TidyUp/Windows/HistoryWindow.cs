@@ -99,7 +99,7 @@ public sealed class HistoryWindow : StyledWindow
             }
             ImGui.TableNextColumn(); ImGui.AlignTextToFramePadding();
             Ui.Text(e.ItemName + (e.IsHq ? " " : ""));
-            ImGui.SameLine(); Ui.Hint($"× {e.Quantity} · {e.CharacterName} · {e.Container.DisplayName().ToLowerInvariant()}");
+            ImGui.SameLine(); Ui.Hint($"{(e.Quantity > 1 ? $"× {e.Quantity} · " : "")}{e.CharacterName} · {e.Container.DisplayName().ToLowerInvariant()}");
             ImGui.TableNextColumn(); ImGui.AlignTextToFramePadding(); Ui.TextColored(Ui.ActionColor(e.Action), e.Action.Label());
             ImGui.TableNextColumn(); ImGui.AlignTextToFramePadding(); Ui.Hint(ReacquireHint(info));
         }
