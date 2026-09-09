@@ -1,5 +1,6 @@
 using Dalamud.Game.DutyState;
 using Dalamud.Game.Gui.Dtr;
+using Dalamud.Game.Text.SeStringHandling;
 using Dalamud.Plugin.Services;
 
 namespace TidyUp.Game;
@@ -18,6 +19,9 @@ public sealed class DtrEntry : IDisposable
     public Func<int>? CleanableCount { get; set; }
     public bool Enabled { get; set; } = true;
     public int NudgePercent { get; set; } = 90;
+
+    /// <summary>Right-click opens the organizing half, when the player uses it.</summary>
+    public Action? OpenOrganize { get; set; }
 
     public DtrEntry(IDtrBar dtr, IToastGui toast, IFramework framework, Action openWindow)
     {
@@ -45,18 +49,39 @@ public sealed class DtrEntry : IDisposable
         if ((DateTime.UtcNow - lastRefresh).TotalSeconds < 2) return;
         lastRefresh = DateTime.UtcNow;
 
-        entry ??= dtr.Get("Gleam");
-        entry.OnClick = _ => openWindow();
-        entry.Shown = true;
-
         var total = GameInventoryScanner.TotalInventorySlots();
         var free = GameInventoryScanner.FreeInventorySlots();
         var used = total - free;
-        var cleanable = CleanableCount?.Invoke() ?? 0;
-        entry.Text = cleanable > 0 ? $" {used}/{total} · {cleanable} cleanable" : $" {used}/{total}";
-        entry.Tooltip = "Gleam: click to review what can be cleaned";
-
         var pct = total == 0 ? 0 : used * 100 / total;
+        var cleanable = CleanableCount?.Invoke() ?? 0;
+
+        entry ??= dtr.Get("Gleam");
+        entry.OnClick = e =>
+        {
+            if (e.ClickType == MouseClickType.Right && OpenOrganize is not null) OpenOrganize();
+            else openWindow();
+        };
+        // Nothing loaded yet means nothing worth saying.
+        entry.Shown = total > 0;
+        if (total == 0) return;
+
+        // Free space is what a player actually wants to know, junk second, and a warning glyph only once
+        // the bags are genuinely tight.
+        var text = new SeStringBuilder();
+        if (pct >= NudgePercent) text.AddIcon(BitmapFontIcon.Warning);
+        text.AddText($"{free} free");
+        if (cleanable > 0) text.AddText($" · {cleanable} junk");
+        entry.Text = text.Build();
+
+        var tip = new SeStringBuilder()
+            .AddText($"Bags: {used} of {total} used, {free} free ({pct}%).\n")
+            .AddText(cleanable > 0
+                ? $"{cleanable} item{(cleanable == 1 ? " looks" : "s look")} like junk.\n"
+                : "Nothing looks like junk right now.\n")
+            .AddText("Click to open Gleam.");
+        if (OpenOrganize is not null) tip.AddText(" Right-click to put things away.");
+        entry.Tooltip = tip.Build();
+
         if (pct >= NudgePercent)
         {
             if (!nudgedThisCrossing)
