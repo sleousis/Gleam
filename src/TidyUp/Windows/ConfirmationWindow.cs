@@ -76,11 +76,14 @@ public sealed class ConfirmationWindow : StyledWindow
     private object? staggerPlan;
     private double staggerAt;
 
-    /// <summary>Rows fade in one after another when a fresh list arrives, so the eye follows it down the page.</summary>
+    /// <summary>
+    /// Rows fade in one after another when a fresh list arrives, so the eye follows it down the page. Only
+    /// the first screenful is staggered: a list of three hundred must not take three seconds to appear.
+    /// </summary>
     private float RowAlpha(int index)
     {
-        var elapsed = ImGui.GetTime() - staggerAt - index * 0.012;
-        return Ui.EaseOut((float)Math.Clamp(elapsed / 0.18, 0, 1));
+        var elapsed = ImGui.GetTime() - staggerAt - Math.Min(index, 12) * 0.011;
+        return Ui.EaseOut((float)Math.Clamp(elapsed / 0.16, 0, 1));
     }
 
     /// <summary>The simple layer: no filters, no per-row choices, plain words. Advanced adds everything back.</summary>
@@ -444,28 +447,32 @@ public sealed class ConfirmationWindow : StyledWindow
         using var popup = ImRaii.Popup("##filters");
         if (!popup) return;
 
-        Ui.Hint("Rule");
-        if (ImGui.MenuItem("All rules", string.Empty, filterRule is null, true)) filterRule = null;
-        foreach (var r in Core.Rules.RuleEngine.AllRules)
-            if (ImGui.MenuItem(r.Name, string.Empty, filterRule == r.Id, true)) filterRule = r.Id;
-        if (ImGui.MenuItem("Always junk list", string.Empty, filterRule == "always-discard", true)) filterRule = "always-discard";
-        if (ImGui.MenuItem("Not suggested by any rule", string.Empty, filterRule == "manual", true)) filterRule = "manual";
+        // Only what this list actually holds, with counts. A menu full of entries that match nothing is
+        // a menu nobody trusts, and the column titles already do the sorting.
+        var plan = coordinator.CurrentPlan;
+        var rows = plan?.AllRows.ToList() ?? new List<PlanRow>();
+
+        Ui.Hint("Why it is here");
+        if (ImGui.MenuItem("Anything", string.Empty, filterRule is null, true)) filterRule = null;
+        foreach (var g in rows.GroupBy(r => r.Proposal.RuleId).OrderByDescending(g => g.Count()))
+        {
+            var name = g.Key switch
+            {
+                "always-discard" => "On your Always junk list",
+                "manual" => "Nothing suggested it",
+                _ => Core.Rules.RuleEngine.AllRules.FirstOrDefault(r => r.Id == g.Key)?.Name ?? g.Key,
+            };
+            if (ImGui.MenuItem($"{name}  ({g.Count()})", string.Empty, filterRule == g.Key, true)) filterRule = g.Key;
+        }
 
         ImGui.Separator();
-        Ui.Hint("Action");
-        if (ImGui.MenuItem("All actions", string.Empty, filterAction is null, true)) filterAction = null;
-        foreach (var a in new[] { ActionKind.Discard, ActionKind.VendorSell, ActionKind.MarketList, ActionKind.ExpertDelivery, ActionKind.Desynth, ActionKind.None })
-            if (ImGui.MenuItem(a.Label(), string.Empty, filterAction == a, true)) filterAction = a;
+        Ui.Hint("What will happen");
+        if (ImGui.MenuItem("Anything", string.Empty, filterAction is null, true)) filterAction = null;
+        foreach (var g in rows.Where(r => r.IsExecutable).GroupBy(r => r.ChosenAction).OrderByDescending(g => g.Count()))
+            if (ImGui.MenuItem($"{g.Key.Label()}  ({g.Count()})", string.Empty, filterAction == g.Key, true)) filterAction = g.Key;
 
         ImGui.Separator();
-        Ui.Hint("Sort");
-        if (ImGui.MenuItem("Name", string.Empty, sortKey == SortKey.Name, true)) { sortKey = SortKey.Name; sortDir = 1; }
-        if (ImGui.MenuItem("Quantity", string.Empty, sortKey == SortKey.Quantity, true)) { sortKey = SortKey.Quantity; sortDir = -1; }
-        if (ImGui.MenuItem("Action", string.Empty, sortKey == SortKey.Action, true)) { sortKey = SortKey.Action; sortDir = 1; }
-        if (ImGui.MenuItem("Market price", string.Empty, sortKey == SortKey.Market, true)) { sortKey = SortKey.Market; sortDir = -1; }
-
-        ImGui.Separator();
-        if (ImGui.MenuItem("Reset", string.Empty, false, true)) { filterContainer = null; filterRule = null; filterAction = null; filterTags.Clear(); filterTradeable = null; sortKey = SortKey.Name; sortDir = 1; sectionSort.Clear(); }
+        if (ImGui.MenuItem("Clear all filters", string.Empty, false, true)) { filterContainer = null; filterRule = null; filterAction = null; filterTags.Clear(); filterTradeable = null; sortKey = SortKey.Name; sortDir = 1; sectionSort.Clear(); }
     }
 
     private IEnumerable<PlanRow> Filter(IEnumerable<PlanRow> rows, string? sectionKey = null)

@@ -11,7 +11,7 @@ public sealed class DresserZeroPlatesRule : IRule
 {
     public const string RuleId = "dresser-zero-plates";
     public string Id => RuleId;
-    public string Name => "Dresser items in zero plates";
+    public string Name => "Dresser items no plate uses";
     public string Description => "Glamour dresser items that no glamour plate uses. Restoring then discarding them frees dresser slots without touching any plate.";
     public IReadOnlySet<ContainerKind> Containers => RuleContainers.DresserOnly;
 
