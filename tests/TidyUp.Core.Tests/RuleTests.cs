@@ -40,10 +40,42 @@ public class RuleTests
     }
 
     [Fact]
-    public void VendorOnlyJunk_stays_quiet_when_a_recipe_still_uses_the_item()
+    public void VendorOnlyJunk_stays_quiet_when_a_recipe_still_uses_the_material()
     {
-        var ctx = Context(recipes: id => id == 2 ? [new RecipeUse(JobCrp, 80)] : []);
-        Assert.Null(new VendorOnlyJunkRule().Evaluate(ScannedItem.Simple(Inv(0), 2, 3), Items[2], ctx, t));
+        // Copper Ore is a material with a vendor price, so only the recipe decides which rule owns it.
+        var ctx = Context(recipes: id => id == 7 ? [new RecipeUse(JobCrp, 80)] : []);
+        Assert.Null(new VendorOnlyJunkRule().Evaluate(ScannedItem.Simple(Inv(0), 7, 50), Items[7], ctx, t));
+    }
+
+    [Fact]
+    public void VendorOnlyJunk_keeps_a_material_that_no_recipe_uses()
+    {
+        // The gap this closes: an untradeable dye is a "material" the crafting rule skips because no recipe
+        // touches it, and the vendor rule used to skip every material. It reached the player unproposed.
+        var p = new VendorOnlyJunkRule().Evaluate(ScannedItem.Simple(Inv(0), 22, 9), Items[22], Context(), t);
+
+        Assert.NotNull(p);
+        Assert.Equal(ActionKind.VendorSell, p!.Action);
+        Assert.Equal(9, p.ValueGil);
+    }
+
+    [Fact]
+    public void The_two_material_rules_never_both_claim_the_same_item()
+    {
+        // One owns materials a recipe uses, the other owns the rest. Neither may leave a gap or overlap.
+        foreach (var recipes in new Func<uint, IReadOnlyList<RecipeUse>>[]
+                 {
+                     _ => [],
+                     id => id == 7 ? [new RecipeUse(JobCrp, 5)] : [],
+                     id => id == 7 ? [new RecipeUse(JobCrp, 85)] : [],
+                 })
+        {
+            var ctx = Context(recipes: recipes);
+            var item = ScannedItem.Simple(Inv(0), 7, 50);
+            var vendor = new VendorOnlyJunkRule().Evaluate(item, Items[7], ctx, t);
+            var craft = new UnusableCraftingMatsRule().Evaluate(item, Items[7], ctx, t);
+            Assert.False(vendor is not null && craft is not null, "both rules claimed the same material");
+        }
     }
 
     [Fact]

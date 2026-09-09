@@ -95,9 +95,9 @@ for W in WIDTHS:
     check("settings finish", W, check_box("Sort bags afterwards"), card, "the sort tick does not fit")
 
     # the page footer: a tick on the left, a link pushed to the right
-    foot_tick = check_box("Show me every setting")
+    foot_tick = check_box("Show me every setting") + 24 * SCALE + check_box("Hold still")
     foot_link = w("Something is not working") + FRAME_PAD * 2
-    check("settings footer", W, foot_tick + ITEM + foot_link, inner, "the advanced tick and the help link collide")
+    check("settings footer", W, foot_tick + ITEM + foot_link, inner, "the footer ticks and the help link collide")
 
     # the folds, indented under their header
     fold = inner - 12 * SCALE

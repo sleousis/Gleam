@@ -204,6 +204,11 @@ public sealed partial class SettingsWindow
         if (Ui.Check("Show me every setting", ref adv)) { config.AdvancedMode = adv; dirty = true; }
         Ui.Tooltip("Adds filters and sorting, a choice of action on every row, layouts and rules, and the rest of the settings. Off keeps Gleam to one list and one button.");
 
+        ImGui.SameLine(0, 24 * Ui.Scale);
+        var still = config.ReduceMotion;
+        if (Ui.Check("Hold still", ref still)) { config.ReduceMotion = still; Ui.Reduced = still; dirty = true; }
+        Ui.Tooltip("Turns off the fading, sliding and counting. Everything still works, it just arrives at once.");
+
         var link = "Something is not working";
         var linkWidth = ImGui.CalcTextSize(link, false, 0).X + ImGui.GetStyle().FramePadding.X * 2;
         Ui.RightAlignOrWrap(linkWidth, 260f * Ui.Scale);

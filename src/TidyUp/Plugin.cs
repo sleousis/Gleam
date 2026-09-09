@@ -74,6 +74,7 @@ public sealed class Plugin : IDalamudPlugin
         PluginServices.Init(pi, data);
 
         config = pi.GetPluginConfig() as Configuration ?? new Configuration();
+        Windows.Ui.Reduced = config.ReduceMotion;
         void Save() => config.Save(pi);
         if (config.Migrate()) Save();
 
