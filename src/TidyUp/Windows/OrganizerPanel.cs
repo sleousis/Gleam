@@ -39,7 +39,7 @@ public sealed class OrganizerPanel
 
     private void Note(string text) { note = text; noteUntil = DateTime.UtcNow.AddSeconds(5); }
 
-    private static readonly IReadOnlyList<(View, string)> Views = [(View.Preview, "Preview"), (View.Rules, "Rules")];
+    private static readonly IReadOnlyList<(View, string)> Views = [(View.Preview, "What will move"), (View.Rules, "Rules")];
 
     /// <summary>Set by the plugin when hands-free mode is available.</summary>
     public Automation.AutoPilot? Pilot { get; set; }
@@ -63,10 +63,22 @@ public sealed class OrganizerPanel
     }
 
     private OrganizerPlan? Plan => config.Organizer.Active;
+    private bool Simple => !config.AdvancedMode;
 
     public void Draw()
     {
         var plan = Plan;
+        if (Simple && plan is null)
+        {
+            // The simple layer has exactly one place things go; make it without asking.
+            plan = OrganizerPlan.Starter();
+            plan.Name = "Where things go";
+            config.Organizer.Plans.Add(plan);
+            config.Organizer.ActivePlanId = plan.Id;
+            dirty = true;
+        }
+        if (Simple) { DrawSimple(plan!); return; }
+
         var enabled = plan?.Rules.Count(r => r.Enabled) ?? 0;
         var subtitle = plan is null ? "No layout yet" : $"{plan.Name} · {enabled} rule{(enabled == 1 ? "" : "s")}";
         Ui.Header(icons.LogoSmall, "Gleam", subtitle, Ui.SegmentedWidth(Views), () =>
@@ -230,17 +242,63 @@ public sealed class OrganizerPanel
         if (view == View.Preview && active is not null)
         {
             ImGui.SameLine();
-            var w = ImGui.CalcTextSize("Refresh", false, 0).X + ImGui.GetFrameHeight() + 20 * Ui.Scale;
+            var w = ImGui.CalcTextSize("Look again", false, 0).X + ImGui.GetFrameHeight() + 20 * Ui.Scale;
             Ui.RightAlign(w);
             using (ImRaii.Disabled(organizer.IsPreviewing))
             {
-                if (Ui.IconButton(FontAwesomeIcon.Sync, "Refresh", w)) _ = organizer.PreviewAsync();
+                if (Ui.IconButton(FontAwesomeIcon.Sync, "Look again", w)) _ = organizer.PreviewAsync();
             }
             Ui.Tooltip("Looks through your storage again.");
         }
     }
 
     // ---------- rules ----------
+
+    // ---------- the simple layer: quick setup, one sentence, one button ----------
+
+    private void DrawSimple(OrganizerPlan plan)
+    {
+        var moves = organizer.Current?.Moves.Count ?? 0;
+        var subtitle = organizer.IsPreviewing ? "Looking through your storage…"
+            : organizer.Current is null ? "Where things go"
+            : moves == 0 ? "Everything is where you want it."
+            : $"{moves} item{(moves == 1 ? "" : "s")} will move.";
+        Ui.Header(icons.LogoSmall, "Gleam", subtitle, 0f, null, null, () => { if (Ui.ModeSwitch(Ui.AppMode.Organize)) SwitchToClean?.Invoke(); });
+        Ui.Gap(0.4f);
+
+        if (Pilot is { IsRunning: true, Mode: Automation.PilotMode.Organize } || organizer.IsRunning) { DrawRunning(); return; }
+        DrawBanners();
+
+        var footer = ImGui.GetFrameHeight() * 2.4f + Ui.Space;
+        using (var body = ImRaii.Child("##body", new Vector2(0, -footer), false, ImGuiWindowFlags.None))
+        {
+            if (body)
+            {
+                quickOpen = true;
+                DrawQuickSetup(plan);
+                Ui.Gap(0.6f);
+                var result = organizer.Current;
+                if (result is not null && !result.Report.Feasible)
+                {
+                    foreach (var s in result.Report.Shortfalls)
+                        Ui.Banner(Ui.Danger, "Not enough room", $"{Name(s.Storage)} is {s.Short} slot{(s.Short == 1 ? "" : "s")} short. Free some space there or send fewer things to it.", dismissible: false);
+                }
+                else if (result is { Moves.Count: > 0 })
+                {
+                    var opens = result.StoragesToOpen.Select(Name).ToList();
+                    Ui.Hint(opens.Count == 0 ? "Everything moves within your bags and armoury chest." : $"Gleam needs {string.Join(" and ", opens)} open. {(Pilot is not null && config.Automation.Enabled ? "It will go there for you." : "Open them and it carries on by itself.")}");
+                }
+            }
+        }
+        DrawFooter();
+
+        if (dirty)
+        {
+            dirty = false;
+            save();
+            _ = organizer.PreviewAsync();
+        }
+    }
 
     // ---------- quick setup: four questions that write the rules ----------
 
@@ -259,9 +317,12 @@ public sealed class OrganizerPanel
     private void DrawQuickSetup(OrganizerPlan plan)
     {
         using var card = Ui.Card("quick");
-        Ui.TextColored(Ui.Muted, "QUICK SETUP");
-        ImGui.SameLine();
-        if (Ui.LinkButton(quickOpen ? "Hide" : "Show")) quickOpen = !quickOpen;
+        Ui.TextColored(Ui.Muted, Simple ? "WHERE THINGS GO" : "QUICK SETUP");
+        if (!Simple)
+        {
+            ImGui.SameLine();
+            if (Ui.LinkButton(quickOpen ? "Hide" : "Show")) quickOpen = !quickOpen;
+        }
         if (!quickOpen) return;
         Ui.Hint("Say where each kind of thing should live. Leave one alone and it stays where it is.");
         ImGui.Spacing();
@@ -279,7 +340,7 @@ public sealed class OrganizerPanel
             else rule.Then = dest;
             dirty = true;
         }
-        Ui.Hint("Everything else is listed below, where you can fine-tune or add your own rules.");
+        if (!Simple) Ui.Hint("Everything else is listed below, where you can fine-tune or add your own rules.");
     }
 
     private static OrganizerPredicate Clone(OrganizerPredicate p) => new()
@@ -481,7 +542,7 @@ public sealed class OrganizerPanel
         ImGui.SameLine(); TriState("Unique", ref when, w => w.IsUnique, (w, v) => w.IsUnique = v, "Unique", "Not unique");
         ImGui.SameLine(); TriState("Jobs", ref when, w => w.ForJobsPlayed, (w, v) => w.ForJobsPlayed = v, "Jobs I play", "Jobs I don't play");
         TriState("Gear set", ref when, w => w.InGearset, (w, v) => w.InGearset = v, "In a gear set", "Not in a gear set");
-        ImGui.SameLine(); TriState("Never touch", ref when, w => w.OnNeverTouchList, (w, v) => w.OnNeverTouchList = v, "On the list", "Not on the list");
+        ImGui.SameLine(); TriState("Keep these", ref when, w => w.OnNeverTouchList, (w, v) => w.OnNeverTouchList = v, "On the list", "Not on the list");
 
         // Levels
         Range("Item level", ref when, w => w.MinItemLevel, w => w.MaxItemLevel, (w, v) => w.MinItemLevel = v, (w, v) => w.MaxItemLevel = v, 999);
@@ -594,7 +655,7 @@ public sealed class OrganizerPanel
         if (organizer.IsPreviewing || result is null)
         {
             Ui.EmptyState(icons.LogoMedium, organizer.IsPreviewing ? "Looking through your storage…" : "Nothing to show yet.", organizer.Status);
-            if (!organizer.IsPreviewing && Ui.IconButton(FontAwesomeIcon.Sync, "Refresh")) _ = organizer.PreviewAsync();
+            if (!organizer.IsPreviewing && Ui.IconButton(FontAwesomeIcon.Sync, "Look again")) _ = organizer.PreviewAsync();
             return;
         }
 
@@ -732,16 +793,17 @@ public sealed class OrganizerPanel
             if (organizer.PendingMoves.Count > 0) parts.Add($"{organizer.PendingMoves.Count} from earlier still waiting");
         }
         ImGui.AlignTextToFramePadding();
-        Ui.Hint(parts.Count == 0 ? (string.IsNullOrEmpty(organizer.Status) ? "Refresh to see what would move." : organizer.Status) : string.Join("  ·  ", parts));
+        if (Simple) Ui.Hint(organizer.IsPreviewing ? "Looking through your storage…" : r is null ? "" : r.Moves.Count == 0 ? "Nothing to move." : $"{r.Moves.Count} item{(r.Moves.Count == 1 ? "" : "s")} will move.");
+        else Ui.Hint(parts.Count == 0 ? (string.IsNullOrEmpty(organizer.Status) ? "Refresh to see what would move." : organizer.Status) : string.Join("  ·  ", parts));
 
         var canRun = r is not null && r.Report.Feasible && r.Moves.Count > 0 && !organizer.IsPreviewing;
         var handsFree = Pilot is not null && config.Automation.Enabled && r is not null && r.StoragesToOpen.Any();
         var buttonWidth = 220 * Ui.Scale;
         var style = ImGui.GetStyle();
-        var hereW = handsFree ? ImGui.CalcTextSize("Organize here only", false, 0).X + style.FramePadding.X * 2 + style.ItemSpacing.X : 0;
+        var hereW = handsFree && !Simple ? ImGui.CalcTextSize("Organize here only", false, 0).X + style.FramePadding.X * 2 + style.ItemSpacing.X : 0;
         ImGui.SameLine();
         Ui.RightAlign(hereW + buttonWidth);
-        if (handsFree)
+        if (handsFree && !Simple)
         {
             using (ImRaii.Disabled(!canRun))
             {
@@ -754,13 +816,13 @@ public sealed class OrganizerPanel
         {
             var n = r?.Moves.Count ?? 0;
             var items = $"{n} item{(n == 1 ? "" : "s")}";
-            var label = r is { Report.Feasible: false } ? "Make room first" : handsFree ? $"Organize {items} everywhere" : $"Organize {items}";
+            var label = r is { Report.Feasible: false } ? "Make room first" : handsFree && !Simple ? $"Organize {items} everywhere" : $"Organize {items}";
             if (Ui.PrimaryButton(label, buttonWidth))
             {
                 if (handsFree) _ = Pilot!.RunOrganizerAsync(); else _ = organizer.RunAsync();
             }
         }
-        if (r is { Report.Feasible: false }) Ui.Tooltip("A storage would overflow. Change a rule or free some space, then refresh.");
+        if (r is { Report.Feasible: false }) Ui.Tooltip("A storage would overflow. Send fewer things there or free some space, then look again.");
         else if (handsFree) Ui.Tooltip(HandsFreeOrganizeHint);
         else Ui.Tooltip("Moves what is shown. Closed storages keep their moves waiting until you open them.");
     }

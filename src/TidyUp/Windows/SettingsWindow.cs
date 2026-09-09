@@ -54,8 +54,8 @@ public sealed partial class SettingsWindow : StyledWindow
         this.allagan = allagan;
         this.coordinator = coordinator;
         this.openDebug = openDebug;
-        protectEditor = new ListEditor(db, icons, () => config.ProtectList, "Never touch", "Items here are never proposed, whatever the preset says.", () => player.ContentId, MarkDirty);
-        alwaysEditor = new ListEditor(db, icons, () => config.AlwaysDiscardList, "Always clean", "Items here are proposed on every run.", () => player.ContentId, MarkDirty);
+        protectEditor = new ListEditor(db, icons, () => config.ProtectList, "Keep these", "Gleam never lists these, whatever else you choose.", () => player.ContentId, MarkDirty);
+        alwaysEditor = new ListEditor(db, icons, () => config.AlwaysDiscardList, "Always junk", "Gleam lists these every time, even when no rule picks them.", () => player.ContentId, MarkDirty);
         Size = new Vector2(620, 560);
         SizeCondition = ImGuiCond.FirstUseEver;
         SizeConstraints = new WindowSizeConstraints { MinimumSize = new Vector2(480, 360), MaximumSize = new Vector2(4000, 3000) };
@@ -77,7 +77,7 @@ public sealed partial class SettingsWindow : StyledWindow
                 Ui.Gap(0.6f);
                 DrawEssentials();
                 Ui.Gap(0.5f);
-                if (ImGui.CollapsingHeader("More", ImGuiTreeNodeFlags.None)) DrawAdvancedFold();
+                if (config.AdvancedMode && ImGui.CollapsingHeader("More", ImGuiTreeNodeFlags.None)) DrawAdvancedFold();
             }
         }
 
@@ -121,6 +121,7 @@ public sealed partial class SettingsWindow : StyledWindow
             Ui.Tooltip(ConfirmationWindow.SortAfterHint);
         }
 
+        if (config.AdvancedMode)
         using (Ui.Card("where"))
         {
             Ui.TextColored(Ui.Muted, "WHERE TO LOOK");
@@ -137,11 +138,11 @@ public sealed partial class SettingsWindow : StyledWindow
 
         using (Ui.Card("auto"))
         {
-            Ui.TextColored(Ui.Muted, "HANDS-FREE");
+            Ui.TextColored(Ui.Muted, "DO IT FOR ME");
             ImGui.Spacing();
             var a = config.Automation;
             var auto = a.Enabled;
-            if (ImGui.Checkbox("Let Gleam travel and do it all", ref auto)) { a.Enabled = auto; dirty = true; }
+            if (ImGui.Checkbox("Let Gleam walk and travel for me", ref auto)) { a.Enabled = auto; dirty = true; }
             ImGui.SameLine();
             if (Nav is null || !Nav.IsInstalled) Ui.Pill("needs the vnavmesh plugin", Ui.Warn); else Ui.Pill("vnavmesh", Ui.Ok, Dalamud.Interface.FontAwesomeIcon.Check);
             Ui.Tooltip("vnavmesh is a free plugin that walks your character from place to place. Gleam uses it to reach the bell, the dresser and the merchant.");
@@ -157,6 +158,7 @@ public sealed partial class SettingsWindow : StyledWindow
             }
         }
 
+        if (config.AdvancedMode)
         using (Ui.Card("ventures"))
         {
             Ui.TextColored(Ui.Muted, "AFTER VENTURES");
@@ -170,7 +172,16 @@ public sealed partial class SettingsWindow : StyledWindow
         }
 
         using (Ui.Card("protect")) protectEditor.Draw();
-        using (Ui.Card("always")) alwaysEditor.Draw();
+        if (config.AdvancedMode) using (Ui.Card("always")) alwaysEditor.Draw();
+
+        using (Ui.Card("mode"))
+        {
+            Ui.TextColored(Ui.Muted, "SHOW MORE");
+            ImGui.Spacing();
+            var adv = config.AdvancedMode;
+            if (ImGui.Checkbox("Show advanced options", ref adv)) { config.AdvancedMode = adv; dirty = true; }
+            Ui.HintWrapped("Filters and sorting, a choice of action on every row, layouts and rules, and every other setting. Off keeps Gleam to one list and one button.");
+        }
     }
 
     // ---------- everything else, folded ----------

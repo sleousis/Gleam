@@ -171,7 +171,7 @@ public sealed class OrganizerSettings
 public sealed class Configuration : IPluginConfiguration
 {
     /// <summary>Bump when <see cref="Migrate"/> gains a step. New configs start here and skip the chain.</summary>
-    public const int CurrentVersion = 11;
+    public const int CurrentVersion = 12;
 
     public int Version { get; set; } = CurrentVersion;
 
@@ -192,6 +192,15 @@ public sealed class Configuration : IPluginConfiguration
     public bool Greeted { get; set; }
     public bool SeenCleanIntro { get; set; }
     public bool SeenOrganizeIntro { get; set; }
+
+    /// <summary>The three-screen first run: what happens to junk, what to keep, how it works. Shown once.</summary>
+    public bool SeenFirstRun { get; set; }
+
+    /// <summary>
+    /// Off: the simple layer only. One list with what will happen, quick setup for where things go, four settings.
+    /// On: filters, per-row actions, layouts and rules, and every other setting.
+    /// </summary>
+    public bool AdvancedMode { get; set; }
 
     /// <summary>Largest stack per market listing; 0 lists whole stacks.</summary>
     public int MarketListStackSize { get; set; }
@@ -300,6 +309,14 @@ public sealed class Configuration : IPluginConfiguration
             // list on each start. Fixed at the source; clean up the copies once more.
             RemoveExactDuplicateRules();
             Version = 11;
+            changed = true;
+        }
+        if (Version < 12)
+        {
+            // Anyone who has been using the full window keeps it; the simple layer is for newcomers.
+            AdvancedMode = true;
+            SeenFirstRun = true;
+            Version = 12;
             changed = true;
         }
         changed |= EnsureDefaults();

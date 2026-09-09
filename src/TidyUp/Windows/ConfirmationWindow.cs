@@ -63,6 +63,12 @@ public sealed class ConfirmationWindow : StyledWindow
     private readonly record struct HeaderColumn(float X, float Width, string Label, SortKey? Key, bool Numeric);
     private readonly Dictionary<string, double> rowFlash = new();
 
+    /// <summary>The simple layer: no filters, no per-row choices, plain words. Advanced adds everything back.</summary>
+    private bool Simple => !config.AdvancedMode;
+    private int firstRunStep;
+    private ListEditor? keepEditor;
+    private readonly Action openSettings;
+
     /// <summary>The one way a row gets ticked or unticked: keeps the session skip in step and gives the row a brief glow.</summary>
     private void SetChecked(PlanRow row, bool on)
     {
@@ -85,6 +91,7 @@ public sealed class ConfirmationWindow : StyledWindow
         this.config = config;
         this.gamepad = gamepad;
         this.openHistory = openHistory;
+        this.openSettings = openSettings;
         Size = new Vector2(860, 600);
         SizeCondition = ImGuiCond.FirstUseEver;
         SizeConstraints = new WindowSizeConstraints { MinimumSize = new Vector2(560, 320), MaximumSize = new Vector2(4000, 3000) };
@@ -114,9 +121,10 @@ public sealed class ConfirmationWindow : StyledWindow
         if (Pilot is { IsRunning: true, Mode: Automation.PilotMode.Clean }) { DrawPilotRunning(); return; }
         if (coordinator.IsRunning) { DrawRunning(); return; }
         if (plan is null) { DrawCentered(string.IsNullOrEmpty(coordinator.Status) ? "Scanning your containers…" : coordinator.Status); return; }
+        if (!config.SeenFirstRun) { DrawFirstRun(plan); return; }
 
         DrawTopBar(plan);
-        if (!config.SeenCleanIntro)
+        if (!config.SeenCleanIntro && !Simple)
         {
             Ui.Gap(0.3f);
             if (Ui.Banner(Ui.Info, "New here?", "Gleam lists what it thinks is junk. Nothing happens until you press Clean, and you can untick anything.", dismissLabel: "Got it"))
@@ -223,6 +231,28 @@ public sealed class ConfirmationWindow : StyledWindow
         var subtitle = coordinator.FocusContainer is { } fc
             ? $"Only the {FocusName(plan, fc)} · {checkedCount} of {total} selected"
             : $"{total} item{(total == 1 ? "" : "s")} in {containers} container{(containers == 1 ? "" : "s")} · {checkedCount} selected";
+        if (Simple)
+        {
+            var summary = plan.Summarize();
+            var freed = summary.SlotsFreedByContainer.Values.Sum();
+            var sentence = total == 0 ? "Nothing looks like junk right now."
+                : $"Gleam found {total} item{(total == 1 ? "" : "s")} of junk." + (freed > 0 ? $" Cleaning them frees {freed} slot{(freed == 1 ? "" : "s")}" : string.Empty)
+                  + (summary.GilRecovered + summary.MarketGil > 0 ? $"{(freed > 0 ? " and recovers" : " Cleaning them recovers")} about {Ui.Gil(summary.GilRecovered + summary.MarketGil)}." : freed > 0 ? "." : string.Empty);
+            Ui.Header(icons.LogoSmall, "Gleam", sentence, 0f, null, null, Organizer is null ? null : () => { if (Ui.ModeSwitch(Ui.AppMode.Clean)) Show(Ui.AppMode.Organize); });
+            ImGui.AlignTextToFramePadding();
+            Ui.Hint(profile.Thresholds.Policy.Describe());
+            ImGui.SameLine();
+            if (Ui.LinkButton("Change")) openSettings();
+            Ui.Tooltip("Opens Settings, where you choose what happens to junk.");
+            if (coordinator.FocusContainer is not null)
+            {
+                ImGui.SameLine();
+                if (Ui.LinkButton("Show all containers")) _ = coordinator.RefreshPlanAsync(openWindow: false);
+            }
+            Ui.Gap(0.4f);
+            DrawSimpleToolbar(plan, checkedCount);
+            return;
+        }
         Ui.Header(icons.LogoSmall, "Gleam", subtitle, Ui.SegmentedWidth(PresetOptions), () =>
         {
             if (Ui.Segmented("##preset", ref preset, PresetOptions))
@@ -281,6 +311,22 @@ public sealed class ConfirmationWindow : StyledWindow
     /// <summary>One chip per container with its row count. Click to show only that container; click again for all.</summary>
     /// <summary>Filter chips earn their place only once the list is long enough to need narrowing.</summary>
     private const int ChipsFromRows = 12;
+
+    /// <summary>Simple layer: search only when the list is long, a Look again button, and Select all.</summary>
+    private void DrawSimpleToolbar(RunPlan plan, int checkedCount)
+    {
+        var total = plan.AllRows.Count();
+        if (total > 40) { Ui.SearchBox("##search", ref search, 260 * Ui.Scale); ImGui.SameLine(); }
+        if (Ui.IconButton(FontAwesomeIcon.Sync, "Look again")) _ = coordinator.RefreshPlanAsync(openWindow: false, coordinator.FocusContainer);
+        Ui.Tooltip("Looks through your containers again.");
+        ImGui.SameLine();
+        Ui.RightAlign(90 * Ui.Scale);
+        var executable = Filter(plan.AllRows).Where(r => r.IsExecutable).ToList();
+        var allChecked = executable.Count > 0 && executable.All(r => r.Checked);
+        if (Ui.LinkButton(allChecked ? "Clear" : "Select all"))
+            foreach (var r in executable) SetChecked(r, !allChecked);
+        Ui.Tooltip(allChecked ? "Unticks every row." : "Ticks every row, including the ones Gleam was unsure about.");
+    }
 
     private void DrawContainerChips(RunPlan plan)
     {
@@ -361,7 +407,7 @@ public sealed class ConfirmationWindow : StyledWindow
         if (ImGui.MenuItem("All rules", string.Empty, filterRule is null, true)) filterRule = null;
         foreach (var r in Core.Rules.RuleEngine.AllRules)
             if (ImGui.MenuItem(r.Name, string.Empty, filterRule == r.Id, true)) filterRule = r.Id;
-        if (ImGui.MenuItem("Always clean list", string.Empty, filterRule == "always-discard", true)) filterRule = "always-discard";
+        if (ImGui.MenuItem("Always junk list", string.Empty, filterRule == "always-discard", true)) filterRule = "always-discard";
         if (ImGui.MenuItem("Not suggested by any rule", string.Empty, filterRule == "manual", true)) filterRule = "manual";
 
         ImGui.Separator();
@@ -512,21 +558,24 @@ public sealed class ConfirmationWindow : StyledWindow
 
         var cols = new List<HeaderColumn>();
         Vector2 tableMin, tableMax;
-        using (var table = ImRaii.Table($"##t{key}", 6, ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingFixedFit | ImGuiTableFlags.NoSavedSettings | ImGuiTableFlags.PadOuterX))
+        using (var table = ImRaii.Table($"##t{key}", Simple ? 5 : 6, ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingFixedFit | ImGuiTableFlags.NoSavedSettings | ImGuiTableFlags.PadOuterX))
         {
         if (!table) return;
         ImGui.TableSetupColumn("##chk", ImGuiTableColumnFlags.WidthFixed, 24 * Ui.Scale, 0);
         ImGui.TableSetupColumn("##icon", ImGuiTableColumnFlags.WidthFixed, 30 * Ui.Scale, 0);
         ImGui.TableSetupColumn("##item", ImGuiTableColumnFlags.WidthStretch, 5f, 0);
-        ImGui.TableSetupColumn("##action", ImGuiTableColumnFlags.WidthFixed, 128 * Ui.Scale, 0);
+        ImGui.TableSetupColumn("##action", Simple ? ImGuiTableColumnFlags.WidthStretch : ImGuiTableColumnFlags.WidthFixed, Simple ? 2f : 128 * Ui.Scale, 0);
         ImGui.TableSetupColumn("##market", ImGuiTableColumnFlags.WidthFixed, 96 * Ui.Scale, 0);
-        ImGui.TableSetupColumn("##attrs", ImGuiTableColumnFlags.WidthStretch, 5f, 0);
+        if (!Simple) ImGui.TableSetupColumn("##attrs", ImGuiTableColumnFlags.WidthStretch, 5f, 0);
 
         // Column titles; the sortable ones cycle asc / desc / off for this section.
         ImGui.TableNextRow(ImGuiTableRowFlags.None, 24 * Ui.Scale);
         ImGui.TableNextColumn();
         ImGui.TableNextColumn();
-        foreach (var (label, sortBy, numeric) in new (string, SortKey?, bool)[] { ("Item", SortKey.Name, false), ("Action", SortKey.Action, false), ("Market", SortKey.Market, true), ("Attributes", null, false) })
+        var titles = Simple
+            ? new (string, SortKey?, bool)[] { ("Item", SortKey.Name, false), ("What happens", SortKey.Action, false), ("Market", SortKey.Market, true) }
+            : new (string, SortKey?, bool)[] { ("Item", SortKey.Name, false), ("Action", SortKey.Action, false), ("Market", SortKey.Market, true), ("Attributes", null, false) };
+        foreach (var (label, sortBy, numeric) in titles)
         {
             ImGui.TableNextColumn();
             var col = new HeaderColumn(ImGui.GetCursorScreenPos().X, ImGui.GetContentRegionAvail().X, label, sortBy, numeric);
@@ -581,11 +630,18 @@ public sealed class ConfirmationWindow : StyledWindow
         if (row.Item.Quantity > 1) { ImGui.SameLine(); Ui.Hint($"× {row.Item.Quantity}"); }
 
         ImGui.TableNextColumn();
-        DrawActionPicker(row);
+        if (Simple)
+        {
+            // The preset decides; the row only says what will happen. Advanced mode offers the alternatives.
+            ImGui.AlignTextToFramePadding();
+            Ui.TextColored(Ui.ActionColor(row.ChosenAction), row.ChosenAction.Label());
+        }
+        else DrawActionPicker(row);
 
         ImGui.TableNextColumn();
         DrawMarketPrice(row);
 
+        if (Simple) return;
         ImGui.TableNextColumn();
         DrawAttributePills(row);
     }
@@ -754,8 +810,8 @@ public sealed class ConfirmationWindow : StyledWindow
         Ui.TextColored(Ui.Accent, row.Info.Name);
         ImGui.Separator();
         if (ImGui.MenuItem("Skip this time", string.Empty, false, true)) coordinator.SkipRow(row);
-        if (ImGui.MenuItem("Never touch", string.Empty, false, true)) coordinator.Protect(row.Info.ItemId, row.Info.Name);
-        if (ImGui.MenuItem("Always clean", string.Empty, false, true)) coordinator.AlwaysDiscard(row.Info.ItemId, row.Info.Name);
+        if (ImGui.MenuItem("Keep this, always", string.Empty, false, true)) coordinator.Protect(row.Info.ItemId, row.Info.Name);
+        if (ImGui.MenuItem("Treat as junk, always", string.Empty, false, true)) coordinator.AlwaysDiscard(row.Info.ItemId, row.Info.Name);
         ImGui.Separator();
         if (ImGui.MenuItem("Garland Tools", string.Empty, false, true)) Ui.OpenLink(Ui.GarlandUrl(row.Info.ItemId));
         if (ImGui.MenuItem("Market history (Universalis)", string.Empty, false, true)) Ui.OpenLink(Ui.UniversalisUrl(row.Info.ItemId));
@@ -838,17 +894,20 @@ public sealed class ConfirmationWindow : StyledWindow
         var items = $"{cap.Items} item{(cap.Items == 1 ? "" : "s")}";
         var verb = cap.Exceeded && !capArmed
             ? $"Clean {items} anyway"
-            : handsFree && needsTravel ? $"Clean {items} everywhere" : $"Clean {items}";
+            : handsFree && needsTravel && !Simple ? $"Clean {items} everywhere" : $"Clean {items}";
         var buttonWidth = 240 * Ui.Scale;
         var style = ImGui.GetStyle();
-        var sortW = ImGui.CalcTextSize(SortAfterLabel, false, 0).X + ImGui.GetFrameHeight() + style.ItemInnerSpacing.X;
-        var hereW = handsFree && needsTravel ? ImGui.CalcTextSize("Clean here only", false, 0).X + style.FramePadding.X * 2 + style.ItemSpacing.X : 0;
+        var sortW = Simple ? 0f : ImGui.CalcTextSize(SortAfterLabel, false, 0).X + ImGui.GetFrameHeight() + style.ItemInnerSpacing.X + style.ItemSpacing.X * 2;
+        var hereW = handsFree && needsTravel && !Simple ? ImGui.CalcTextSize("Clean here only", false, 0).X + style.FramePadding.X * 2 + style.ItemSpacing.X : 0;
         ImGui.SameLine();
-        Ui.RightAlign(sortW + style.ItemSpacing.X * 2 + hereW + buttonWidth);
-        var sortAfter = config.SortAfterRun;
-        if (ImGui.Checkbox(SortAfterLabel, ref sortAfter)) { config.SortAfterRun = sortAfter; config.Save(PluginServices.PluginInterface); }
-        Ui.Tooltip(SortAfterHint);
-        if (handsFree && needsTravel)
+        Ui.RightAlign(sortW + hereW + buttonWidth);
+        if (!Simple)
+        {
+            var sortAfter = config.SortAfterRun;
+            if (ImGui.Checkbox(SortAfterLabel, ref sortAfter)) { config.SortAfterRun = sortAfter; config.Save(PluginServices.PluginInterface); }
+            Ui.Tooltip(SortAfterHint);
+        }
+        if (handsFree && needsTravel && !Simple)
         {
             ImGui.SameLine();
             using (ImRaii.Disabled(cap.Items == 0))
@@ -873,6 +932,88 @@ public sealed class ConfirmationWindow : StyledWindow
     public const string SortAfterHint = "Runs the game's own sort on every container that was touched.";
     public const string HandsFreeCleanHint = "Hands-free: opens the saddlebag, travels to an inn, visits each retainer and the dresser, and cleans as it goes.";
     private const string StopHint = "Finishes the current item, then stops.";
+
+    // ---------- first run: three screens, once ----------
+
+    private static readonly (Core.Rules.PresetName Preset, string Title, string Text)[] FirstRunPresets =
+    [
+        (Core.Rules.PresetName.MarketBoard, "Sell it on the market board", "Marketable junk is listed through your retainers at the going price. The rest is sold to vendors or discarded."),
+        (Core.Rules.PresetName.Vendor, "Sell it to vendors", "Junk that has a vendor price is sold. Untradeable junk is discarded."),
+        (Core.Rules.PresetName.DiscardAll, "Just discard it", "Everything Gleam finds is thrown away. Fastest, and nothing comes back."),
+    ];
+
+    private void DrawFirstRun(RunPlan plan)
+    {
+        var width = Math.Min(560 * Ui.Scale, ImGui.GetContentRegionAvail().X - 20 * Ui.Scale);
+        var left = (ImGui.GetWindowWidth() - width) / 2;
+        Ui.Gap(1.5f);
+        Ui.RunningHeader(icons.LogoMedium, firstRunStep switch { 0 => "What should happen to junk?", 1 => "Anything you never want touched?", _ => "Ready." },
+            firstRunStep switch { 0 => "You can change this any time in Settings.", 1 => "Add items here and Gleam will never list them. You can skip this.", _ => "Gleam shows you a list first and does nothing until you press Clean." });
+        Ui.Gap(1f);
+        ImGui.SetCursorPosX(left);
+        using (ImRaii.Child("##firstrun", new Vector2(width, 0), false, ImGuiWindowFlags.AlwaysAutoResize))
+        {
+            switch (firstRunStep)
+            {
+                case 0:
+                    var current = Core.Rules.Presets.Detect(coordinator.EffectiveProfile.Thresholds);
+                    foreach (var (preset, title, text) in FirstRunPresets)
+                    {
+                        if (OptionCard(title, text, current == preset, width))
+                        {
+                            config.Profiles.Account.ApplyPreset(preset);
+                            config.Save(PluginServices.PluginInterface);
+                            _ = coordinator.RefreshPlanAsync(openWindow: false);
+                            firstRunStep = 1;
+                        }
+                        Ui.Gap(0.3f);
+                    }
+                    break;
+                case 1:
+                    keepEditor ??= new ListEditor(db, icons, () => config.ProtectList, "Keep these", "Search for an item and add it. Gleam will never list it.", () => plan.CharacterId, () => config.Save(PluginServices.PluginInterface));
+                    using (Ui.Card("keep")) keepEditor.Draw();
+                    Ui.Gap(0.6f);
+                    ImGui.SetCursorPosX(left + width - 240 * Ui.Scale);
+                    if (Ui.LinkButton("Skip")) firstRunStep = 2;
+                    ImGui.SameLine();
+                    if (Ui.PrimaryButton("Next", 150 * Ui.Scale)) firstRunStep = 2;
+                    break;
+                default:
+                    ImGui.SetCursorPosX(left + (width - 220 * Ui.Scale) / 2);
+                    if (Ui.PrimaryButton("Show me the list", 220 * Ui.Scale))
+                    {
+                        config.SeenFirstRun = true;
+                        config.SeenCleanIntro = true;
+                        config.Save(PluginServices.PluginInterface);
+                    }
+                    break;
+            }
+        }
+    }
+
+    /// <summary>A wide choice card: title, one line, a tick when it is the current choice. Returns true when clicked.</summary>
+    private static bool OptionCard(string title, string text, bool selected, float width)
+    {
+        var h = ImGui.GetTextLineHeight() * 2 + 26 * Ui.Scale;
+        var pos = ImGui.GetCursorScreenPos();
+        var clicked = ImGui.InvisibleButton($"##opt{title}", new Vector2(width, h));
+        var key = $"opt:{title}";
+        Ui.RecordHover(key);
+        var hv = Ui.Hover(key);
+        var on = Ui.Smooth(key + ":on", selected ? 1f : 0f, 14f);
+        var dl = ImGui.GetWindowDrawList();
+        dl.AddRectFilled(pos, pos + new Vector2(width, h), ImGui.GetColorU32(Ui.Mix(new Vector4(1, 1, 1, 0.04f + 0.04f * hv), Ui.Accent * new Vector4(1, 1, 1, 0.18f), on)), Ui.Rounding);
+        dl.AddRect(pos, pos + new Vector2(width, h), ImGui.GetColorU32(Ui.Mix(Ui.InkLine, Ui.Accent, on)), Ui.Rounding);
+        var pad = 14 * Ui.Scale;
+        dl.AddText(pos + new Vector2(pad, 10 * Ui.Scale), ImGui.GetColorU32(Ui.Mix(Ui.Cream, Ui.AccentSoft, on)), title);
+        dl.AddText(pos + new Vector2(pad, 14 * Ui.Scale + ImGui.GetTextLineHeight()), ImGui.GetColorU32(Ui.Muted), text);
+        if (on > 0.01f)
+        {
+            using var f = ImRaii.PushFont(UiBuilder.IconFont);
+            dl.AddText(pos + new Vector2(width - pad - ImGui.GetTextLineHeight(), (h - ImGui.GetTextLineHeight()) / 2), ImGui.GetColorU32(Ui.AccentSoft * new Vector4(1, 1, 1, on)), FontAwesomeIcon.Check.ToIconString());
+        }
+        return clicked;
+    }
 
     /// <summary>Whether this run would go hands-free, and whether anything ticked needs travel to reach.</summary>
     private (bool HandsFree, bool NeedsTravel) RunShape(RunPlan plan)
