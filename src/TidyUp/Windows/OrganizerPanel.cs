@@ -108,10 +108,12 @@ public sealed class OrganizerPanel
         var plan = Plan;
 
         var enabled = plan?.Rules.Count(r => r.Enabled) ?? 0;
-        var subtitle = plan is null ? "No layout yet" : $"{plan.Name} · {enabled} rule{(enabled == 1 ? "" : "s")}";
+        var subtitle = plan is null ? "No layout yet"
+            : Rethinking ? $"{plan.Name} · working out what will move…"
+            : $"{plan.Name} · {enabled} rule{(enabled == 1 ? "" : "s")}";
         Ui.Header(icons.LogoSmall, "Gleam", subtitle, Ui.SegmentedWidth(Views), () =>
         {
-            if (Ui.Segmented("##view", ref view, Views) && view == View.Preview && organizer.Current is null) _ = organizer.PreviewAsync();
+            if (Ui.Segmented("##view", ref view, Views) && view == View.Preview && organizer.Current is null && !Rethinking) _ = organizer.PreviewAsync();
         }, null, () => { if (Ui.ModeSwitch(Ui.AppMode.Organize)) SwitchToClean?.Invoke(); });
 
         DrawPlanBar();
@@ -155,11 +157,31 @@ public sealed class OrganizerPanel
         }
         if (view == View.Preview && plan is not null) DrawFooter();
 
+        SettleChanges();
+    }
+
+    private double previewDueAt;
+
+    /// <summary>True while a change is waiting to be worked through, or is being worked through now.</summary>
+    private bool Rethinking => previewDueAt > 0 || organizer.IsPreviewing;
+
+    /// <summary>
+    /// Any change to a layout makes what is on screen stale: a different layout, a rule added, a destination
+    /// picked, an option toggled. The change is saved at once and the preview is redone a moment later, so a
+    /// slider being dragged does not start a scan on every frame.
+    /// </summary>
+    private void SettleChanges()
+    {
         if (dirty)
         {
             dirty = false;
             save();
-            if (view == View.Preview) _ = organizer.PreviewAsync();
+            previewDueAt = ImGui.GetTime() + 0.35;
+        }
+        if (previewDueAt > 0 && ImGui.GetTime() >= previewDueAt && !organizer.IsPreviewing)
+        {
+            previewDueAt = 0;
+            _ = organizer.PreviewAsync();
         }
     }
 
@@ -309,7 +331,7 @@ public sealed class OrganizerPanel
     private void DrawSimple(OrganizerPlan plan)
     {
         var moves = organizer.Current?.Moves.Count ?? 0;
-        var subtitle = organizer.IsPreviewing ? "Looking through your storage…"
+        var subtitle = Rethinking ? "Working out what will move…"
             : organizer.Current is null ? "Where things go"
             : moves == 0 ? "Everything is where you want it."
             : $"{moves} item{(moves == 1 ? "" : "s")} will move.";
@@ -351,12 +373,7 @@ public sealed class OrganizerPanel
         }
         DrawFooter();
 
-        if (dirty)
-        {
-            dirty = false;
-            save();
-            _ = organizer.PreviewAsync();
-        }
+        SettleChanges();
     }
 
     /// <summary>
@@ -914,12 +931,12 @@ public sealed class OrganizerPanel
             if (organizer.PendingMoves.Count > 0) parts.Add($"{organizer.PendingMoves.Count} from earlier still waiting");
         }
         ImGui.AlignTextToFramePadding();
-        if (Simple) Ui.Hint(organizer.IsPreviewing ? "Looking through your storage…" : r is null ? "" : r.Moves.Count == 0 ? "Nothing needs moving right now." : $"{r.Moves.Count} item{(r.Moves.Count == 1 ? "" : "s")} will move.");
+        if (Simple) Ui.Hint(Rethinking ? "Working out what will move…" : r is null ? "" : r.Moves.Count == 0 ? "Nothing needs moving right now." : $"{r.Moves.Count} item{(r.Moves.Count == 1 ? "" : "s")} will move.");
         else Ui.Hint(parts.Count == 0 ? (string.IsNullOrEmpty(organizer.Status) ? "Refresh to see what would move." : organizer.Status) : string.Join("  ·  ", parts));
 
         var needsTravel = r is not null && r.StoragesToOpen.Any();
         var blocked = needsTravel ? Pilot?.MissingDependency() : null;
-        var canRun = r is not null && r.Report.Feasible && r.Moves.Count > 0 && !organizer.IsPreviewing && blocked is null;
+        var canRun = r is not null && r.Report.Feasible && r.Moves.Count > 0 && !Rethinking && blocked is null;
         var handsFree = Pilot is not null && config.Automation.Enabled && needsTravel;
         if (blocked is not null)
         {
