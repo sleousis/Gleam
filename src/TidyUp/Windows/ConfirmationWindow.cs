@@ -77,13 +77,10 @@ public sealed class ConfirmationWindow : StyledWindow
     private double staggerAt;
     private string? hoveredRow;
 
-    /// <summary>The item picture grows a touch under the cursor, so the row you are on is felt as well as seen.</summary>
-    private Vector2 IconSize(PlanRow row)
-    {
-        var lift = Ui.Smooth($"rowicon:{row.Key}", hoveredRow == row.Key ? 1f : 0f, 16f);
-        var s = (26f + 2.5f * lift) * Ui.Scale;
-        return new Vector2(s, s);
-    }
+    /// <summary>How far the item picture is lifted under the cursor, 0 to 1. The row's height never changes.</summary>
+    private float IconLift(PlanRow row) => Ui.Smooth($"rowicon:{row.Key}", hoveredRow == row.Key ? 1f : 0f, 16f);
+
+    private const float RowIcon = 26f;
 
     /// <summary>
     /// Rows fade in one after another when a fresh list arrives, so the eye follows it down the page. Only
@@ -278,9 +275,11 @@ public sealed class ConfirmationWindow : StyledWindow
         var checkedCount = plan.AllRows.Count(r => r.Checked && r.IsExecutable);
         var total = plan.AllRows.Count(r => r.IsExecutable);
         var containers = plan.Sections.Count(s => s.Rows.Count > 0);
+        var shownChecked = (int)Ui.Count("subChecked", checkedCount);
+        var shownTotal = (int)Ui.Count("subTotal", total);
         var subtitle = coordinator.FocusContainer is { } fc
-            ? $"Only the {FocusName(plan, fc)} · {checkedCount} of {total} selected"
-            : $"{total} item{(total == 1 ? "" : "s")} in {containers} container{(containers == 1 ? "" : "s")} · {checkedCount} selected";
+            ? $"Only the {FocusName(plan, fc)} · {shownChecked} of {shownTotal} selected"
+            : $"{shownTotal} item{(shownTotal == 1 ? "" : "s")} in {containers} container{(containers == 1 ? "" : "s")} · {shownChecked} selected";
         if (Simple)
         {
             var summary = plan.Summarize();
@@ -644,7 +643,8 @@ public sealed class ConfirmationWindow : StyledWindow
             ImGui.AlignTextToFramePadding();
             Ui.TextColored(Ui.ActionColor(action), word);
             ImGui.SameLine();
-            Ui.Text($"{rows.Count} item{(rows.Count == 1 ? "" : "s")}");
+            var shownRows = (int)Ui.Count($"grpn:{action}", rows.Count);
+            Ui.Text($"{shownRows} item{(shownRows == 1 ? "" : "s")}");
             var shown = Ui.Count($"grpval:{action}", value);
             // The worth is the first thing to go when the card is narrow; the link and the count are not.
             var linkLabel = open ? "Hide the list" : "See the list";
@@ -690,7 +690,7 @@ public sealed class ConfirmationWindow : StyledWindow
         if (Ui.Check("##c", ref chk, !row.IsExecutable)) SetChecked(row, chk);
 
         ImGui.TableNextColumn();
-        Ui.ImageRounded(icons.Get(row.Info.IconId, row.Item.IsHq), IconSize(row), 4 * Ui.Scale);
+        Ui.ImageLifted(icons.Get(row.Info.IconId, row.Item.IsHq), RowIcon * Ui.Scale, IconLift(row), 4 * Ui.Scale, $"icon:{row.Info.IconId}");
 
         ImGui.TableNextColumn();
         ImGui.AlignTextToFramePadding();
@@ -746,7 +746,10 @@ public sealed class ConfirmationWindow : StyledWindow
         ImGui.SameLine();
         ImGui.SetCursorPosX(x0 + labelStart + ImGui.CalcTextSize(section.Title, false, 0).X + 22 * Ui.Scale);
         ImGui.SetCursorPosY(ImGui.GetCursorPosY() + pillDrop);
-        Ui.Pill(checkedHere > 0 ? $"{checkedHere} / {rows.Count}" : $"{rows.Count}", checkedHere > 0 ? Ui.AccentSoft : Ui.Muted);
+        var pillKey = $"sect:{section.Kind}:{section.OwnerId}";
+        var pickedHere = (int)Ui.Count($"{pillKey}:on", checkedHere);
+        var hereTotal = (int)Ui.Count($"{pillKey}:all", rows.Count);
+        Ui.Pill(pickedHere > 0 ? $"{pickedHere} / {hereTotal}" : $"{hereTotal}", pickedHere > 0 ? Ui.AccentSoft : Ui.Muted, null, pillKey);
 
         // A closed container only gets a marker when the player has to go there themselves; with
         // hands-free on, the run does the walking and the marker would just be noise.
@@ -820,7 +823,7 @@ public sealed class ConfirmationWindow : StyledWindow
         if (Ui.Check("##c", ref chk, !row.IsExecutable)) SetChecked(row, chk);
 
         ImGui.TableNextColumn();
-        Ui.ImageRounded(icons.Get(row.Info.IconId, row.Item.IsHq), IconSize(row), 4 * Ui.Scale);
+        Ui.ImageLifted(icons.Get(row.Info.IconId, row.Item.IsHq), RowIcon * Ui.Scale, IconLift(row), 4 * Ui.Scale, $"icon:{row.Info.IconId}");
 
         ImGui.TableNextColumn();
         ImGui.AlignTextToFramePadding();
@@ -1032,12 +1035,14 @@ public sealed class ConfirmationWindow : StyledWindow
             var key = $"alt:{alt.CharacterId}";
             if (!sectionOpen.TryGetValue(key, out var open)) open = false;
             ImGui.SetNextItemOpen(open, ImGuiCond.Always);
-            var expanded = ImGui.CollapsingHeader($"{alt.CharacterName}  ·  {alt.Proposals.Count}###{key}", ImGuiTreeNodeFlags.None);
+            var altCount = (int)Ui.Count($"{key}:n", alt.Proposals.Count);
+            var expanded = ImGui.CollapsingHeader($"{alt.CharacterName}  ·  {altCount}###{key}", ImGuiTreeNodeFlags.None);
             sectionOpen[key] = expanded;
             ImGui.SameLine();
             Ui.RightAlign(90 * Ui.Scale);
             Ui.Pill("View only", Ui.Muted);
             if (!expanded) continue;
+            using var altFade = Ui.FoldFade(key);
             using var table = ImRaii.Table($"##alt{alt.CharacterId}", 3, ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingFixedFit | ImGuiTableFlags.NoSavedSettings | ImGuiTableFlags.PadOuterX);
             if (!table) continue;
             ImGui.TableSetupColumn("##icon", ImGuiTableColumnFlags.WidthFixed, 30 * Ui.Scale, 0);
@@ -1084,17 +1089,24 @@ public sealed class ConfirmationWindow : StyledWindow
         var rowsForCap = coordinator.FocusContainer is { } f ? plan.Sections.Where(s => s.Kind == f).SelectMany(s => s.Rows) : plan.AllRows;
         var cap = SoftCap.Evaluate(rowsForCap, t);
 
-        var freed = summary.SlotsFreedByContainer.Values.Sum();
+        var freed = (int)Ui.Count("ftFreed", summary.SlotsFreedByContainer.Values.Sum());
+        var got = Ui.Count("ftGot", summary.GilRecovered);
+        var lost = Ui.Count("ftLost", summary.GilDestroyed);
+        var listed = (int)Ui.Count("ftListRows", summary.MarketRows);
+        var listedGil = Ui.Count("ftListGil", summary.MarketGil);
+        var seals = (int)Ui.Count("ftSeals", summary.SealsRows);
+        var waiting = (int)Ui.Count("ftWait", coordinator.PendingActions.Count);
+
         var parts = new List<string>();
         if (freed > 0) parts.Add($"frees {freed} slot{(freed == 1 ? "" : "s")}");
-        if (summary.GilRecovered > 0) parts.Add($"recovers {Ui.Gil(summary.GilRecovered)}");
-        if (summary.GilDestroyed > 0) parts.Add($"destroys {Ui.Gil(summary.GilDestroyed)} of vendor value");
-        if (summary.MarketRows > 0) parts.Add($"lists {summary.MarketRows} on the market for about {Ui.Gil(summary.MarketGil)}");
-        if (summary.SealsRows > 0) parts.Add($"{summary.SealsRows} to seals");
-        if (coordinator.PendingActions.Count > 0) parts.Add($"{coordinator.PendingActions.Count} from earlier still waiting");
+        if (got > 0) parts.Add($"recovers {Ui.Gil(got)}");
+        if (lost > 0) parts.Add($"destroys {Ui.Gil(lost)} of vendor value");
+        if (listed > 0) parts.Add($"lists {listed} on the market for about {Ui.Gil(listedGil)}");
+        if (seals > 0) parts.Add($"{seals} to seals");
+        if (waiting > 0) parts.Add($"{waiting} from earlier still waiting");
 
         ImGui.AlignTextToFramePadding();
-        Ui.Hint(parts.Count == 0 ? "Tick rows to see what this run would do." : string.Join("  ·  ", parts));
+        Ui.TextSwap("footer", parts.Count == 0 ? "Tick rows to see what this run would do." : string.Join("  ·  ", parts), Ui.Muted * new Vector4(1, 1, 1, 0.8f));
 
         var (handsFree, needsTravel) = RunShape(plan);
         var blocked = needsTravel ? Pilot?.MissingDependency() : null;
@@ -1103,7 +1115,8 @@ public sealed class ConfirmationWindow : StyledWindow
             Ui.Gap(0.2f);
             Ui.TextColored(Ui.Danger, $"Gleam cannot travel: {blocked}. Open Settings to see what it needs.");
         }
-        var items = $"{cap.Items} item{(cap.Items == 1 ? "" : "s")}";
+        var shownCap = (int)Ui.Count("capItems", cap.Items);
+        var items = $"{shownCap} item{(shownCap == 1 ? "" : "s")}";
         var verb = cap.Exceeded && !capArmed
             ? $"Yes, clean all {items}"
             : handsFree && needsTravel && !Simple ? $"Clean {items} everywhere" : $"Clean {items}";
@@ -1178,6 +1191,8 @@ public sealed class ConfirmationWindow : StyledWindow
         var width = Math.Min(520 * Ui.Scale, ImGui.GetContentRegionAvail().X - 20 * Ui.Scale);
         var left = (ImGui.GetWindowWidth() - width) / 2;
         var junkStep = firstRunStep == 1;
+        // The page transition is keyed on the mode, which does not change between the two questions.
+        using var step = Ui.FoldFade($"firstrun:{firstRunStep}");
         Ui.RunningHeader(icons.LogoMedium,
             junkStep ? "What should happen to the junk?" : "What would you like Gleam to do?",
             junkStep ? "Gleam always shows you the list first. Nothing happens until you press the button."
