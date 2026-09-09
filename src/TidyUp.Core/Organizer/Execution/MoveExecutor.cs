@@ -126,7 +126,7 @@ public sealed class MoveExecutor
             return new MoveResult(op, StepStatus.SkippedChanged, "the stack is no longer where it was");
         }
 
-        var landing = game.FindLanding(op.To, op.Item.ItemId, op.Item.IsHq, op.PreferredPage, reserved);
+        var landing = game.FindLanding(op.To, op.Item.ItemId, op.Item.IsHq, op.Item.Quantity, op.PreferredPage, reserved);
         if (landing is null)
             return new MoveResult(op, StepStatus.Pending, $"no room left in {Describe(op.To)}");
 

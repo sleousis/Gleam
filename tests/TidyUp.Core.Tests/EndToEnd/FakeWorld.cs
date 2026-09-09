@@ -222,12 +222,12 @@ internal sealed class FakeWorld : IGameActions, IMoveActions
         return preferred is { } p && hits.Contains(p) ? p : hits[0];
     }
 
-    public SlotRef? FindLanding(StorageId storage, uint itemId, bool isHq, uint preferredPage, IReadOnlySet<SlotRef> reserved)
+    public SlotRef? FindLanding(StorageId storage, uint itemId, bool isHq, int quantity, uint preferredPage, IReadOnlySet<SlotRef> reserved)
     {
         var info = E2e.Lookup(itemId);
         if (info is { IsStackable: true })
         {
-            var partial = Slots.Values.FirstOrDefault(i => StorageId.Of(i.Slot) == storage && i.ItemId == itemId && i.IsHq == isHq && i.Quantity < info.StackSize && !reserved.Contains(i.Slot));
+            var partial = Slots.Values.FirstOrDefault(i => StorageId.Of(i.Slot) == storage && i.ItemId == itemId && i.IsHq == isHq && i.Quantity + quantity <= info.StackSize && !reserved.Contains(i.Slot));
             if (partial is not null) return partial.Slot;
         }
         return FirstFree(storage, preferredPage != 0 ? preferredPage : null, reserved);
