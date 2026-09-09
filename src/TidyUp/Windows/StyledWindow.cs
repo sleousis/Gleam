@@ -1,5 +1,6 @@
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface;
+using Dalamud.Interface.Utility.Raii;
 using Dalamud.Interface.Windowing;
 
 namespace TidyUp.Windows;
@@ -8,6 +9,8 @@ namespace TidyUp.Windows;
 public abstract class StyledWindow : Window
 {
     private IDisposable? style;
+    private IDisposable? fade;
+    private double openedAt;
 
     protected StyledWindow(string name, ImGuiWindowFlags flags = ImGuiWindowFlags.None) : base(name, flags)
     {
@@ -24,15 +27,26 @@ public abstract class StyledWindow : Window
         });
     }
 
+    public override void OnOpen()
+    {
+        openedAt = ImGui.GetTime();
+        base.OnOpen();
+    }
+
     public override void PreDraw()
     {
         style = Ui.PushWindowStyle();
+        // Windows fade up over a quarter second instead of popping.
+        var t = (float)Math.Clamp((ImGui.GetTime() - openedAt) / 0.24, 0, 1);
+        if (t < 1f) fade = ImRaii.PushStyle(ImGuiStyleVar.Alpha, 0.15f + 0.85f * Ui.EaseOut(t));
         base.PreDraw();
     }
 
     public override void PostDraw()
     {
         base.PostDraw();
+        fade?.Dispose();
+        fade = null;
         style?.Dispose();
         style = null;
     }

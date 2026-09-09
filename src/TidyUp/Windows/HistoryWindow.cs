@@ -29,7 +29,11 @@ public sealed class HistoryWindow : StyledWindow
         SizeConstraints = new WindowSizeConstraints { MinimumSize = new Vector2(520, 300), MaximumSize = new Vector2(4000, 3000) };
     }
 
-    public override void OnOpen() => Reload();
+    public override void OnOpen()
+    {
+        base.OnOpen();
+        Reload();
+    }
 
     private void Reload()
     {
