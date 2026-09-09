@@ -36,8 +36,7 @@ internal sealed class ListEditor
 
     public void Draw()
     {
-        Ui.Section(title);
-        Ui.Hint(help);
+        Ui.Ask(title, help);
 
         ImGui.SetNextItemWidth(240 * Ui.Scale);
         if (Ui.InputText($"##s{title}", "Add an item…", ref search, 64))

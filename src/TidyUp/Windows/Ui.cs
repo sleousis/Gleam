@@ -117,6 +117,13 @@ internal static class Ui
         ImGui.TextUnformatted(text);
     }
 
+    /// <summary>Coloured text that wraps, for a sentence long enough to need the room.</summary>
+    public static void TextColoredWrapped(Vector4 color, string text)
+    {
+        using var c = ImRaii.PushColor(ImGuiCol.Text, color);
+        ImGui.TextWrapped(text);
+    }
+
     /// <summary>Secondary text: explanations, counts, anything the eye should skip on a first pass.</summary>
     public static void Hint(string text) => ImGui.TextDisabled(text);
 
@@ -132,6 +139,25 @@ internal static class Ui
         ImGui.Dummy(new Vector2(0, Space));
         TextColored(Muted, title.ToUpperInvariant());
         ImGui.Spacing();
+    }
+
+    /// <summary>
+    /// Titles a group of settings: the decision as a question, then one line saying what it changes. Every
+    /// group is titled this way, so a settings page reads as a short interview rather than a control panel.
+    /// </summary>
+    public static void Ask(string question, string? explain = null)
+    {
+        TextColored(AccentSoft, question);
+        if (!string.IsNullOrEmpty(explain)) HintWrapped(explain);
+        Gap(0.25f);
+    }
+
+    /// <summary>Width a checkbox with this label occupies, for laying out a wrapping row of them.</summary>
+    public static float CheckWidth(string label)
+    {
+        var cut = label.IndexOf("##", StringComparison.Ordinal);
+        if (cut >= 0) label = label[..cut];
+        return ImGui.GetFrameHeight() + ImGui.GetStyle().ItemInnerSpacing.X + ImGui.CalcTextSize(label, false, 0).X;
     }
 
     /// <summary>A Font Awesome glyph inline with text, in the given colour.</summary>
@@ -784,10 +810,14 @@ internal static class Ui
             ImGui.SetCursorScreenPos(start + new Vector2(pad, pad));
             ImGui.BeginGroup();
             ImGui.PushItemWidth(Math.Max(80f, width - pad * 2));
+            // Wrapped text stops at the card's inner edge rather than the window's, so a long sentence
+            // never runs out under the card's own border.
+            ImGui.PushTextWrapPos(start.X - ImGui.GetWindowPos().X + width - pad);
         }
 
         public void Dispose()
         {
+            ImGui.PopTextWrapPos();
             ImGui.PopItemWidth();
             ImGui.EndGroup();
             var bottom = ImGui.GetItemRectMax().Y + pad;

@@ -467,7 +467,7 @@ public sealed class ConfirmationWindow : StyledWindow
         {
             var name = g.Key switch
             {
-                "always-discard" => "On your Always junk list",
+                "always-discard" => "On your always-junk list",
                 "manual" => "Nothing suggested it",
                 _ => Core.Rules.RuleEngine.AllRules.FirstOrDefault(r => r.Id == g.Key)?.Name ?? g.Key,
             };
