@@ -24,6 +24,7 @@ public sealed class ConfirmationWindow : StyledWindow
     private readonly ItemDatabase db;
     private readonly Configuration config;
     private readonly IGamepadState gamepad;
+    private readonly Action openHistory;
 
     /// <summary>Set by the plugin when hands-free mode is available.</summary>
     public Automation.AutoPilot? Pilot { get; set; }
@@ -83,6 +84,7 @@ public sealed class ConfirmationWindow : StyledWindow
         this.db = db;
         this.config = config;
         this.gamepad = gamepad;
+        this.openHistory = openHistory;
         Size = new Vector2(860, 600);
         SizeCondition = ImGuiCond.FirstUseEver;
         SizeConstraints = new WindowSizeConstraints { MinimumSize = new Vector2(560, 320), MaximumSize = new Vector2(4000, 3000) };
@@ -114,6 +116,15 @@ public sealed class ConfirmationWindow : StyledWindow
         if (plan is null) { DrawCentered(string.IsNullOrEmpty(coordinator.Status) ? "Scanning your containers…" : coordinator.Status); return; }
 
         DrawTopBar(plan);
+        if (!config.SeenCleanIntro)
+        {
+            Ui.Gap(0.3f);
+            if (Ui.Banner(Ui.Info, "New here?", "Tidy Up lists what it thinks is junk. Nothing happens until you press Clean, and you can untick anything.", dismissLabel: "Got it"))
+            {
+                config.SeenCleanIntro = true;
+                config.Save(PluginServices.PluginInterface);
+            }
+        }
         DrawLastRunBanner();
         DrawPilotErrorBanner();
         Ui.Gap(0.5f);
@@ -137,7 +148,17 @@ public sealed class ConfirmationWindow : StyledWindow
                 if (!drewAny)
                 {
                     if (plan.AllRows.Any()) Ui.EmptyState(icons.Logo, "Nothing matches your filters.", "Clear a chip or the search box to see more.");
-                    else Ui.EmptyState(icons.Logo, "Nothing to clean.", "Everything looks tidy.");
+                    else
+                    {
+                        Ui.EmptyState(icons.Logo, "Nothing to clean.", "Everything looks tidy.");
+                        if (Organizer is not null)
+                        {
+                            Ui.Gap(0.5f);
+                            var label = "Organize instead";
+                            ImGui.SetCursorPosX(Math.Max(0, (ImGui.GetWindowWidth() - ImGui.CalcTextSize(label, false, 0).X - 16 * Ui.Scale) / 2));
+                            if (Ui.LinkButton(label)) Show(Ui.AppMode.Organize);
+                        }
+                    }
                 }
                 DrawExcludedNote(plan);
             }
@@ -178,7 +199,7 @@ public sealed class ConfirmationWindow : StyledWindow
 
         Ui.Gap(0.3f);
         var color = report.Failed > 0 ? Ui.Warn : Ui.Ok;
-        if (Ui.Banner(color, "Last run", string.Join(" · ", parts))) bannerDismissed = true;
+        if (Ui.Banner(color, "Last run", string.Join(" · ", parts), link: ("See what happened", openHistory))) bannerDismissed = true;
     }
 
     // ---------- top bar: search, filter menu, rescan ----------
@@ -258,9 +279,12 @@ public sealed class ConfirmationWindow : StyledWindow
     }
 
     /// <summary>One chip per container with its row count. Click to show only that container; click again for all.</summary>
+    /// <summary>Filter chips earn their place only once the list is long enough to need narrowing.</summary>
+    private const int ChipsFromRows = 12;
+
     private void DrawContainerChips(RunPlan plan)
     {
-        if (coordinator.FocusContainer is not null) return;
+        if (coordinator.FocusContainer is not null || plan.AllRows.Count() < ChipsFromRows) return;
         var groups = plan.Sections
             .GroupBy(s => s.Kind)
             .OrderBy(g => g.Key.ExecutionOrder())
@@ -285,6 +309,7 @@ public sealed class ConfirmationWindow : StyledWindow
     /// <summary>Item-type chips. Several can be on at once; none on means every type.</summary>
     private void DrawTypeChips(RunPlan plan)
     {
+        if (plan.AllRows.Count() < ChipsFromRows) return;
         var rows = plan.AllRows;
         if (coordinator.FocusContainer is { } focus) rows = rows.Where(r => r.Item.Slot.Kind == focus);
         var groups = rows

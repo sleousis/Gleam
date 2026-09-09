@@ -166,6 +166,7 @@ public sealed class Plugin : IDalamudPlugin
         this.framework = framework;
         clientState.Logout += OnLogout;
         clientState.Login += OnLogin;
+        if (clientState.IsLoggedIn) Greet();
 
         commands.AddHandler(Command, new CommandInfo(OnCommand)
         {
@@ -251,7 +252,16 @@ public sealed class Plugin : IDalamudPlugin
     private readonly IFramework framework;
 
     private void OnLogout(int type, int code) { coordinator.OnLogout(); organizer.OnLogout(); }
-    private void OnLogin() => framework.RunOnTick(() => _ = coordinator.RefreshPlanAsync(false), delay: TimeSpan.FromSeconds(8));
+    private void OnLogin() => framework.RunOnTick(() => { Greet(); _ = coordinator.RefreshPlanAsync(false); }, delay: TimeSpan.FromSeconds(8));
+
+    /// <summary>Said once, ever: how to open it and that nothing happens without a click.</summary>
+    private void Greet()
+    {
+        if (config.Greeted) return;
+        config.Greeted = true;
+        config.Save(pi);
+        chat.Print("Tidy Up is ready. Type /tidyup to see what it thinks is junk. Nothing is discarded or sold until you press Clean.", "Tidy Up");
+    }
     private void OpenMain() => confirmWindow.Show(Ui.AppMode.Clean);
     private void OpenConfig() => settingsWindow.IsOpen = true;
 
