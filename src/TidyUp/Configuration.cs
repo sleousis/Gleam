@@ -159,6 +159,11 @@ public sealed class OrganizerSettings
     public List<Core.Organizer.Model.OrganizerPlan> Plans { get; set; } = new();
     public Guid? ActivePlanId { get; set; }
 
+    /// <summary>
+    /// Never serialized: the config serializer would write this plan out a second time and, on load, fill the
+    /// very same object in place, appending every rule again on each start.
+    /// </summary>
+    [Newtonsoft.Json.JsonIgnore]
     public Core.Organizer.Model.OrganizerPlan? Active =>
         Plans.FirstOrDefault(p => p.Id == ActivePlanId) ?? Plans.FirstOrDefault();
 }
@@ -166,7 +171,7 @@ public sealed class OrganizerSettings
 public sealed class Configuration : IPluginConfiguration
 {
     /// <summary>Bump when <see cref="Migrate"/> gains a step. New configs start here and skip the chain.</summary>
-    public const int CurrentVersion = 10;
+    public const int CurrentVersion = 11;
 
     public int Version { get; set; } = CurrentVersion;
 
@@ -280,18 +285,29 @@ public sealed class Configuration : IPluginConfiguration
         {
             // Destinations used to share one default object that the serializer filled in place, so every rule
             // came back as "stays where it is" and players re-made their rules. Drop the exact copies that left.
-            foreach (var plan in Organizer.Plans)
-            {
-                var seen = new HashSet<string>();
-                var before = plan.Rules.Count;
-                plan.Rules.RemoveAll(r => !seen.Add(System.Text.Json.JsonSerializer.Serialize(new { r.Name, r.Enabled, r.Then, r.KeepInBags, When = System.Text.Json.JsonSerializer.Serialize(r.When) })));
-                changed |= plan.Rules.Count != before;
-            }
+            RemoveExactDuplicateRules();
             Version = 10;
+            changed = true;
+        }
+        if (Version < 11)
+        {
+            // The computed "active layout" was being serialized and filled in place on load, doubling every rule
+            // list on each start. Fixed at the source; clean up the copies once more.
+            RemoveExactDuplicateRules();
+            Version = 11;
             changed = true;
         }
         changed |= EnsureDefaults();
         return changed;
+    }
+
+    private void RemoveExactDuplicateRules()
+    {
+        foreach (var plan in Organizer.Plans)
+        {
+            var seen = new HashSet<string>();
+            plan.Rules.RemoveAll(r => !seen.Add(System.Text.Json.JsonSerializer.Serialize(new { r.Name, r.Enabled, r.Then, r.KeepInBags, When = System.Text.Json.JsonSerializer.Serialize(r.When) })));
+        }
     }
 
     /// <summary>What every config needs regardless of age: a first layout to organize with.</summary>

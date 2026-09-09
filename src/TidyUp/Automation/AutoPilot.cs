@@ -45,7 +45,9 @@ public sealed partial class AutoPilot : IDisposable
 
     /// <summary>Whole-run progress for the bar: items planned for this run and how many are finished so far.</summary>
     public int PlannedTotal { get; private set; }
-    public int PlannedDone => Mode == PilotMode.Clean ? tally.Done + tally.Skipped + tally.Failed : movesDone + movesSkipped;
+    public int PlannedDone => Mode == PilotMode.Clean
+        ? tally.Done + tally.Skipped + tally.Failed + (coordinator.IsRunning ? coordinator.RunDone : 0)
+        : movesDone + movesSkipped + (Organizer is { IsRunning: true } ? Organizer.RunDone : 0);
 
     public AutoPilot(IFramework framework, IClientState clientState, ICondition condition, IObjectTable objects, IDataManager data,
         IChatGui chat, IPluginLog log, Configuration config, RunCoordinator coordinator, VnavmeshIpc nav, LifestreamIpc travel, ItemDatabase db)
