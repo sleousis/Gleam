@@ -196,7 +196,7 @@ public sealed partial class SettingsWindow
         {
             Ui.TextColored(Ui.Muted, "PLUGINS GLEAM NEEDS");
             ImGui.Spacing();
-            Ui.HintWrapped("Gleam does the walking itself. It opens the saddlebag, travels to an inn for your retainers and the dresser, and visits your Grand Company when something is to be turned in. Both of these free plugins have to be installed for that.");
+            Ui.HintWrapped("Gleam does the walking itself. It opens the saddlebag, travels to an inn for your retainers and the glamour dresser, visits your Grand Company for anything to be turned in, and finds a merchant for anything your retainers would not buy. Both of these free plugins have to be installed for that.");
             Ui.Gap(0.4f);
 
             Requirement("vnavmesh", haveNav, "Walks your character from place to place, to the bell, the dresser and the merchant.");

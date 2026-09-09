@@ -99,13 +99,15 @@ public sealed partial class SettingsWindow
     /// </summary>
     private void DrawDiscardHelperImport()
     {
-        Ui.Hint("Bring in your Discard Helper lists");
+        Ui.Hint("Share lists with Discard Helper");
         importFound ??= FindDiscardHelperFile();
 
         if (string.IsNullOrEmpty(importFound))
         {
             Ui.HintWrapped("Gleam could not find a Discard Helper configuration on this computer.");
             if (Ui.IconButton(Dalamud.Interface.FontAwesomeIcon.FolderOpen, "Find it myself")) BrowseForDiscardHelper();
+            ImGui.SameLine();
+            if (Ui.LinkButton("Send mine the other way")) SaveForDiscardHelper();
             if (!string.IsNullOrEmpty(importResult)) Ui.Hint(importResult);
             return;
         }
@@ -129,7 +131,33 @@ public sealed partial class SettingsWindow
             ImGui.SameLine();
         }
         if (Ui.LinkButton("Use a different file")) BrowseForDiscardHelper();
+        ImGui.SameLine();
+        if (Ui.LinkButton("Send mine the other way")) SaveForDiscardHelper();
+        Ui.Tooltip("Writes your Always junk and Keep these lists to a file Discard Helper can read.");
         if (!string.IsNullOrEmpty(importResult)) Ui.Hint(importResult);
+    }
+
+    /// <summary>Writes Gleam's two lists out in Discard Helper's shape.</summary>
+    private void SaveForDiscardHelper()
+    {
+        var mine = new Core.Integrations.DiscardHelperLists(
+            config.AlwaysDiscardList.Entries.Select(e => e.ItemId).Distinct().ToList(),
+            config.ProtectList.Entries.Select(e => e.ItemId).Distinct().ToList());
+        if (mine.IsEmpty) { importResult = "Both of your lists are empty, so there is nothing to send."; return; }
+
+        FileDialogs.SaveFileDialog("Where should Gleam write it?", ".json", "ARDiscard.json", ".json", (ok, path) =>
+        {
+            if (!ok || string.IsNullOrEmpty(path)) return;
+            try
+            {
+                File.WriteAllText(path, Core.Integrations.DiscardHelperImport.Write(mine));
+                importResult = $"Wrote {mine.Discard.Count} to throw away and {mine.Keep.Count} to protect.";
+            }
+            catch (Exception ex)
+            {
+                importResult = $"Could not write it: {ex.Message}";
+            }
+        });
     }
 
     private void BrowseForDiscardHelper()

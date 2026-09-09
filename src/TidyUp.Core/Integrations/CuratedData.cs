@@ -61,6 +61,25 @@ public static class DiscardHelperImport
         }
     }
 
+    /// <summary>
+    /// Writes the two lists back out in Discard Helper's own shape, so its owner can carry them the other
+    /// way. Only the fields that hold the lists are written; Discard Helper fills in the rest itself.
+    /// </summary>
+    public static string Write(DiscardHelperLists lists)
+    {
+        var doc = new
+        {
+            type = "ARDiscard.Configuration, ARDiscard",
+            Version = 3,
+            DiscardingItems = lists.Discard,
+            BlacklistedItems = lists.Keep,
+            ExcludedCharacters = Array.Empty<object>(),
+        };
+        var json = JsonSerializer.Serialize(doc, new JsonSerializerOptions { WriteIndented = true });
+        // Its type marker is a "$type" property, which C# cannot name directly.
+        return json.Replace("\"type\":", "\"$type\":");
+    }
+
     private static IReadOnlyList<uint> Ids(JsonElement root, string property)
     {
         if (!root.TryGetProperty(property, out var array) || array.ValueKind != JsonValueKind.Array)
