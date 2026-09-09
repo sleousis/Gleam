@@ -17,7 +17,8 @@ namespace TidyUp.Windows;
 /// The organizer: a layout (ordered rules → destinations) on one side, the preview of what would move on
 /// the other. Nothing moves until the player presses Organize on a preview that fits.
 /// </summary>
-public sealed class OrganizerWindow : StyledWindow
+/// <summary>The Organize half of the main window: layouts, rules, preview and the run screen. Drawn by <see cref="ConfirmationWindow"/>.</summary>
+public sealed class OrganizerPanel
 {
     private readonly OrganizerCoordinator organizer;
     private readonly Configuration config;
@@ -43,31 +44,27 @@ public sealed class OrganizerWindow : StyledWindow
     /// <summary>Set by the plugin when hands-free mode is available.</summary>
     public Automation.AutoPilot? Pilot { get; set; }
 
-    /// <summary>Set by the plugin: opens the cleaning review, the other half of the Clean | Organize switch.</summary>
-    public Action? OpenClean { get; set; }
+    /// <summary>Set by the host window: flips the header switch back to Clean.</summary>
+    public Action? SwitchToClean { get; set; }
 
-    public OrganizerWindow(OrganizerCoordinator organizer, Configuration config, ItemDatabase db, IconCache icons, Action save)
-        : base("Tidy Up Organizer###TidyUpOrganizer")
+    public OrganizerPanel(OrganizerCoordinator organizer, Configuration config, ItemDatabase db, IconCache icons, Action save)
     {
         this.organizer = organizer;
         this.config = config;
         this.db = db;
         this.icons = icons;
         this.save = save;
-        Size = new Vector2(900, 620);
-        SizeCondition = ImGuiCond.FirstUseEver;
-        SizeConstraints = new WindowSizeConstraints { MinimumSize = new Vector2(620, 380), MaximumSize = new Vector2(4000, 3000) };
     }
 
-    public override void OnOpen()
+    /// <summary>Called when the panel comes into view: makes sure there is a preview to show.</summary>
+    public void OnShown()
     {
-        base.OnOpen();
         if (organizer.Current is null && !organizer.IsPreviewing) _ = organizer.PreviewAsync();
     }
 
     private OrganizerPlan? Plan => config.Organizer.Active;
 
-    public override void Draw()
+    public void Draw()
     {
         var plan = Plan;
         var enabled = plan?.Rules.Count(r => r.Enabled) ?? 0;
@@ -75,7 +72,7 @@ public sealed class OrganizerWindow : StyledWindow
         Ui.Header(icons.Logo, "Tidy Up", subtitle, Ui.SegmentedWidth(Views), () =>
         {
             if (Ui.Segmented("##view", ref view, Views) && view == View.Preview && organizer.Current is null) _ = organizer.PreviewAsync();
-        }, null, () => { if (Ui.ModeSwitch(Ui.AppMode.Organize)) OpenClean?.Invoke(); });
+        }, null, () => { if (Ui.ModeSwitch(Ui.AppMode.Organize)) SwitchToClean?.Invoke(); });
 
         DrawPlanBar();
         Ui.Gap(0.4f);

@@ -43,7 +43,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly HistoryWindow historyWindow;
     private readonly DebugWindow debugWindow;
     private readonly OrganizerCoordinator organizer;
-    private readonly OrganizerWindow organizerWindow;
+    private readonly OrganizerPanel organizerPanel;
 
     private readonly ItemDatabase db;
     private readonly AddonDriver dialogs;
@@ -96,26 +96,25 @@ public sealed class Plugin : IDalamudPlugin
         debugWindow = new DebugWindow(framework, actions, mover, scanner, contextDriver, db, allagan, market, player, config);
         settingsWindow = new SettingsWindow(config, player, db, icons, allagan, coordinator, () => debugWindow.IsOpen = true);
         historyWindow = new HistoryWindow(runLog, db, icons);
-        organizerWindow = new OrganizerWindow(organizer, config, db, icons, Save);
-        confirmWindow = new ConfirmationWindow(coordinator, icons, db, config, gamepad, () => settingsWindow.IsOpen = true, () => historyWindow.IsOpen = true,
-            () => { organizerWindow.IsOpen = true; _ = organizer.PreviewAsync(); });
-        void OpenReview() { confirmWindow.IsOpen = true; if (coordinator.CurrentPlan is null) _ = coordinator.RefreshPlanAsync(openWindow: false); }
-        void OpenOrganizer() { organizerWindow.IsOpen = true; if (organizer.Current is null) _ = organizer.PreviewAsync(); }
-        organizerWindow.OpenClean = OpenReview;
-        organizerWindow.AddNav(FontAwesomeIcon.Broom, "Clean", OpenReview);
-        organizerWindow.AddNav(FontAwesomeIcon.Cog, "Settings", () => settingsWindow.IsOpen = true);
+        organizerPanel = new OrganizerPanel(organizer, config, db, icons, Save);
+        confirmWindow = new ConfirmationWindow(coordinator, icons, db, config, gamepad, () => settingsWindow.IsOpen = true, () => historyWindow.IsOpen = true)
+        {
+            Organizer = organizerPanel,
+        };
+        organizerPanel.SwitchToClean = () => confirmWindow.Show(Ui.AppMode.Clean);
+        void OpenReview() => confirmWindow.Show(Ui.AppMode.Clean);
+        void OpenOrganizer() => confirmWindow.Show(Ui.AppMode.Organize);
         historyWindow.AddNav(FontAwesomeIcon.Broom, "Clean", OpenReview);
         historyWindow.AddNav(FontAwesomeIcon.Cog, "Settings", () => settingsWindow.IsOpen = true);
         settingsWindow.AddNav(FontAwesomeIcon.Broom, "Clean", OpenReview);
         settingsWindow.AddNav(FontAwesomeIcon.BoxOpen, "Organize", OpenOrganizer);
         settingsWindow.AddNav(FontAwesomeIcon.History, "History", () => historyWindow.IsOpen = true);
         windows.AddWindow(confirmWindow);
-        windows.AddWindow(organizerWindow);
         windows.AddWindow(settingsWindow);
         windows.AddWindow(historyWindow);
         windows.AddWindow(debugWindow);
 
-        coordinator.RequestOpenWindow += () => confirmWindow.IsOpen = true;
+        coordinator.RequestOpenWindow += () => confirmWindow.Show(Ui.AppMode.Clean);
 
         var nav = new VnavmeshIpc(pi);
         var travel = new LifestreamIpc(pi);
@@ -131,9 +130,9 @@ public sealed class Plugin : IDalamudPlugin
             Source = () =>
             {
                 var tints = new Dictionary<SlotRef, System.Numerics.Vector4>();
-                if (organizerWindow.IsOpen && organizer.Current is { } solve)
+                if (confirmWindow.IsOpen && confirmWindow.Mode == Ui.AppMode.Organize && organizer.Current is { } solve)
                     foreach (var m in solve.Moves) tints[m.Item.Slot] = BagHighlighter.MoveTint;
-                if (confirmWindow.IsOpen && coordinator.CurrentPlan is { } plan)
+                if (confirmWindow.IsOpen && confirmWindow.Mode == Ui.AppMode.Clean && coordinator.CurrentPlan is { } plan)
                     foreach (var row in plan.AllRows)
                         if (row.Checked && row.IsExecutable) tints[row.Item.Slot] = BagHighlighter.CleanTint;
                 return tints;
@@ -141,7 +140,7 @@ public sealed class Plugin : IDalamudPlugin
         };
         organizer.IsPilotRunning = () => pilot.IsRunning;
         pilot.Organizer = organizer;
-        organizerWindow.Pilot = pilot;
+        organizerPanel.Pilot = pilot;
         confirmWindow.Pilot = pilot;
         settingsWindow.Pilot = pilot;
         settingsWindow.Nav = nav;
@@ -154,7 +153,7 @@ public sealed class Plugin : IDalamudPlugin
 
         contextMenu = new ContextMenuIntegration(contextMenuService, player, chat, config, db, Save);
 
-        dtr = new DtrEntry(dtrBar, toast, framework, () => { confirmWindow.IsOpen = true; _ = coordinator.RefreshPlanAsync(false); })
+        dtr = new DtrEntry(dtrBar, toast, framework, () => confirmWindow.Show(Ui.AppMode.Clean))
         {
             CleanableCount = () => coordinator.LastCleanableCount,
         };
@@ -217,8 +216,8 @@ public sealed class Plugin : IDalamudPlugin
                 break;
             case "organize":
             case "organise":
-                if (organizerWindow.IsOpen) organizerWindow.IsOpen = false;
-                else { organizerWindow.IsOpen = true; _ = organizer.PreviewAsync(); }
+                if (confirmWindow.IsOpen && confirmWindow.Mode == Ui.AppMode.Organize) confirmWindow.IsOpen = false;
+                else confirmWindow.Show(Ui.AppMode.Organize);
                 break;
             case "spikes":
             case "troubleshoot":
@@ -244,7 +243,7 @@ public sealed class Plugin : IDalamudPlugin
                 break;
             default:
                 if (confirmWindow.IsOpen) confirmWindow.IsOpen = false;
-                else { confirmWindow.IsOpen = true; _ = coordinator.RefreshPlanAsync(openWindow: false); }
+                else confirmWindow.Show(Ui.AppMode.Clean);
                 break;
         }
     }
@@ -253,7 +252,7 @@ public sealed class Plugin : IDalamudPlugin
 
     private void OnLogout(int type, int code) { coordinator.OnLogout(); organizer.OnLogout(); }
     private void OnLogin() => framework.RunOnTick(() => _ = coordinator.RefreshPlanAsync(false), delay: TimeSpan.FromSeconds(8));
-    private void OpenMain() { confirmWindow.IsOpen = true; _ = coordinator.RefreshPlanAsync(false); }
+    private void OpenMain() => confirmWindow.Show(Ui.AppMode.Clean);
     private void OpenConfig() => settingsWindow.IsOpen = true;
 
     public void Dispose()
