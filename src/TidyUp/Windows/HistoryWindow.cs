@@ -114,7 +114,7 @@ public sealed class HistoryWindow : StyledWindow
         if (info is null) return string.Empty;
         if (info.IsVendorBuyable) return $"Vendors sell it for {info.BuyPrice:N0}g";
         if (info.IsMarketable) return "Market board";
-        if (info.IsUntradable) return "Untradeable; comes from quests, duties or events";
+        if (info.IsUntradable) return "Untradeable. Comes from quests, duties or events";
         return string.Empty;
     }
 }

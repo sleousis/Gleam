@@ -183,7 +183,7 @@ public class PlannerTests
         Assert.Equal(ActionKind.VendorSell, rows[ContainerKind.Retainer].ChosenAction);
         Assert.Contains(ActionKind.Discard, rows[ContainerKind.Retainer].Proposal.Alternatives);
         Assert.Equal(ActionKind.Discard, rows[ContainerKind.Saddlebag].ChosenAction);
-        Assert.Contains("bring it to your bags", rows[ContainerKind.Saddlebag].Proposal.Reason);
+        Assert.Contains("Bring it to your bags", rows[ContainerKind.Saddlebag].Proposal.Reason);
 
         // The always-discard list follows the same physics.
         var always = new ItemList(); always.Add(15);
@@ -254,7 +254,7 @@ public class PlannerTests
         var fantasia = Assert.Single(everything.AllRows, r => r.Item.ItemId == 16);
         Assert.False(fantasia.Checked);
         Assert.Equal(ActionKind.Discard, fantasia.ChosenAction);
-        Assert.Contains("cannot be bought back", fantasia.Proposal.Warnings[0]);
+        Assert.Contains("Cannot be bought back", fantasia.Proposal.Warnings[0]);
 
         // Hand-picked rows follow the preset: Aggressive means discard everywhere.
         var aggressive = new RunPlanner().Build(items, new PlannerInputs
@@ -274,7 +274,7 @@ public class PlannerTests
         Assert.Empty(plan.AllRows);
         var ex = Assert.Single(plan.Excluded);
         Assert.True(ex.IsHardBlock);
-        Assert.Contains("cannot be bought back", ex.Reason);
+        Assert.Contains("Cannot be bought back", ex.Reason);
     }
 
     [Fact]

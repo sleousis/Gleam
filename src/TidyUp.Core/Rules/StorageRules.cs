@@ -129,7 +129,7 @@ public sealed class SeasonalItemsRule : IRule
             RuleId = Id,
             Reason = "Past seasonal event item",
             ValueGil = 0,
-            Warnings = ["Seasonal item; check before cleaning"],
+            Warnings = ["Seasonal item. Check before cleaning"],
         };
     }
 }

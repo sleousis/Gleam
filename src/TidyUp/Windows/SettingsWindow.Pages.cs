@@ -29,7 +29,7 @@ public sealed partial class SettingsWindow
         ImGui.SetNextItemWidth(70 * Ui.Scale);
         var guard = p.LargeStackGuard;
         if (ImGui.InputInt("##bigstack", ref guard, 0, 0, "%d", ImGuiInputTextFlags.None)) { p.LargeStackGuard = Math.Clamp(guard, 0, 9999); dirty = true; }
-        Ui.Tooltip("A big stack is usually a hoard, not junk. Rules skip these; you can still tick them by hand. 0 turns this off.");
+        Ui.Tooltip("A big stack is usually a hoard, not junk. Rules skip these. You can still tick them by hand. 0 turns this off.");
         ImGui.SameLine();
         Ui.Hint(guard == 0 ? "or more alone (off)" : "or more alone");
     }

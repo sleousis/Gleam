@@ -430,7 +430,7 @@ public sealed partial class AutoPilot : IDisposable
                     return;
             }
         }
-        throw new AutoPilotException("could not get back to the retainer list; close the retainer windows and run again");
+        throw new AutoPilotException("could not get back to the retainer list. Close the retainer windows and run again");
     }
 
     private async Task OneRetainerAsync(int index, ulong id, string name, List<QueuedAction> allRows, List<QueuedAction> listings, List<QueuedAction> sells, CancellationToken ct)
@@ -756,7 +756,7 @@ public sealed partial class AutoPilot : IDisposable
                 }
                 catch (AutoPilotException) when (attempt < 2) { }
             }
-            throw new AutoPilotException($"the {objectName.ToLowerInvariant()} did not respond; close any retainer, shop or dresser window and run again");
+            throw new AutoPilotException($"the {objectName.ToLowerInvariant()} did not respond. Close any retainer, shop or dresser window and run again");
         }, ct);
         await Task.Delay(600, ct).ConfigureAwait(false);
     }

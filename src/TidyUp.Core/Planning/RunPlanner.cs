@@ -99,7 +99,7 @@ public sealed class RunPlanner
             foreach (var p in proposals.Where(p => p.Action.IsDestructive() && p.Item.Quantity >= profile.LargeStackGuard).ToList())
             {
                 proposals.Remove(p);
-                var why = $"Stack of {p.Item.Quantity}; rules leave stacks of {profile.LargeStackGuard} or more alone";
+                var why = $"Stack of {p.Item.Quantity}. Rules leave stacks of {profile.LargeStackGuard} or more alone";
                 if (inputs.IncludeUnproposed) guarded.Add((p.Item, p.Info, why));
                 else plan.Excluded.Add(new ExcludedItem(p.Item, p.Info, why, false));
             }

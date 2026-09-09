@@ -88,7 +88,7 @@ public class OrganizerSolverTests
         var desired = DesiredStateBuilder.Build(items, plan, Context(gearsetItems: [5u]), Lookup, NoNeverTouch, new[] { 0xAul });
 
         Assert.Empty(desired.Placements);
-        Assert.Contains(desired.Pinned, p => p.Item.ItemId == 5 && p.Reason.Contains("gearset"));
+        Assert.Contains(desired.Pinned, p => p.Item.ItemId == 5 && p.Reason.Contains("gear set"));
         Assert.Contains(desired.Pinned, p => p.Item.ItemId == 12 && p.Reason.Contains("Only equipment"));
     }
 

@@ -112,7 +112,7 @@ public class ContainerConstraintsTests
         Assert.Equal(ActionKind.Discard, fixedUp.Action);
         Assert.Empty(fixedUp.Alternatives);
         Assert.Equal(0, fixedUp.ValueGil);
-        Assert.Contains("bring it to your bags to sell it", fixedUp.Reason);
+        Assert.Contains("Bring it to your bags to sell it", fixedUp.Reason);
     }
 
     [Fact]
