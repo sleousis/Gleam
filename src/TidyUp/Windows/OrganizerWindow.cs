@@ -612,7 +612,9 @@ public sealed class OrganizerWindow : StyledWindow
         ImGui.TableSetupColumn("##icon", ImGuiTableColumnFlags.WidthFixed, 30 * Ui.Scale, 0);
         ImGui.TableSetupColumn("##item", ImGuiTableColumnFlags.WidthStretch, 5f, 0);
         ImGui.TableSetupColumn("##route", ImGuiTableColumnFlags.WidthStretch, 4f, 0);
-        ImGui.TableSetupColumn("##leg", ImGuiTableColumnFlags.WidthFixed, 120 * Ui.Scale, 0);
+        // Room for both pills side by side: the relay leg and the round.
+        var legW = ImGui.CalcTextSize("To bags first", false, 0).X + ImGui.CalcTextSize("Round 10", false, 0).X + 56 * Ui.Scale;
+        ImGui.TableSetupColumn("##leg", ImGuiTableColumnFlags.WidthFixed, legW, 0);
 
         foreach (var m in moves)
         {
