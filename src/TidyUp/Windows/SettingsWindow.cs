@@ -73,7 +73,7 @@ public sealed partial class SettingsWindow : StyledWindow
             if (body)
             {
                 var version = typeof(SettingsWindow).Assembly.GetName().Version?.ToString(3) ?? "dev";
-                Ui.Header(icons.Logo, "Settings", $"Gleam v{version} · by Raiden Shinryu");
+                Ui.Header(icons.LogoSmall, "Settings", $"Gleam v{version} · by Raiden Shinryu");
                 Ui.Gap(0.6f);
                 DrawEssentials();
                 Ui.Gap(0.5f);
