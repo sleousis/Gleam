@@ -50,6 +50,19 @@ public class DiscardHelperImportTests
         Assert.DoesNotContain(50u, lists.Discard);
     }
 
+    [Fact]
+    public void What_is_written_can_be_read_back_unchanged()
+    {
+        var mine = new DiscardHelperLists([5u, 12u], [2820u]);
+        var text = DiscardHelperImport.Write(mine);
+        var back = DiscardHelperImport.Parse(text);
+
+        Assert.Equal(mine.Discard, back.Discard);
+        Assert.Equal(mine.Keep, back.Keep);
+        // Discard Helper recognises its own files by this marker.
+        Assert.Contains("\"$type\": \"ARDiscard.Configuration, ARDiscard\"", text);
+    }
+
     [Theory]
     [InlineData("")]
     [InlineData("not json at all")]
