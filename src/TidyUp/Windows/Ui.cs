@@ -511,7 +511,9 @@ internal static class Ui
         var pos = ImGui.GetCursorScreenPos();
         ImGui.Dummy(size);
         if (tex.IsNull) return;
-        ImGui.GetWindowDrawList().AddImageRounded(tex, pos, pos + size, Vector2.Zero, Vector2.One, 0xFFFFFFFF, rounding);
+        // Draw-list calls ignore the style alpha, so a fading row would keep its icons at full strength.
+        var tint = ImGui.GetColorU32(new Vector4(1, 1, 1, ImGui.GetStyle().Alpha));
+        ImGui.GetWindowDrawList().AddImageRounded(tex, pos, pos + size, Vector2.Zero, Vector2.One, tint, rounding);
     }
 
     /// <summary>Faded logo and a line of text, centred. For "nothing here" states.</summary>

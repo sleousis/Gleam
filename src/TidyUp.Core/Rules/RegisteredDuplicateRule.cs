@@ -10,7 +10,7 @@ public sealed class RegisteredDuplicateRule : IRule
 {
     public const string RuleId = "registered-duplicate";
     public string Id => RuleId;
-    public string Name => "Already registered";
+    public string Name => "Spares of things you already own";
     public string Description => "Minions, mounts, orchestrion rolls, cards and the like that you have already registered.";
     public IReadOnlySet<ContainerKind> Containers => RuleContainers.Storage;
 

@@ -55,7 +55,7 @@ public sealed class RetiredCurrencyGearRule : IRule
 {
     public const string RuleId = "retired-currency-gear";
     public string Id => RuleId;
-    public string Name => "Obsolete tomestone and scrip gear";
+    public string Name => "Gear from retired currencies";
     public string Description => "Equipment sold for a retired tomestone or scrip, below your current tier, in no gearset or plate.";
     public IReadOnlySet<ContainerKind> Containers => RuleContainers.Gear;
 

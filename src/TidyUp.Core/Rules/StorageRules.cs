@@ -43,7 +43,7 @@ public sealed class OutleveledConsumablesRule : IRule
 {
     public const string RuleId = "outleveled-consumables";
     public string Id => RuleId;
-    public string Name => "Outleveled consumables";
+    public string Name => "Food and potions you have outgrown";
     public string Description => "Meals and medicine whose item level is far below your best gearset.";
     public IReadOnlySet<ContainerKind> Containers => RuleContainers.Storage;
 
@@ -77,7 +77,7 @@ public sealed class UnusableCraftingMatsRule : IRule
 {
     public const string RuleId = "unusable-crafting-mats";
     public string Id => RuleId;
-    public string Name => "Unusable crafting materials";
+    public string Name => "Crafting materials you cannot use";
     public string Description => "Vendor-only materials used only in low-level recipes your crafters have far surpassed.";
     public IReadOnlySet<ContainerKind> Containers => RuleContainers.Storage;
 
@@ -114,7 +114,7 @@ public sealed class SeasonalItemsRule : IRule
 {
     public const string RuleId = "past-seasonal-items";
     public string Id => RuleId;
-    public string Name => "Past seasonal items";
+    public string Name => "Leftovers from past events";
     public string Description => "Event-locked consumables and tokens from seasonal events that already ended (curated list).";
     public IReadOnlySet<ContainerKind> Containers => RuleContainers.Storage;
 
