@@ -197,6 +197,66 @@ internal static class Ui
 
     public static Vector4 Mix(Vector4 a, Vector4 b, float t) => a + (b - a) * Math.Clamp(t, 0f, 1f);
 
+    private static readonly Dictionary<string, double> counts = new();
+
+    /// <summary>A number that counts to its target instead of jumping. Doubles, so gil totals stay exact.</summary>
+    public static long Count(string id, long target, float speed = 9f)
+    {
+        var dt = Math.Clamp(ImGui.GetIO().DeltaTime, 0f, 0.1f);
+        if (!counts.TryGetValue(id, out var v)) v = target;
+        v += (target - v) * (1 - Math.Exp(-speed * dt));
+        if (Math.Abs(target - v) < 0.5) v = target;
+        counts[id] = v;
+        return (long)Math.Round(v);
+    }
+
+    private static object? pageKey;
+    private static double pageAt;
+
+    /// <summary>Switching page fades the new one up and settles it a few pixels, so the change reads as movement.</summary>
+    public static IDisposable PageTransition(object key)
+    {
+        if (!Equals(pageKey, key)) { pageKey = key; pageAt = ImGui.GetTime(); }
+        var t = (float)Math.Clamp((ImGui.GetTime() - pageAt) / 0.20, 0, 1);
+        var e = EaseOut(t);
+        if (t < 1f) ImGui.SetCursorPosY(ImGui.GetCursorPosY() + (1f - e) * 10f * Scale);
+        return ImRaii.PushStyle(ImGuiStyleVar.Alpha, ImGui.GetStyle().Alpha * (0.25f + 0.75f * e));
+    }
+
+    /// <summary>A tick box that fills and draws its check on, rather than flipping between two pictures.</summary>
+    public static bool Check(string id, ref bool value, bool disabled = false)
+    {
+        var h = ImGui.GetFrameHeight();
+        var size = Math.Min(h, 19f * Scale);
+        var start = ImGui.GetCursorScreenPos();
+        var clicked = ImGui.InvisibleButton(id, new Vector2(size, h)) && !disabled;
+        if (clicked) value = !value;
+        var key = $"chk:{ImGui.GetID(id)}";
+        RecordHover(key);
+        var hv = disabled ? 0f : Hover(key);
+        var on = Smooth(key + ":on", value ? 1f : 0f, 18f);
+        var pos = start + new Vector2(0, (h - size) / 2);
+        var dl = ImGui.GetWindowDrawList();
+        var r = 5f * Scale;
+        var dim = disabled ? 0.45f : 1f;
+        dl.AddRectFilled(pos, pos + new Vector2(size, size), ImGui.GetColorU32(Mix(new Vector4(1, 1, 1, (0.06f + 0.06f * hv) * dim), Accent * new Vector4(1, 1, 1, dim), on)), r);
+        dl.AddRect(pos, pos + new Vector2(size, size), ImGui.GetColorU32(Mix(InkEdge * new Vector4(1, 1, 1, dim), Accent, on)), r);
+        if (on > 0.01f)
+        {
+            // The short leg draws first, then the long one: a tick being made, not a tick appearing.
+            var p1 = pos + new Vector2(size * 0.26f, size * 0.52f);
+            var p2 = pos + new Vector2(size * 0.43f, size * 0.70f);
+            var p3 = pos + new Vector2(size * 0.77f, size * 0.29f);
+            var col = ImGui.GetColorU32(OnAccent * new Vector4(1, 1, 1, on * dim));
+            var w = 2.3f * Scale;
+            var a = Math.Clamp(on * 2f, 0f, 1f);
+            dl.AddLine(p1, p1 + (p2 - p1) * a, col, w);
+            var b = Math.Clamp(on * 2f - 1f, 0f, 1f);
+            if (b > 0) dl.AddLine(p2, p2 + (p3 - p2) * b, col, w);
+        }
+        return clicked;
+    }
+
     public static IDisposable RichTooltip(float width = 340f)
     {
         var min = ImGui.GetItemRectMin();
@@ -361,6 +421,9 @@ internal static class Ui
         var alpha = disabled ? 0.45f : held ? 1f : 0.85f + 0.10f * hv;
         var fill = color * new Vector4(1, 1, 1, alpha);
         var r = Rounding;
+        var press = Smooth($"press:{ImGui.GetID($"##primary{label}")}", held ? 1f : 0f, 26f);
+        pos += new Vector2(0, press * 1.5f * Scale);
+        h -= press * 1.5f * Scale;
         if (!disabled)
         {
             // A halo that swells on hover; danger buttons breathe a little so "Stop" is easy to find.
@@ -634,9 +697,20 @@ internal static class Ui
     }
 
     /// <summary>A tinted one-line notice with a colour bar on its left edge. Returns true when its dismiss link is clicked.</summary>
+    private static readonly Dictionary<string, double> dismissing = new();
+
     public static bool Banner(Vector4 color, string lead, string text, bool dismissible = true, string dismissLabel = "Dismiss", (string Label, Action Click)? link = null)
     {
-        var a = Appear($"banner:{lead}:{text}", 0.28f);
+        // Dismissing plays out: the banner fades and only then reports itself gone.
+        var bid = $"banner:{lead}:{text}";
+        var a = Appear(bid, 0.28f);
+        if (dismissing.TryGetValue(bid, out var goneAt))
+        {
+            var left = (float)Math.Clamp(1 - (ImGui.GetTime() - goneAt) / 0.22, 0, 1);
+            if (left <= 0f) { dismissing.Remove(bid); return true; }
+            a = left;
+            dismissible = false;
+        }
         using var alpha = ImRaii.PushStyle(ImGuiStyleVar.Alpha, a);
         var h = ImGui.GetFrameHeight() + 8f * Scale;
         var slot = ImGui.GetCursorScreenPos();
@@ -669,7 +743,9 @@ internal static class Ui
         }
         ImGui.SetCursorScreenPos(new Vector2(slot.X, Math.Max(ImGui.GetCursorScreenPos().Y, slot.Y + h)));
         ImGui.Dummy(new Vector2(w, 0));
-        return clicked;
+        // Clicking Dismiss starts the fade; the caller is told it is gone only once the fade has played.
+        if (clicked) dismissing[bid] = ImGui.GetTime();
+        return false;
     }
 
     // ---------- inputs ----------
