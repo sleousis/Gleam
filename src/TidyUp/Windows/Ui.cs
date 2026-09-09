@@ -233,8 +233,8 @@ internal static class Ui
     /// Product header: logo tile, name in gold, one muted line under it. An optional control of the given
     /// width is drawn right-aligned and vertically centred on the same row.
     /// </summary>
-    /// <summary>The two things the plugin does. Shown as one switch in every window header so neither is hidden.</summary>
-    public enum AppMode { Clean, Organize }
+    /// <summary>Everywhere the one window can be. Clean and Organize are the two things it does; the other two are references.</summary>
+    public enum AppMode { Clean, Organize, History, Settings }
 
     public static readonly IReadOnlyList<(AppMode, string)> ModeOptions = [(AppMode.Clean, "Clean"), (AppMode.Organize, "Organize")];
 
@@ -245,6 +245,14 @@ internal static class Ui
         var changed = Segmented("##mode", ref mode, ModeOptions) && mode != current;
         Tooltip("Clean gets rid of junk. Organize puts what you keep where you want it.");
         return changed;
+    }
+
+    /// <summary>A quiet way back to the list, for the pages that are not the list.</summary>
+    public static bool BackLink(string label = "Back to the list")
+    {
+        var clicked = LinkButton($"◂  {label}");
+        Tooltip("Returns to what Gleam found.");
+        return clicked;
     }
 
     public static void Header(ImTextureID logo, string title, string subtitle, float rightWidth = 0f, Action? right = null, string? rightNote = null, Action? afterTitle = null)

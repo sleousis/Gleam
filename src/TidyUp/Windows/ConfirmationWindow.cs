@@ -24,13 +24,14 @@ public sealed class ConfirmationWindow : StyledWindow
     private readonly ItemDatabase db;
     private readonly Configuration config;
     private readonly IGamepadState gamepad;
-    private readonly Action openHistory;
 
     /// <summary>Set by the plugin when hands-free mode is available.</summary>
     public Automation.AutoPilot? Pilot { get; set; }
 
-    /// <summary>The Organize half of this window; set by the plugin.</summary>
+    /// <summary>The other pages of this window; set by the plugin.</summary>
     public OrganizerPanel? Organizer { get; set; }
+    public HistoryWindow? History { get; set; }
+    public SettingsWindow? SettingsPage { get; set; }
 
     /// <summary>Which half is showing. A running job pulls the window to its own half.</summary>
     internal Ui.AppMode Mode { get; private set; } = Ui.AppMode.Clean;
@@ -40,8 +41,15 @@ public sealed class ConfirmationWindow : StyledWindow
     {
         Mode = mode;
         IsOpen = true;
-        if (mode == Ui.AppMode.Organize) Organizer?.OnShown();
-        else if (coordinator.CurrentPlan is null && !coordinator.IsRunning) _ = coordinator.RefreshPlanAsync(openWindow: false);
+        switch (mode)
+        {
+            case Ui.AppMode.Organize: Organizer?.OnShown(); break;
+            case Ui.AppMode.History: History?.OnShown(); break;
+            case Ui.AppMode.Settings: break;
+            default:
+                if (coordinator.CurrentPlan is null && !coordinator.IsRunning) _ = coordinator.RefreshPlanAsync(openWindow: false);
+                break;
+        }
     }
 
     private string search = string.Empty;
@@ -65,7 +73,6 @@ public sealed class ConfirmationWindow : StyledWindow
 
     /// <summary>The simple layer: no filters, no per-row choices, plain words. Advanced adds everything back.</summary>
     private bool Simple => !config.AdvancedMode;
-    private readonly Action openSettings;
 
     /// <summary>The one way a row gets ticked or unticked: keeps the session skip in step and gives the row a brief glow.</summary>
     private void SetChecked(PlanRow row, bool on)
@@ -80,7 +87,7 @@ public sealed class ConfirmationWindow : StyledWindow
     private readonly List<PlanRow> visibleRows = new();
     private readonly Dictionary<string, bool> sectionOpen = new();
 
-    public ConfirmationWindow(RunCoordinator coordinator, IconCache icons, ItemDatabase db, Configuration config, IGamepadState gamepad, Action openSettings, Action openHistory)
+    public ConfirmationWindow(RunCoordinator coordinator, IconCache icons, ItemDatabase db, Configuration config, IGamepadState gamepad)
         : base("Gleam###TidyUpConfirm")
     {
         this.coordinator = coordinator;
@@ -88,14 +95,11 @@ public sealed class ConfirmationWindow : StyledWindow
         this.db = db;
         this.config = config;
         this.gamepad = gamepad;
-        this.openHistory = openHistory;
-        this.openSettings = openSettings;
         Size = new Vector2(860, 600);
         SizeCondition = ImGuiCond.FirstUseEver;
         SizeConstraints = new WindowSizeConstraints { MinimumSize = new Vector2(560, 320), MaximumSize = new Vector2(4000, 3000) };
-        AddNav(FontAwesomeIcon.BoxOpen, "Organize", () => Show(Ui.AppMode.Organize));
-        AddNav(FontAwesomeIcon.History, "History", openHistory);
-        AddNav(FontAwesomeIcon.Cog, "Settings", openSettings);
+        AddNav(FontAwesomeIcon.History, "What Gleam did", () => Show(Ui.AppMode.History));
+        AddNav(FontAwesomeIcon.Cog, "Settings", () => Show(Ui.AppMode.Settings));
     }
 
     public override void OnOpen()
@@ -114,6 +118,8 @@ public sealed class ConfirmationWindow : StyledWindow
         if (Pilot is { IsRunning: true }) Mode = Pilot.Mode == Automation.PilotMode.Organize ? Ui.AppMode.Organize : Ui.AppMode.Clean;
         else if (coordinator.IsRunning) Mode = Ui.AppMode.Clean;
         if (Mode == Ui.AppMode.Organize && Organizer is not null) { Organizer.Draw(); return; }
+        if (Mode == Ui.AppMode.History && History is not null) { History.Draw(); return; }
+        if (Mode == Ui.AppMode.Settings && SettingsPage is not null) { SettingsPage.Draw(); return; }
 
         var plan = coordinator.CurrentPlan;
         if (Pilot is { IsRunning: true, Mode: Automation.PilotMode.Clean }) { DrawPilotRunning(); return; }
@@ -211,7 +217,7 @@ public sealed class ConfirmationWindow : StyledWindow
 
         Ui.Gap(0.3f);
         var color = report.Failed > 0 ? Ui.Warn : Ui.Ok;
-        if (Ui.Banner(color, "Last run", string.Join(" · ", parts), link: ("See what happened", openHistory))) bannerDismissed = true;
+        if (Ui.Banner(color, "Last run", string.Join(" · ", parts), link: ("See what happened", () => Show(Ui.AppMode.History)))) bannerDismissed = true;
     }
 
     // ---------- top bar: search, filter menu, rescan ----------
@@ -247,7 +253,7 @@ public sealed class ConfirmationWindow : StyledWindow
             ImGui.AlignTextToFramePadding();
             Ui.Hint(profile.Thresholds.Policy.Describe());
             ImGui.SameLine();
-            if (Ui.LinkButton("Change")) openSettings();
+            if (Ui.LinkButton("Change")) Show(Ui.AppMode.Settings);
             Ui.Tooltip("Opens Settings, where you choose what happens to junk.");
             if (coordinator.FocusContainer is not null)
             {
@@ -658,7 +664,7 @@ public sealed class ConfirmationWindow : StyledWindow
         Ui.Gap(0.6f);
         Ui.Hint($"{total} more item{(total == 1 ? "" : "s")} in your {where}. Gleam cleans them when you open it, or it can go there for you.");
         ImGui.SameLine();
-        if (Ui.LinkButton("Let Gleam go")) openSettings();
+        if (Ui.LinkButton("Let Gleam go")) Show(Ui.AppMode.Settings);
         Ui.Tooltip("Opens Settings, where you can let Gleam walk and travel for you.");
     }
 
@@ -799,10 +805,10 @@ public sealed class ConfirmationWindow : StyledWindow
         if (unit <= 0)
         {
             Ui.TextColored(Ui.Muted * new Vector4(1, 1, 1, 0.5f), config.UseUniversalis ? "no listings" : "prices off");
-            Ui.Tooltip(config.UseUniversalis ? "Nobody is selling this on your home world right now." : "Market prices are turned off in Settings.");
+            Ui.Tooltip(config.UseUniversalis ? "Nobody is selling this on your home world right now." : "Market board prices are off.");
             return;
         }
-        Ui.TextColored(Ui.Market, $"{unit:N0}g");
+        Ui.TextColored(Ui.Market, Simple ? $"{unit * row.Item.Quantity:N0}g" : $"{unit:N0}g");
         var scope = string.IsNullOrEmpty(coordinator.MarketScope) ? "your home world" : coordinator.MarketScope;
         Ui.Tooltip($"Lowest listing on {scope} ({(row.Item.IsHq ? "HQ" : "NQ")}): {unit:N0}g each · {unit * row.Item.Quantity:N0}g for the stack of {row.Item.Quantity}.");
     }
@@ -1037,8 +1043,14 @@ public sealed class ConfirmationWindow : StyledWindow
         var (handsFree, needsTravel) = RunShape(plan);
         var items = $"{cap.Items} item{(cap.Items == 1 ? "" : "s")}";
         var verb = cap.Exceeded && !capArmed
-            ? $"Clean {items} anyway"
+            ? $"Yes, clean all {items}"
             : handsFree && needsTravel && !Simple ? $"Clean {items} everywhere" : $"Clean {items}";
+        if (cap.Exceeded && !capArmed && Simple)
+        {
+            // A big run says so in words, on screen, instead of relying on a tooltip nobody hovers.
+            Ui.Gap(0.2f);
+            Ui.TextColored(Ui.Warn, $"That is a lot at once. {cap.Items} items, worth about {Ui.Gil(cap.GilAtRisk)}. Press again if you are sure.");
+        }
         var buttonWidth = 240 * Ui.Scale;
         var style = ImGui.GetStyle();
         var sortW = Simple ? 0f : ImGui.CalcTextSize(SortAfterLabel, false, 0).X + ImGui.GetFrameHeight() + style.ItemInnerSpacing.X + style.ItemSpacing.X * 2;

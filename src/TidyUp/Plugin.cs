@@ -99,21 +99,19 @@ public sealed class Plugin : IDalamudPlugin
         settingsWindow = new SettingsWindow(config, player, db, icons, allagan, coordinator, () => debugWindow.IsOpen = true);
         historyWindow = new HistoryWindow(runLog, db, icons);
         organizerPanel = new OrganizerPanel(organizer, config, db, icons, Save);
-        confirmWindow = new ConfirmationWindow(coordinator, icons, db, config, gamepad, () => settingsWindow.IsOpen = true, () => historyWindow.IsOpen = true)
+        // One window with four pages. Only troubleshooting, which almost nobody opens, stays separate.
+        confirmWindow = new ConfirmationWindow(coordinator, icons, db, config, gamepad)
         {
             Organizer = organizerPanel,
+            History = historyWindow,
+            SettingsPage = settingsWindow,
         };
-        organizerPanel.SwitchToClean = () => confirmWindow.Show(Ui.AppMode.Clean);
         void OpenReview() => confirmWindow.Show(Ui.AppMode.Clean);
-        void OpenOrganizer() => confirmWindow.Show(Ui.AppMode.Organize);
-        historyWindow.AddNav(FontAwesomeIcon.Broom, "Clean", OpenReview);
-        historyWindow.AddNav(FontAwesomeIcon.Cog, "Settings", () => settingsWindow.IsOpen = true);
-        settingsWindow.AddNav(FontAwesomeIcon.Broom, "Clean", OpenReview);
-        settingsWindow.AddNav(FontAwesomeIcon.BoxOpen, "Organize", OpenOrganizer);
-        settingsWindow.AddNav(FontAwesomeIcon.History, "History", () => historyWindow.IsOpen = true);
+        organizerPanel.SwitchToClean = OpenReview;
+        organizerPanel.OpenSettings = () => confirmWindow.Show(Ui.AppMode.Settings);
+        historyWindow.Back = OpenReview;
+        settingsWindow.Back = OpenReview;
         windows.AddWindow(confirmWindow);
-        windows.AddWindow(settingsWindow);
-        windows.AddWindow(historyWindow);
         windows.AddWindow(debugWindow);
 
         coordinator.RequestOpenWindow += () => confirmWindow.Show(Ui.AppMode.Clean);
@@ -214,10 +212,10 @@ public sealed class Plugin : IDalamudPlugin
         {
             case "settings":
             case "config":
-                settingsWindow.Toggle();
+                confirmWindow.Show(Ui.AppMode.Settings);
                 break;
             case "history":
-                historyWindow.Toggle();
+                confirmWindow.Show(Ui.AppMode.History);
                 break;
             case "organize":
             case "organise":
@@ -267,7 +265,7 @@ public sealed class Plugin : IDalamudPlugin
         chat.Print("Gleam is ready. Type /gleam (or just /gl) to see what it thinks is junk. Nothing is discarded or sold until you press Clean.", "Gleam");
     }
     private void OpenMain() => confirmWindow.Show(Ui.AppMode.Clean);
-    private void OpenConfig() => settingsWindow.IsOpen = true;
+    private void OpenConfig() => confirmWindow.Show(Ui.AppMode.Settings);
 
     public void Dispose()
     {
