@@ -16,21 +16,23 @@ namespace TidyUp.Windows;
 internal static class Ui
 {
     // Palette. Ink tones carry a faint blue bias so greys read as chosen rather than default.
-    public static readonly Vector4 Accent = new(0.87f, 0.72f, 0.31f, 1f);
-    public static readonly Vector4 AccentSoft = new(0.96f, 0.86f, 0.55f, 1f);
-    public static readonly Vector4 Ink = new(0.075f, 0.09f, 0.12f, 0.985f);
-    public static readonly Vector4 InkRaised = new(0.11f, 0.13f, 0.17f, 1f);
-    public static readonly Vector4 InkPopup = new(0.10f, 0.12f, 0.155f, 1f);
+    // Gleam: deep indigo ink, one violet (#654FF0), lavender for titles, cool off-white text. Gold is kept for
+    // gil alone so money reads as money; the semantic colours stay clear of the accent.
+    public static readonly Vector4 Accent = new(0.396f, 0.310f, 0.941f, 1f);      // #654FF0
+    public static readonly Vector4 AccentSoft = new(0.663f, 0.612f, 1.0f, 1f);    // #A99CFF
+    public static readonly Vector4 Ink = new(0.078f, 0.067f, 0.165f, 0.985f);      // #14112A
+    public static readonly Vector4 InkRaised = new(0.114f, 0.098f, 0.220f, 1f);   // #1D1938
+    public static readonly Vector4 InkPopup = new(0.106f, 0.094f, 0.204f, 1f);    // #1B1834
     public static readonly Vector4 InkLine = new(1f, 1f, 1f, 0.08f);
     public static readonly Vector4 InkEdge = new(1f, 1f, 1f, 0.16f);
-    public static readonly Vector4 Cream = new(0.97f, 0.93f, 0.85f, 1f);
-    public static readonly Vector4 Danger = new(0.93f, 0.42f, 0.40f, 1f);
-    public static readonly Vector4 Ok = new(0.49f, 0.80f, 0.55f, 1f);
-    public static readonly Vector4 Warn = new(0.95f, 0.68f, 0.33f, 1f);
-    public static readonly Vector4 Info = new(0.47f, 0.68f, 0.93f, 1f);
-    public static readonly Vector4 Muted = new(0.62f, 0.66f, 0.72f, 1f);
-    public static readonly Vector4 Market = new(0.45f, 0.80f, 0.78f, 1f);
-    public static readonly Vector4 OnAccent = new(0.10f, 0.09f, 0.06f, 1f);
+    public static readonly Vector4 Cream = new(0.945f, 0.933f, 1.0f, 1f);         // #F1EEFF
+    public static readonly Vector4 Danger = new(0.95f, 0.43f, 0.49f, 1f);         // #F26D7D
+    public static readonly Vector4 Ok = new(0.49f, 0.83f, 0.60f, 1f);             // #7ED39A
+    public static readonly Vector4 Warn = new(0.95f, 0.70f, 0.42f, 1f);           // #F2B26A
+    public static readonly Vector4 Info = new(0.56f, 0.73f, 0.92f, 1f);           // #8FB9EA
+    public static readonly Vector4 Muted = new(0.604f, 0.576f, 0.722f, 1f);       // #9A93B8
+    public static readonly Vector4 Market = new(0.906f, 0.780f, 0.471f, 1f);      // #E7C778, gil
+    public static readonly Vector4 OnAccent = new(1f, 1f, 1f, 1f);
 
     public static float Scale => ImGuiHelpers.GlobalScale;
     public static float Space => 8f * Scale;
@@ -38,7 +40,7 @@ internal static class Ui
 
     // ---------- window-wide style ----------
 
-    /// <summary>Pushed by every Satchel window around Begin/End. Rounded corners, calmer frames, ink ground.</summary>
+    /// <summary>Pushed by every Gleam window around Begin/End. Rounded corners, calmer frames, ink ground.</summary>
     public static IDisposable PushWindowStyle() => new WindowStyle();
 
     private sealed class WindowStyle : IDisposable
@@ -67,9 +69,9 @@ internal static class Ui
                 .Push(ImGuiCol.ChildBg, Vector4.Zero)
                 .Push(ImGuiCol.PopupBg, InkPopup)
                 .Push(ImGuiCol.Border, InkEdge)
-                .Push(ImGuiCol.TitleBg, new Vector4(0.06f, 0.075f, 0.10f, 1f))
-                .Push(ImGuiCol.TitleBgActive, new Vector4(0.08f, 0.10f, 0.135f, 1f))
-                .Push(ImGuiCol.TitleBgCollapsed, new Vector4(0.06f, 0.075f, 0.10f, 0.8f))
+                .Push(ImGuiCol.TitleBg, new Vector4(0.06f, 0.05f, 0.125f, 1f))
+                .Push(ImGuiCol.TitleBgActive, new Vector4(0.095f, 0.08f, 0.19f, 1f))
+                .Push(ImGuiCol.TitleBgCollapsed, new Vector4(0.06f, 0.05f, 0.125f, 0.8f))
                 .Push(ImGuiCol.FrameBg, new Vector4(1f, 1f, 1f, 0.055f))
                 .Push(ImGuiCol.FrameBgHovered, new Vector4(1f, 1f, 1f, 0.09f))
                 .Push(ImGuiCol.FrameBgActive, new Vector4(1f, 1f, 1f, 0.12f))

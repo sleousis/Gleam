@@ -69,7 +69,7 @@ public sealed class OrganizerPanel
         var plan = Plan;
         var enabled = plan?.Rules.Count(r => r.Enabled) ?? 0;
         var subtitle = plan is null ? "No layout yet" : $"{plan.Name} · {enabled} rule{(enabled == 1 ? "" : "s")}";
-        Ui.Header(icons.Logo, "Satchel", subtitle, Ui.SegmentedWidth(Views), () =>
+        Ui.Header(icons.Logo, "Gleam", subtitle, Ui.SegmentedWidth(Views), () =>
         {
             if (Ui.Segmented("##view", ref view, Views) && view == View.Preview && organizer.Current is null) _ = organizer.PreviewAsync();
         }, null, () => { if (Ui.ModeSwitch(Ui.AppMode.Organize)) SwitchToClean?.Invoke(); });
@@ -215,7 +215,7 @@ public sealed class OrganizerPanel
         if (Ui.LinkButton("Import"))
         {
             var imported = OrganizerPlanCodec.TryImport(ImGui.GetClipboardText(), organizer.RetainerNames.Keys.ToList());
-            if (imported is null) Note("Nothing to import. Copy a Satchel layout first.");
+            if (imported is null) Note("Nothing to import. Copy a Gleam layout first.");
             else
             {
                 plans.Add(imported);

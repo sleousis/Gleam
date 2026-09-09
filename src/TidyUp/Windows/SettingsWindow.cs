@@ -45,7 +45,7 @@ public sealed partial class SettingsWindow : StyledWindow
     ];
 
     public SettingsWindow(Configuration config, IPlayerState player, ItemDatabase db, IconCache icons, AllaganToolsSource allagan, RunCoordinator coordinator, Action openDebug)
-        : base("Satchel Settings###TidyUpSettings")
+        : base("Gleam Settings###TidyUpSettings")
     {
         this.config = config;
         this.player = player;
@@ -73,7 +73,7 @@ public sealed partial class SettingsWindow : StyledWindow
             if (body)
             {
                 var version = typeof(SettingsWindow).Assembly.GetName().Version?.ToString(3) ?? "dev";
-                Ui.Header(icons.Logo, "Settings", $"Satchel v{version} · by Raiden Shinryu");
+                Ui.Header(icons.Logo, "Settings", $"Gleam v{version} · by Raiden Shinryu");
                 Ui.Gap(0.6f);
                 DrawEssentials();
                 Ui.Gap(0.5f);
@@ -141,13 +141,13 @@ public sealed partial class SettingsWindow : StyledWindow
             ImGui.Spacing();
             var a = config.Automation;
             var auto = a.Enabled;
-            if (ImGui.Checkbox("Let Satchel travel and do it all", ref auto)) { a.Enabled = auto; dirty = true; }
+            if (ImGui.Checkbox("Let Gleam travel and do it all", ref auto)) { a.Enabled = auto; dirty = true; }
             ImGui.SameLine();
             if (Nav is null || !Nav.IsInstalled) Ui.Pill("needs the vnavmesh plugin", Ui.Warn); else Ui.Pill("vnavmesh", Ui.Ok, Dalamud.Interface.FontAwesomeIcon.Check);
-            Ui.Tooltip("vnavmesh is a free plugin that walks your character from place to place. Satchel uses it to reach the bell, the dresser and the merchant.");
+            Ui.Tooltip("vnavmesh is a free plugin that walks your character from place to place. Gleam uses it to reach the bell, the dresser and the merchant.");
             ImGui.SameLine();
             if (Travel is null || !Travel.IsInstalled) Ui.Pill("needs the Lifestream plugin", Ui.Warn); else Ui.Pill("Lifestream", Ui.Ok, Dalamud.Interface.FontAwesomeIcon.Check);
-            Ui.Tooltip("Lifestream is a free plugin that teleports between aetherytes and into inns. Satchel uses it to get to a retainer bell.");
+            Ui.Tooltip("Lifestream is a free plugin that teleports between aetherytes and into inns. Gleam uses it to get to a retainer bell.");
             Ui.HintWrapped("Opens the saddlebag, travels to an inn for the retainers and the dresser, and visits your Grand Company when something is to be turned in. Your character moves on its own while this runs.");
             using (ImRaii.Disabled(!auto))
             {

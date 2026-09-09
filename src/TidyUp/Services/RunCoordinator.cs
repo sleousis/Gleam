@@ -118,7 +118,7 @@ public sealed class RunCoordinator : IDisposable
             if (profile.StackMergeBeforeScan && focus is null)
             {
                 var merged = await StackMergeAsync().ConfigureAwait(false);
-                if (merged > 0) chat.Print($"Merged {merged} split stack{(merged == 1 ? "" : "s")}.", "Satchel");
+                if (merged > 0) chat.Print($"Merged {merged} split stack{(merged == 1 ? "" : "s")}.", "Gleam");
             }
 
             var snapshot = await snapshots.CaptureAsync(profile, focus).ConfigureAwait(false);
@@ -150,7 +150,7 @@ public sealed class RunCoordinator : IDisposable
         {
             log.Error(ex, "Scan failed");
             Status = "The scan did not finish";
-            chat.PrintError("The scan did not finish. Details are in the Dalamud log.", "Satchel");
+            chat.PrintError("The scan did not finish. Details are in the Dalamud log.", "Gleam");
         }
         finally
         {
@@ -221,7 +221,7 @@ public sealed class RunCoordinator : IDisposable
         save();
         if (CurrentPlan is not null)
             foreach (var s in CurrentPlan.Sections) s.Rows.RemoveAll(r => r.Item.ItemId == itemId);
-        chat.Print($"{name} will never be touched.", "Satchel");
+        chat.Print($"{name} will never be touched.", "Gleam");
         PlanChanged?.Invoke();
     }
 
@@ -230,7 +230,7 @@ public sealed class RunCoordinator : IDisposable
         config.AlwaysDiscardList.Add(itemId);
         config.ProtectList.RemoveAll(itemId);
         save();
-        chat.Print($"{name} will always be cleaned.", "Satchel");
+        chat.Print($"{name} will always be cleaned.", "Gleam");
     }
 
     // ---------- execution ----------
@@ -297,22 +297,22 @@ public sealed class RunCoordinator : IDisposable
             // The hands-free pilot prints one summary for the whole trip; a plain clean reports here.
             if (config.ChatSummaryAfterRun && !SuppressChatSummary)
             {
-                chat.Print($"{report.Summary()}.", "Satchel");
+                chat.Print($"{report.Summary()}.", "Gleam");
                 foreach (var (reason, count) in report.PendingByReason())
-                    chat.Print($"{count} waiting: {(string.IsNullOrEmpty(reason) ? "its storage is not open" : reason)}.", "Satchel");
+                    chat.Print($"{count} waiting: {(string.IsNullOrEmpty(reason) ? "its storage is not open" : reason)}.", "Gleam");
                 if (report.Moved.Any(m => m.BroughtHome))
-                    chat.Print("Close the retainer and clean again to finish the items brought back.", "Satchel");
+                    chat.Print("Close the retainer and clean again to finish the items brought back.", "Gleam");
                 if (report.Moved.Any(m => !m.BroughtHome))
-                    chat.Print("Some stacks are only partly listed. A retainer with free market slots can finish them.", "Satchel");
+                    chat.Print("Some stacks are only partly listed. A retainer with free market slots can finish them.", "Gleam");
                 if (report.Aborted && report.Failed > 0)
-                    chat.PrintError($"Stopped: {report.AbortReason}. Nothing after that was touched.", "Satchel");
+                    chat.PrintError($"Stopped: {report.AbortReason}. Nothing after that was touched.", "Gleam");
             }
         }
         catch (Exception ex)
         {
             log.Error(ex, "Run failed");
             Status = "The run did not finish";
-            chat.PrintError("The run did not finish. Details are in the Dalamud log.", "Satchel");
+            chat.PrintError("The run did not finish. Details are in the Dalamud log.", "Gleam");
         }
         finally
         {
@@ -376,6 +376,6 @@ public sealed class RunCoordinator : IDisposable
     {
         // A vendor or GC officer window opened; if actions were waiting for it, tell the user.
         var waiting = PendingActions.Count(p => p.Action is ActionKind.VendorSell or ActionKind.ExpertDelivery or ActionKind.MarketList);
-        if (waiting > 0) toast.ShowNormal($"Satchel: {waiting} waiting item{(waiting == 1 ? "" : "s")} can be finished here. /satchel to clean.");
+        if (waiting > 0) toast.ShowNormal($"Gleam: {waiting} waiting item{(waiting == 1 ? "" : "s")} can be finished here. /gleam to clean.");
     }
 }
