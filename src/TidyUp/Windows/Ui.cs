@@ -351,10 +351,20 @@ internal static class Ui
         return cut + "…";
     }
 
-    public static void Header(ImTextureID logo, string title, string subtitle, float rightWidth = 0f, Action? right = null, string? rightNote = null, Action? afterTitle = null)
+    public static void Header(ImTextureID logo, string title, string subtitle, float rightWidth = 0f, Action? right = null, string? rightNote = null, Action? afterTitle = null, float afterTitleWidth = 0f)
     {
         var size = 36f * Scale;
         var start = ImGui.GetCursorPos();
+        var logoW = logo.IsNull ? 0f : size + 10f * Scale;
+        // The pinned control keeps one column, but a narrow window wins: it slides left rather than
+        // running under whatever sits on the right, and the title clips to whatever room is left.
+        var pinnedW = afterTitleWidth > 0 ? afterTitleWidth : 170f * Scale;
+        var pad = ImGui.GetStyle().WindowPadding.X;
+        var rightEdge = ImGui.GetWindowWidth() - pad - (rightWidth > 0 ? rightWidth + 16f * Scale : 0f);
+        var room = rightEdge - pinnedW - start.X - logoW;
+        // Beside the title when there is room for both it and a readable title; on its own line below when not.
+        var pinnedBeside = afterTitle is not null && room >= 140f * Scale;
+        var column = Math.Clamp(room, 140f * Scale, TitleColumn * Scale);
         var rightBlock = right is null ? 0f : ImGui.GetFrameHeight() + (rightNote is null ? 0f : ImGui.GetTextLineHeight() + 3f * Scale);
         var rowH = Math.Max(size, rightBlock);
         if (!logo.IsNull)
@@ -368,17 +378,16 @@ internal static class Ui
         using (ImRaii.Group())
         {
             // With something pinned beside it, the title block keeps to its column rather than pushing it along.
-            var room = afterTitle is null ? float.MaxValue : (TitleColumn - 12f) * Scale;
-            TextColored(AccentSoft, Clip(title, room));
-            Hint(Clip(subtitle, room));
+            var titleRoom = pinnedBeside ? column - 12f * Scale : float.MaxValue;
+            TextColored(AccentSoft, Clip(title, titleRoom));
+            Hint(Clip(subtitle, titleRoom));
         }
-        if (afterTitle is not null)
+        if (pinnedBeside)
         {
-            // A fixed column, so switching page never moves the switch you just pressed.
+            // One column, so switching page never moves the switch you just pressed.
             ImGui.SameLine();
-            ImGui.SetCursorPos(new Vector2(start.X + (logo.IsNull ? 0f : size + 10f * Scale) + TitleColumn * Scale,
-                start.Y + Math.Max(0, (size - ImGui.GetFrameHeight()) / 2)));
-            afterTitle();
+            ImGui.SetCursorPos(new Vector2(start.X + logoW + column, start.Y + Math.Max(0, (size - ImGui.GetFrameHeight()) / 2)));
+            afterTitle!();
         }
         if (right is not null)
         {
@@ -395,6 +404,11 @@ internal static class Ui
             }
         }
         ImGui.SetCursorPos(new Vector2(start.X, start.Y + rowH + 4f * Scale));
+        if (afterTitle is not null && !pinnedBeside)
+        {
+            afterTitle();
+            Gap(0.3f);
+        }
         ImGui.Dummy(Vector2.Zero);
     }
 
@@ -1006,4 +1020,16 @@ internal static class Ui
     /// <summary>Right-aligns the next item of the given width within the current window.</summary>
     public static void RightAlign(float width) =>
         ImGui.SetCursorPosX(Math.Max(ImGui.GetCursorPosX(), ImGui.GetWindowWidth() - width - ImGui.GetStyle().WindowPadding.X));
+
+    /// <summary>
+    /// Puts a block of controls at the right edge of the current line, or on a line of its own when the
+    /// window is too narrow for both. Without this a footer silently runs off the edge at small sizes.
+    /// </summary>
+    public static void RightAlignOrWrap(float width, float roomForTextBeside)
+    {
+        var avail = ImGui.GetWindowWidth() - ImGui.GetStyle().WindowPadding.X * 2;
+        if (width + roomForTextBeside <= avail) ImGui.SameLine();
+        else Gap(0.3f);
+        RightAlign(width);
+    }
 }
