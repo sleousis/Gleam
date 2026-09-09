@@ -511,8 +511,25 @@ internal static class Ui
         return true;
     }
 
-    public static bool Combo(string label, ref int index, IReadOnlyList<string> items) =>
-        ImGui.Combo(label, ref index, items, items.Count);
+    /// <summary>
+    /// A dropdown built from one Selectable per option, so the popup is exactly as tall as its options.
+    /// The generic ImGui.Combo helper sized its popup wrongly inside our cards; this is what the review
+    /// window's action picker has always used.
+    /// </summary>
+    public static bool Combo(string label, ref int index, IReadOnlyList<string> items)
+    {
+        var preview = index >= 0 && index < items.Count ? items[index] : string.Empty;
+        using var combo = ImRaii.Combo(label, preview, ImGuiComboFlags.HeightLargest);
+        if (!combo) return false;
+        var changed = false;
+        for (var i = 0; i < items.Count; i++)
+        {
+            var selected = i == index;
+            if (ImGui.Selectable(items[i], selected, ImGuiSelectableFlags.None, Vector2.Zero) && !selected) { index = i; changed = true; }
+            if (selected) ImGui.SetItemDefaultFocus();
+        }
+        return changed;
+    }
 
     public static bool ComboEnum<T>(string label, ref T value, Func<T, string>? display = null) where T : struct, Enum
     {
@@ -520,7 +537,7 @@ internal static class Ui
         var names = values.Select(v => display?.Invoke(v) ?? v.ToString()).ToList();
         var idx = Array.IndexOf(values, value);
         if (idx < 0) idx = 0;
-        if (!ImGui.Combo(label, ref idx, names, names.Count)) return false;
+        if (!Combo(label, ref idx, names)) return false;
         value = values[idx];
         return true;
     }
