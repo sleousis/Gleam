@@ -45,7 +45,7 @@ public sealed class DtrEntry : IDisposable
         if ((DateTime.UtcNow - lastRefresh).TotalSeconds < 2) return;
         lastRefresh = DateTime.UtcNow;
 
-        entry ??= dtr.Get("Satchel");
+        entry ??= dtr.Get("Gleam");
         entry.OnClick = _ => openWindow();
         entry.Shown = true;
 
@@ -54,7 +54,7 @@ public sealed class DtrEntry : IDisposable
         var used = total - free;
         var cleanable = CleanableCount?.Invoke() ?? 0;
         entry.Text = cleanable > 0 ? $" {used}/{total} · {cleanable} cleanable" : $" {used}/{total}";
-        entry.Tooltip = "Satchel: click to review what can be cleaned";
+        entry.Tooltip = "Gleam: click to review what can be cleaned";
 
         var pct = total == 0 ? 0 : used * 100 / total;
         if (pct >= NudgePercent)
@@ -63,7 +63,7 @@ public sealed class DtrEntry : IDisposable
             {
                 nudgedThisCrossing = true;
                 if (cleanable > 0)
-                    toast.ShowNormal($"Satchel: your bags are {pct}% full. {cleanable} item{(cleanable == 1 ? "" : "s")} could be cleaned. /satchel to review.");
+                    toast.ShowNormal($"Gleam: your bags are {pct}% full. {cleanable} item{(cleanable == 1 ? "" : "s")} could be cleaned. /gleam to review.");
             }
         }
         else if (pct < NudgePercent - 5)

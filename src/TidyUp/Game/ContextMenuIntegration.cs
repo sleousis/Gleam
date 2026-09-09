@@ -5,7 +5,7 @@ using TidyUp.Core.Lists;
 
 namespace TidyUp.Game;
 
-/// <summary>Adds a "Satchel" submenu to the game's inventory item context menu: never / always discard.</summary>
+/// <summary>Adds a "Gleam" submenu to the game's inventory item context menu: never / always discard.</summary>
 public sealed class ContextMenuIntegration : IDisposable
 {
     private readonly IContextMenu contextMenu;
@@ -41,7 +41,7 @@ public sealed class ContextMenuIntegration : IDisposable
 
         args.AddMenuItem(new MenuItem
         {
-            Name = "Satchel",
+            Name = "Gleam",
             PrefixChar = 'T',
             PrefixColor = 539,
             IsSubmenu = true,
@@ -49,26 +49,26 @@ public sealed class ContextMenuIntegration : IDisposable
             {
                 new MenuItem
                 {
-                    Name = isProtected ? "Satchel: allow again" : "Satchel: never touch",
+                    Name = isProtected ? "Gleam: allow again" : "Gleam: never touch",
                     PrefixChar = 'T',
                     OnClicked = _ =>
                     {
                         if (isProtected) config.ProtectList.RemoveAll(baseId);
                         else { config.ProtectList.Add(baseId); config.AlwaysDiscardList.RemoveAll(baseId); }
                         save();
-                        chat.Print(isProtected ? $"{name} can be cleaned again." : $"{name} will never be touched.", "Satchel");
+                        chat.Print(isProtected ? $"{name} can be cleaned again." : $"{name} will never be touched.", "Gleam");
                     },
                 },
                 new MenuItem
                 {
-                    Name = isAlways ? "Satchel: stop always cleaning" : "Satchel: always clean",
+                    Name = isAlways ? "Gleam: stop always cleaning" : "Gleam: always clean",
                     PrefixChar = 'T',
                     OnClicked = _ =>
                     {
                         if (isAlways) config.AlwaysDiscardList.RemoveAll(baseId);
                         else { config.AlwaysDiscardList.Add(baseId); config.ProtectList.RemoveAll(baseId); }
                         save();
-                        chat.Print(isAlways ? $"{name} is no longer always cleaned." : $"{name} will always be cleaned.", "Satchel");
+                        chat.Print(isAlways ? $"{name} is no longer always cleaned." : $"{name} will always be cleaned.", "Gleam");
                     },
                 },
             }),

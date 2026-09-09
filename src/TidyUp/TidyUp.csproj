@@ -3,12 +3,12 @@
   <PropertyGroup>
     <Version>0.1.0.0</Version>
     <Author>Raiden Shinryu</Author>
-    <!-- The player sees "Satchel"; the assembly, namespaces and config file keep the original TidyUp name so existing settings carry over. -->
-    <Name>Satchel</Name>
-    <Punchline>Your bags, cleaned and organized. One look, one click.</Punchline>
-    <Description>Satchel looks through your bags, armoury chest, chocobo saddlebag, retainers and glamour dresser, shows everything it thinks is junk in one list, and waits for your click. Pick a preset: sell on the market board, sell to vendors, or discard. Layouts organize what you keep: materia to the saddlebag, spare gear to a retainer, gear-set pieces in the armoury. Items to be cleaned or moved glow inside the game's own bag windows.
+    <!-- The player sees "Gleam"; the assembly, namespaces and config file keep the original TidyUp name so existing settings carry over. -->
+    <Name>Gleam</Name>
+    <Punchline>Your bags, shining and in order. One look, one click.</Punchline>
+    <Description>Gleam looks through your bags, armoury chest, chocobo saddlebag, retainers and glamour dresser, shows everything it thinks is junk in one list, and waits for your click. Pick a preset: sell on the market board, sell to vendors, or discard. Layouts organize what you keep: materia to the saddlebag, spare gear to a retainer, gear-set pieces in the armoury. Items to be cleaned or moved glow inside the game's own bag windows.
 
-Commands: /satchel (or /sat), /satchel organize, /satchel history, /satchel settings, /satchel stop.
+Commands: /gleam (or /gl), /gleam organize, /gleam history, /gleam settings, /gleam stop.
 
 Works on its own. Optional companions unlock more: vnavmesh and Lifestream let it travel to the inn and do everything hands-free; AutoRetainer lets it discard junk after each retainer's ventures; Allagan Tools shows retainer contents without summoning them. Market prices come from Universalis and need an internet connection.</Description>
     <RepoUrl>https://github.com/savvasleousis/TidyUp</RepoUrl>

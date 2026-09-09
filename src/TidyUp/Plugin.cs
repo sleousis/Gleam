@@ -28,8 +28,8 @@ internal static class PluginServices
 
 public sealed class Plugin : IDalamudPlugin
 {
-    private const string Command = "/satchel";
-    private const string ShortCommand = "/sat";
+    private const string Command = "/gleam";
+    private const string ShortCommand = "/gl";
     private const string LegacyCommand = "/tidyup";
 
     private readonly IDalamudPluginInterface pi;
@@ -160,7 +160,7 @@ public sealed class Plugin : IDalamudPlugin
             CleanableCount = () => coordinator.LastCleanableCount,
         };
         dutyNudge = new DutyNudge(dutyState, framework, coordinator.CountCleanableAsync,
-            count => toast.ShowNormal($"Satchel: {count} item{(count == 1 ? "" : "s")} could be cleaned. /satchel to review."));
+            count => toast.ShowNormal($"Gleam: {count} item{(count == 1 ? "" : "s")} could be cleaned. /gleam to review."));
 
         config.Saved += ApplyProfileToServices;
         ApplyProfileToServices();
@@ -172,16 +172,16 @@ public sealed class Plugin : IDalamudPlugin
 
         commands.AddHandler(Command, new CommandInfo(OnCommand)
         {
-            HelpMessage = "Open Satchel. /satchel organize · settings · history · merge · stop",
+            HelpMessage = "Open Gleam. /gleam organize · settings · history · merge · stop",
         });
-        commands.AddHandler(ShortCommand, new CommandInfo(OnCommand) { HelpMessage = "Short for /satchel." });
+        commands.AddHandler(ShortCommand, new CommandInfo(OnCommand) { HelpMessage = "Short for /gleam." });
         commands.AddHandler(LegacyCommand, new CommandInfo(OnCommand) { ShowInHelp = false });
 
         pi.UiBuilder.Draw += windows.Draw;
         pi.UiBuilder.OpenMainUi += OpenMain;
         pi.UiBuilder.OpenConfigUi += OpenConfig;
 
-        log.Information("Satchel loaded");
+        log.Information("Gleam loaded");
     }
 
     private void ApplyProfileToServices()
@@ -236,7 +236,7 @@ public sealed class Plugin : IDalamudPlugin
                 _ = coordinator.StackMergeAsync().ContinueWith(t =>
                 {
                     if (t.IsFaulted) { log.Error(t.Exception, "Merge failed"); return; }
-                    chat.Print(t.Result > 0 ? $"Merged {t.Result} split stack{(t.Result == 1 ? "" : "s")}." : "Nothing to merge.", "Satchel");
+                    chat.Print(t.Result > 0 ? $"Merged {t.Result} split stack{(t.Result == 1 ? "" : "s")}." : "Nothing to merge.", "Gleam");
                 });
                 break;
             case "stop":
@@ -244,7 +244,7 @@ public sealed class Plugin : IDalamudPlugin
                 confirmWindow.Pilot?.Stop();
                 coordinator.CancelRun();
                 organizer.CancelRun();
-                if (!wasRunning) chat.Print("Nothing is running.", "Satchel");
+                if (!wasRunning) chat.Print("Nothing is running.", "Gleam");
                 break;
             default:
                 if (confirmWindow.IsOpen) confirmWindow.IsOpen = false;
@@ -264,7 +264,7 @@ public sealed class Plugin : IDalamudPlugin
         if (config.Greeted) return;
         config.Greeted = true;
         config.Save(pi);
-        chat.Print("Satchel is ready. Type /satchel (or just /sat) to see what it thinks is junk. Nothing is discarded or sold until you press Clean.", "Satchel");
+        chat.Print("Gleam is ready. Type /gleam (or just /gl) to see what it thinks is junk. Nothing is discarded or sold until you press Clean.", "Gleam");
     }
     private void OpenMain() => confirmWindow.Show(Ui.AppMode.Clean);
     private void OpenConfig() => settingsWindow.IsOpen = true;

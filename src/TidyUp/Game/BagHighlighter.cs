@@ -21,10 +21,10 @@ public sealed unsafe class BagHighlighter : IDisposable
     private bool painted;
     private int failures;
 
-    /// <summary>Warm gold over items the review will clean.</summary>
-    public static readonly Vector4 CleanTint = new(0.45f, 0.30f, 0.0f, 1f);
-    /// <summary>Cool blue over items the organizer will move.</summary>
-    public static readonly Vector4 MoveTint = new(0.0f, 0.22f, 0.50f, 1f);
+    /// <summary>Gleam violet over items the review will clean.</summary>
+    public static readonly Vector4 CleanTint = new(0.30f, 0.18f, 0.72f, 1f);
+    /// <summary>Sea-glass teal over items the organizer will move, so the two never look alike.</summary>
+    public static readonly Vector4 MoveTint = new(0.0f, 0.42f, 0.38f, 1f);
 
     /// <summary>Slots to tint, with their colour (RGB added to the icon, alpha applied). Read on the game thread each frame.</summary>
     public Func<IReadOnlyDictionary<SlotRef, Vector4>>? Source { get; set; }

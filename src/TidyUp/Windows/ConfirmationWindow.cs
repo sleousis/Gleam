@@ -77,7 +77,7 @@ public sealed class ConfirmationWindow : StyledWindow
     private readonly Dictionary<string, bool> sectionOpen = new();
 
     public ConfirmationWindow(RunCoordinator coordinator, IconCache icons, ItemDatabase db, Configuration config, IGamepadState gamepad, Action openSettings, Action openHistory)
-        : base("Satchel###TidyUpConfirm")
+        : base("Gleam###TidyUpConfirm")
     {
         this.coordinator = coordinator;
         this.icons = icons;
@@ -119,7 +119,7 @@ public sealed class ConfirmationWindow : StyledWindow
         if (!config.SeenCleanIntro)
         {
             Ui.Gap(0.3f);
-            if (Ui.Banner(Ui.Info, "New here?", "Satchel lists what it thinks is junk. Nothing happens until you press Clean, and you can untick anything.", dismissLabel: "Got it"))
+            if (Ui.Banner(Ui.Info, "New here?", "Gleam lists what it thinks is junk. Nothing happens until you press Clean, and you can untick anything.", dismissLabel: "Got it"))
             {
                 config.SeenCleanIntro = true;
                 config.Save(PluginServices.PluginInterface);
@@ -223,7 +223,7 @@ public sealed class ConfirmationWindow : StyledWindow
         var subtitle = coordinator.FocusContainer is { } fc
             ? $"Only the {FocusName(plan, fc)} · {checkedCount} of {total} selected"
             : $"{total} item{(total == 1 ? "" : "s")} in {containers} container{(containers == 1 ? "" : "s")} · {checkedCount} selected";
-        Ui.Header(icons.Logo, "Satchel", subtitle, Ui.SegmentedWidth(PresetOptions), () =>
+        Ui.Header(icons.Logo, "Gleam", subtitle, Ui.SegmentedWidth(PresetOptions), () =>
         {
             if (Ui.Segmented("##preset", ref preset, PresetOptions))
             {

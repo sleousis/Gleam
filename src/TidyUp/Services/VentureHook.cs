@@ -54,7 +54,7 @@ public sealed class VentureHook : IDisposable
             coordinator.SuppressChatSummary = true;
             await coordinator.ExecuteQueueAsync(queue, refreshAfter: false).ConfigureAwait(false);
             var done = coordinator.LastReport?.Done ?? 0;
-            if (done > 0) chat.Print($"After {retainer}'s ventures: discarded {done} item{(done == 1 ? "" : "s")} from your bags.", "Satchel");
+            if (done > 0) chat.Print($"After {retainer}'s ventures: discarded {done} item{(done == 1 ? "" : "s")} from your bags.", "Gleam");
         }
         catch (Exception ex)
         {

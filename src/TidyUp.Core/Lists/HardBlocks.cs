@@ -71,7 +71,7 @@ public static class HardBlocks
         HardBlockReason.NeverProposedCategory => "Never suggested by any rule",
         HardBlockReason.Currency => "Currency",
         HardBlockReason.IrreplaceableUntradeable => "Untradeable with no vendor value; cannot be bought back",
-        HardBlockReason.Protected => "Can never be regained; Satchel never touches it",
+        HardBlockReason.Protected => "Can never be regained; Gleam never touches it",
         _ => string.Empty,
     };
 }
