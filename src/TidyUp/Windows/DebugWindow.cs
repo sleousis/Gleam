@@ -46,6 +46,7 @@ public sealed class DebugWindow : StyledWindow
         this.player = player;
         this.config = config;
         Size = new Vector2(720, 560);
+        SizeConstraints = new WindowSizeConstraints { MinimumSize = new Vector2(520, 300), MaximumSize = new Vector2(4000, 3000) };
         SizeCondition = ImGuiCond.FirstUseEver;
     }
 
