@@ -76,6 +76,15 @@ public sealed class OrganizerPanel
 
         DrawPlanBar();
         Ui.Gap(0.4f);
+        if (!config.SeenOrganizeIntro && plan is not null)
+        {
+            if (Ui.Banner(Ui.Info, "New here?", "A layout is a short list of rules: what goes where. Start with the starter layout and change it later.", dismissLabel: "Got it"))
+            {
+                config.SeenOrganizeIntro = true;
+                dirty = true;
+            }
+            Ui.Gap(0.4f);
+        }
 
         if (Pilot is { IsRunning: true, Mode: Automation.PilotMode.Organize } || organizer.IsRunning) { DrawRunning(); return; }
         DrawBanners();
@@ -85,7 +94,21 @@ public sealed class OrganizerPanel
         {
             if (body)
             {
-                if (plan is null) Ui.EmptyState(icons.Logo, "No layout yet.", "Click New to start one.");
+                if (plan is null)
+                {
+                    Ui.EmptyState(icons.Logo, "No layout yet.", "A layout says what goes where. The starter one is a sensible beginning.");
+                    Ui.Gap(0.6f);
+                    var w = 240 * Ui.Scale;
+                    ImGui.SetCursorPosX((ImGui.GetWindowWidth() - w) / 2);
+                    if (Ui.PrimaryButton("Use the starter layout", w))
+                    {
+                        var starter = OrganizerPlan.Starter();
+                        config.Organizer.Plans.Add(starter);
+                        config.Organizer.ActivePlanId = starter.Id;
+                        view = View.Rules;
+                        dirty = true;
+                    }
+                }
                 else if (view == View.Rules) DrawRules(plan);
                 else DrawPreview(plan);
             }
@@ -219,8 +242,57 @@ public sealed class OrganizerPanel
 
     // ---------- rules ----------
 
+    // ---------- quick setup: four questions that write the rules ----------
+
+    private static readonly (string Name, string Question, OrganizerPredicate When)[] QuickQuestions =
+    [
+        ("Materia", "Materia", new OrganizerPredicate { Tags = [ItemTag.Materia] }),
+        ("Crystals", "Crystals and shards", new OrganizerPredicate { Tags = [ItemTag.Crystals] }),
+        ("Gear you are not using", "Gear that is not in a gear set", new OrganizerPredicate { Tags = [ItemTag.Gear], InGearset = false }),
+        ("Gear in a gear set", "Gear that is in a gear set", new OrganizerPredicate { Tags = [ItemTag.Gear], InGearset = true }),
+        ("Housing items", "Housing items", new OrganizerPredicate { Tags = [ItemTag.Housing] }),
+    ];
+
+    private bool quickOpen = true;
+
+    /// <summary>Plain questions with a destination each. Changing one writes or removes the matching rule at once.</summary>
+    private void DrawQuickSetup(OrganizerPlan plan)
+    {
+        using var card = Ui.Card("quick");
+        Ui.TextColored(Ui.Muted, "QUICK SETUP");
+        ImGui.SameLine();
+        if (Ui.LinkButton(quickOpen ? "Hide" : "Show")) quickOpen = !quickOpen;
+        if (!quickOpen) return;
+        Ui.Hint("Say where each kind of thing should live. Leave one alone and it stays where it is.");
+        ImGui.Spacing();
+        var labelW = QuickQuestions.Max(q => ImGui.CalcTextSize(q.Question, false, 0).X) + 12 * Ui.Scale;
+        foreach (var (name, question, when) in QuickQuestions)
+        {
+            var rule = plan.Rules.FirstOrDefault(r => r.Name == name);
+            var dest = rule?.Then ?? Destination.Stay;
+            ImGui.AlignTextToFramePadding();
+            Ui.Text(question);
+            ImGui.SameLine(labelW);
+            if (!DestinationCombo($"##quick{name}", ref dest, allowStay: true)) continue;
+            if (dest.Kind == DestinationKind.Stay) { if (rule is not null) plan.Rules.Remove(rule); }
+            else if (rule is null) plan.Rules.Add(new OrganizerRule { Name = name, When = Clone(when), Then = dest });
+            else rule.Then = dest;
+            dirty = true;
+        }
+        Ui.Hint("Everything else is listed below, where you can fine-tune or add your own rules.");
+    }
+
+    private static OrganizerPredicate Clone(OrganizerPredicate p) => new()
+    {
+        Tags = p.Tags is null ? null : new HashSet<ItemTag>(p.Tags), InGearset = p.InGearset, ForJobsPlayed = p.ForJobsPlayed,
+        IsHq = p.IsHq, HasMateria = p.HasMateria, IsStackable = p.IsStackable, IsUntradable = p.IsUntradable, IsUnique = p.IsUnique,
+        OnNeverTouchList = p.OnNeverTouchList, MinItemLevel = p.MinItemLevel, MaxItemLevel = p.MaxItemLevel, MinEquipLevel = p.MinEquipLevel, MaxEquipLevel = p.MaxEquipLevel,
+    };
+
     private void DrawRules(OrganizerPlan plan)
     {
+        DrawQuickSetup(plan);
+        Ui.Gap(0.5f);
         using (Ui.Card("name"))
         {
             ImGui.AlignTextToFramePadding();
@@ -347,10 +419,9 @@ public sealed class OrganizerPanel
         }
 
         Ui.Gap(0.6f);
+        if (!ImGui.CollapsingHeader("More", ImGuiTreeNodeFlags.None)) return;
         using (Ui.Card("options"))
         {
-            Ui.TextColored(Ui.Muted, "OPTIONS");
-            ImGui.Spacing();
             var merge = plan.MergeStacksAtDestination;
             if (ImGui.Checkbox("Top up stacks already at the destination", ref merge)) { plan.MergeStacksAtDestination = merge; dirty = true; }
             Ui.Tooltip("Off: incoming stacks take fresh slots instead.");

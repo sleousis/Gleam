@@ -141,11 +141,13 @@ public sealed partial class SettingsWindow : StyledWindow
             ImGui.Spacing();
             var a = config.Automation;
             var auto = a.Enabled;
-            if (ImGui.Checkbox("Do the travelling for me", ref auto)) { a.Enabled = auto; dirty = true; }
+            if (ImGui.Checkbox("Let Tidy Up travel and do it all", ref auto)) { a.Enabled = auto; dirty = true; }
             ImGui.SameLine();
             if (Nav is null || !Nav.IsInstalled) Ui.Pill("needs the vnavmesh plugin", Ui.Warn); else Ui.Pill("vnavmesh", Ui.Ok, Dalamud.Interface.FontAwesomeIcon.Check);
+            Ui.Tooltip("vnavmesh is a free plugin that walks your character from place to place. Tidy Up uses it to reach the bell, the dresser and the merchant.");
             ImGui.SameLine();
             if (Travel is null || !Travel.IsInstalled) Ui.Pill("needs the Lifestream plugin", Ui.Warn); else Ui.Pill("Lifestream", Ui.Ok, Dalamud.Interface.FontAwesomeIcon.Check);
+            Ui.Tooltip("Lifestream is a free plugin that teleports between aetherytes and into inns. Tidy Up uses it to get to a retainer bell.");
             Ui.HintWrapped("Opens the saddlebag, travels to an inn for the retainers and the dresser, and visits your Grand Company when something is to be turned in. Your character moves on its own while this runs.");
             using (ImRaii.Disabled(!auto))
             {

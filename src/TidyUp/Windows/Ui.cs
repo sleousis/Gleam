@@ -624,7 +624,7 @@ internal static class Ui
     }
 
     /// <summary>A tinted one-line notice with a colour bar on its left edge. Returns true when its dismiss link is clicked.</summary>
-    public static bool Banner(Vector4 color, string lead, string text, bool dismissible = true)
+    public static bool Banner(Vector4 color, string lead, string text, bool dismissible = true, string dismissLabel = "Dismiss", (string Label, Action Click)? link = null)
     {
         var a = Appear($"banner:{lead}:{text}", 0.28f);
         using var alpha = ImRaii.PushStyle(ImGuiStyleVar.Alpha, a);
@@ -640,15 +640,22 @@ internal static class Ui
         ImGui.AlignTextToFramePadding();
         TextColored(color, lead);
         ImGui.SameLine();
-        var dismissW = dismissible ? 70f * Scale : 0f;
-        using (ImRaii.TextWrapPos(pos.X + w - dismissW - 8f * Scale))
+        var dismissW = dismissible ? ImGui.CalcTextSize(dismissLabel, false, 0).X + 18f * Scale : 0f;
+        var linkW = link is null ? 0f : ImGui.CalcTextSize(link.Value.Label, false, 0).X + 18f * Scale;
+        using (ImRaii.TextWrapPos(pos.X + w - dismissW - linkW - 8f * Scale))
             Text(text);
         var clicked = false;
+        if (link is not null)
+        {
+            ImGui.SameLine();
+            ImGui.SetCursorScreenPos(new Vector2(pos.X + w - dismissW - linkW, pos.Y + 4f * Scale));
+            if (LinkButton(link.Value.Label)) link.Value.Click();
+        }
         if (dismissible)
         {
             ImGui.SameLine();
             ImGui.SetCursorScreenPos(new Vector2(pos.X + w - dismissW, pos.Y + 4f * Scale));
-            clicked = LinkButton("Dismiss");
+            clicked = LinkButton(dismissLabel);
         }
         ImGui.SetCursorScreenPos(new Vector2(slot.X, Math.Max(ImGui.GetCursorScreenPos().Y, slot.Y + h)));
         ImGui.Dummy(new Vector2(w, 0));

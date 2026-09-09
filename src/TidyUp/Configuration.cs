@@ -188,6 +188,11 @@ public sealed class Configuration : IPluginConfiguration
     /// <summary>Run the game's own sort on each container that was cleaned, once the run is over.</summary>
     public bool SortAfterRun { get; set; } = true;
 
+    /// <summary>One-time guidance: the chat greeting and the two intro cards, each shown until dismissed.</summary>
+    public bool Greeted { get; set; }
+    public bool SeenCleanIntro { get; set; }
+    public bool SeenOrganizeIntro { get; set; }
+
     /// <summary>Largest stack per market listing; 0 lists whole stacks.</summary>
     public int MarketListStackSize { get; set; }
 
