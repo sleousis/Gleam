@@ -72,7 +72,7 @@ public sealed partial class SettingsWindow : StyledWindow
             if (body)
             {
                 var version = typeof(SettingsWindow).Assembly.GetName().Version?.ToString(3) ?? "dev";
-                Ui.Header(icons.Logo, "Tidy Up", $"v{version} · by Raiden Shinryu");
+                Ui.Header(icons.Logo, "Settings", $"Tidy Up v{version} · by Raiden Shinryu");
                 Ui.Gap(0.6f);
                 DrawEssentials();
                 Ui.Gap(0.5f);
@@ -117,8 +117,8 @@ public sealed partial class SettingsWindow : StyledWindow
             }
             Ui.Gap(0.3f);
             var sortAfter = config.SortAfterRun;
-            if (ImGui.Checkbox("Sort containers after cleaning", ref sortAfter)) { config.SortAfterRun = sortAfter; dirty = true; }
-            Ui.Tooltip("Runs the game's own sort on each container that was cleaned.");
+            if (ImGui.Checkbox(ConfirmationWindow.SortAfterLabel, ref sortAfter)) { config.SortAfterRun = sortAfter; dirty = true; }
+            Ui.Tooltip(ConfirmationWindow.SortAfterHint);
         }
 
         using (Ui.Card("auto"))
@@ -132,12 +132,12 @@ public sealed partial class SettingsWindow : StyledWindow
             if (Nav is null || !Nav.IsInstalled) Ui.Pill("needs the vnavmesh plugin", Ui.Warn); else Ui.Pill("vnavmesh", Ui.Ok, Dalamud.Interface.FontAwesomeIcon.Check);
             ImGui.SameLine();
             if (Travel is null || !Travel.IsInstalled) Ui.Pill("needs the Lifestream plugin", Ui.Warn); else Ui.Pill("Lifestream", Ui.Ok, Dalamud.Interface.FontAwesomeIcon.Check);
-            Ui.HintWrapped("Opens the saddlebag, teleports to an inn for the retainers and the dresser, then visits a merchant and your Grand Company as needed. Gameplay automation; use at your own risk.");
+            Ui.HintWrapped("Opens the saddlebag, travels to an inn for the retainers and the dresser, and visits your Grand Company when something is to be turned in. Your character moves on its own while this runs.");
             using (ImRaii.Disabled(!auto))
             {
                 var cleanUnseen = a.UnseenRows != UnseenRowsMode.Skip;
                 if (ImGui.Checkbox("Also clean items discovered along the way", ref cleanUnseen)) { a.UnseenRows = cleanUnseen ? UnseenRowsMode.Clean : UnseenRowsMode.Skip; dirty = true; }
-                Ui.Tooltip("Retainers and the dresser only show their contents once open. On: they are cleaned by the same rules on the spot. Off: they wait for your next review.");
+                Ui.Tooltip("Retainers and the dresser only show their contents once open. On: those items are cleaned by the same rules on the spot. Off: they wait for your next review.");
             }
         }
 
@@ -157,7 +157,7 @@ public sealed partial class SettingsWindow : StyledWindow
 
         Ui.Gap(0.5f);
         if (Ui.LinkButton("Troubleshooting")) openDebug();
-        Ui.Tooltip("Only needed if a step keeps failing after a game update.");
+        Ui.Tooltip("Only needed when a step keeps failing after a game update.");
     }
 
     private static void Fold(string title, Action body)

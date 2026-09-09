@@ -165,7 +165,6 @@ public sealed class DebugWindow : StyledWindow
         ImGui.SameLine(); v = cb.ExpertDeliveryConfirm; ImGui.SetNextItemWidth(70 * Ui.Scale); if (Ui.InputInt("GC confirm", ref v)) { cb.ExpertDeliveryConfirm = v; changed = true; }
         var sell = cb.SellLabel; ImGui.SetNextItemWidth(160 * Ui.Scale); if (Ui.InputText("Sell label", "", ref sell, 32)) { cb.SellLabel = sell; changed = true; }
         ImGui.SameLine(); var mat = cb.RetrieveMateriaLabel; ImGui.SetNextItemWidth(160 * Ui.Scale); if (Ui.InputText("Materia label", "", ref mat, 32)) { cb.RetrieveMateriaLabel = mat; changed = true; }
-        var verified = config.SpikesVerified; if (ImGui.Checkbox("Verified on this machine", ref verified)) { config.SpikesVerified = verified; changed = true; }
         if (changed) config.Save(PluginServices.PluginInterface);
 
         Ui.Section("Log");

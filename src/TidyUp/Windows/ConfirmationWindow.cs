@@ -61,27 +61,9 @@ public sealed class ConfirmationWindow : StyledWindow
         Size = new Vector2(860, 600);
         SizeCondition = ImGuiCond.FirstUseEver;
         SizeConstraints = new WindowSizeConstraints { MinimumSize = new Vector2(560, 320), MaximumSize = new Vector2(4000, 3000) };
-        if (openOrganizer is not null)
-        {
-            TitleBarButtons.Add(new TitleBarButton
-            {
-                Icon = Dalamud.Interface.FontAwesomeIcon.BoxOpen,
-                Click = _ => openOrganizer(),
-                ShowTooltip = () => ImGui.SetTooltip("Organize"),
-            });
-        }
-        TitleBarButtons.Add(new TitleBarButton
-        {
-            Icon = Dalamud.Interface.FontAwesomeIcon.History,
-            Click = _ => openHistory(),
-            ShowTooltip = () => ImGui.SetTooltip("History"),
-        });
-        TitleBarButtons.Add(new TitleBarButton
-        {
-            Icon = Dalamud.Interface.FontAwesomeIcon.Cog,
-            Click = _ => openSettings(),
-            ShowTooltip = () => ImGui.SetTooltip("Settings"),
-        });
+        if (openOrganizer is not null) AddNav(FontAwesomeIcon.BoxOpen, "Organize", openOrganizer);
+        AddNav(FontAwesomeIcon.History, "History", openHistory);
+        AddNav(FontAwesomeIcon.Cog, "Settings", openSettings);
     }
 
     public override void OnOpen()
@@ -95,13 +77,15 @@ public sealed class ConfirmationWindow : StyledWindow
     public override void Draw()
     {
         var plan = coordinator.CurrentPlan;
-        if (Pilot is { IsRunning: true } && !Pilot.Status.StartsWith("Waiting for you", StringComparison.Ordinal)) { DrawPilotRunning(); return; }
+        var pilotCleaning = Pilot is { IsRunning: true, Mode: Automation.PilotMode.Clean };
+        if (pilotCleaning && !Pilot!.Status.StartsWith("Waiting for you", StringComparison.Ordinal)) { DrawPilotRunning(); return; }
         if (coordinator.IsRunning) { DrawRunning(); return; }
         if (plan is null) { DrawCentered(string.IsNullOrEmpty(coordinator.Status) ? "Scanning your containers…" : coordinator.Status); return; }
-        if (Pilot is { IsRunning: true }) { Ui.TextColored(Ui.Accent, Pilot.Status); Ui.Hint("Clean what you agree with, or close this window to skip it. The run continues either way."); Ui.Gap(0.5f); }
+        if (pilotCleaning) { Ui.TextColored(Ui.Accent, Pilot!.Status); Ui.Hint("Clean what you agree with, or close this window to skip it. The run continues either way."); Ui.Gap(0.5f); }
 
         DrawTopBar(plan);
         DrawLastRunBanner();
+        DrawPilotErrorBanner();
         Ui.Gap(0.5f);
 
         var footer = ImGui.GetFrameHeight() * 2.4f + Ui.Space;
@@ -129,12 +113,22 @@ public sealed class ConfirmationWindow : StyledWindow
             }
         }
 
-        HandleKeyboard();
+        HandleKeyboard(plan);
         DrawFooter(plan);
     }
 
     private bool bannerDismissed;
     private Core.Execution.RunReport? bannerReport;
+    private string? pilotErrorShown;
+
+    /// <summary>Why the last hands-free run stopped, once, until dismissed or a new run starts.</summary>
+    private void DrawPilotErrorBanner()
+    {
+        if (Pilot is not { Mode: Automation.PilotMode.Clean, LastError: { } error } || Pilot.IsRunning) return;
+        if (pilotErrorShown == error) return;
+        Ui.Gap(0.3f);
+        if (Ui.Banner(Ui.Warn, "Hands-free stopped", error)) pilotErrorShown = error;
+    }
 
     /// <summary>One quiet line after a run: what happened and what is still waiting. Dismissed with a click.</summary>
     private void DrawLastRunBanner()
@@ -149,7 +143,7 @@ public sealed class ConfirmationWindow : StyledWindow
         if (report.Skipped > 0) parts.Add($"skipped {report.Skipped} that changed");
         if (report.Failed > 0) parts.Add($"{report.Failed} failed");
         foreach (var (reason, count) in report.PendingByReason())
-            parts.Add($"{count} waiting to {(string.IsNullOrEmpty(reason) ? "have their container opened" : reason)}");
+            parts.Add($"{count} waiting: {(string.IsNullOrEmpty(reason) ? "open their container" : reason)}");
         if (parts.Count == 0) return;
 
         Ui.Gap(0.3f);
@@ -176,7 +170,7 @@ public sealed class ConfirmationWindow : StyledWindow
         var total = plan.AllRows.Count(r => r.IsExecutable);
         var containers = plan.Sections.Count(s => s.Rows.Count > 0);
         var subtitle = coordinator.FocusContainer is { } fc
-            ? $"{fc.DisplayName()} · {checkedCount} of {total} selected"
+            ? $"Only the {FocusName(plan, fc)} · {checkedCount} of {total} selected"
             : $"{total} item{(total == 1 ? "" : "s")} in {containers} container{(containers == 1 ? "" : "s")} · {checkedCount} selected";
         Ui.Header(icons.Logo, "Tidy Up", subtitle, Ui.SegmentedWidth(PresetOptions), () =>
         {
@@ -189,8 +183,15 @@ public sealed class ConfirmationWindow : StyledWindow
                 config.Save(PluginServices.PluginInterface);
                 _ = coordinator.RefreshPlanAsync(openWindow: false, coordinator.FocusContainer);
             }
-            Ui.Tooltip("Sell on marketboard: lists marketable items through your retainers at the lowest price on your home world, vendors other tradeable items, discards untradeable ones.\nSell on vendors: vendors tradeable items, discards untradeable ones.\nDiscard all: discards everything proposed.");
+            Ui.Tooltip("Sell on market board: lists marketable items through your retainers at the lowest price on your home world, sells other tradeable items to a retainer, discards untradeable ones.\nSell to vendors: sells tradeable items to a retainer, discards untradeable ones.\nDiscard all: discards everything proposed.");
         }, profile.Thresholds.Policy.Describe());
+
+        if (coordinator.FocusContainer is not null)
+        {
+            Ui.Hint("Showing one container.");
+            ImGui.SameLine();
+            if (Ui.LinkButton("Show all")) _ = coordinator.RefreshPlanAsync(openWindow: false);
+        }
 
         Ui.Gap(0.4f);
 
@@ -205,7 +206,8 @@ public sealed class ConfirmationWindow : StyledWindow
         DrawFilterMenu();
 
         ImGui.SameLine();
-        if (Ui.IconButton(FontAwesomeIcon.Sync, "Rescan")) _ = coordinator.RefreshPlanAsync(openWindow: false, coordinator.FocusContainer);
+        if (Ui.IconButton(FontAwesomeIcon.Sync, "Refresh")) _ = coordinator.RefreshPlanAsync(openWindow: false, coordinator.FocusContainer);
+        Ui.Tooltip("Looks through your containers again.");
 
         ImGui.SameLine();
         Ui.RightAlign(90 * Ui.Scale);
@@ -214,7 +216,7 @@ public sealed class ConfirmationWindow : StyledWindow
         var narrowed = filterContainer is not null || filterRule is not null || filterAction is not null || filterTags.Count > 0 || filterTradeable is not null || !string.IsNullOrWhiteSpace(search);
         var executable = (narrowed ? Filter(plan.AllRows) : plan.AllRows).Where(r => r.IsExecutable).ToList();
         var allChecked = executable.Count > 0 && executable.All(r => r.Checked);
-        if (Ui.LinkButton(allChecked ? "None" : narrowed ? "All shown" : "All"))
+        if (Ui.LinkButton(allChecked ? "Clear" : narrowed ? "Select shown" : "Select all"))
         {
             foreach (var r in executable)
             {
@@ -224,8 +226,8 @@ public sealed class ConfirmationWindow : StyledWindow
         }
         var warned = executable.Count(r => r.Proposal.Warnings.Count > 0);
         var scope = narrowed ? "every row that matches the current filters" : "every row";
-        Ui.Tooltip(warned > 0
-            ? $"Ticks {scope}, including {warned} with a warning (usable, untradeable, or valuable on the market). Glance at those before you clean."
+        Ui.Tooltip(allChecked ? "Unticks every row." : warned > 0
+            ? $"Ticks {scope}, including {warned} with a warning. Glance at those first."
             : $"Ticks {scope}.");
     }
 
@@ -315,7 +317,7 @@ public sealed class ConfirmationWindow : StyledWindow
         foreach (var r in Core.Rules.RuleEngine.AllRules)
             if (ImGui.MenuItem(r.Name, string.Empty, filterRule == r.Id, true)) filterRule = r.Id;
         if (ImGui.MenuItem("Always clean list", string.Empty, filterRule == "always-discard", true)) filterRule = "always-discard";
-        if (ImGui.MenuItem("Not proposed", string.Empty, filterRule == "manual", true)) filterRule = "manual";
+        if (ImGui.MenuItem("Not suggested by any rule", string.Empty, filterRule == "manual", true)) filterRule = "manual";
 
         ImGui.Separator();
         Ui.Hint("Type");
@@ -470,7 +472,7 @@ public sealed class ConfirmationWindow : StyledWindow
             Ui.RightAlign(30 * Ui.Scale);
             ImGui.SetCursorPosY(ImGui.GetCursorPosY() + pillDrop + 2 * Ui.Scale);
             Ui.Icon(FontAwesomeIcon.MapMarkerAlt, Ui.Muted);
-            Ui.Tooltip($"Not open right now: {why}. Accept anyway and these rows wait until it is.");
+            Ui.Tooltip($"Not open right now: {why}. Clean anyway and these rows wait until it is.");
         }
         if (!expanded) { Ui.Gap(0.2f); return; }
 
@@ -790,22 +792,22 @@ public sealed class ConfirmationWindow : StyledWindow
         if (summary.GilDestroyed > 0) parts.Add($"destroys {Ui.Gil(summary.GilDestroyed)} of vendor value");
         if (summary.MarketRows > 0) parts.Add($"lists {summary.MarketRows} on the market for about {Ui.Gil(summary.MarketGil)}");
         if (summary.SealsRows > 0) parts.Add($"{summary.SealsRows} to seals");
-        if (coordinator.PendingActions.Count > 0) parts.Add($"{coordinator.PendingActions.Count} accepted earlier still waiting");
+        if (coordinator.PendingActions.Count > 0) parts.Add($"{coordinator.PendingActions.Count} from earlier still waiting");
 
         ImGui.AlignTextToFramePadding();
-        Ui.Hint(parts.Count == 0 ? "Select rows to see what this run would do." : string.Join("  ·  ", parts));
+        Ui.Hint(parts.Count == 0 ? "Tick rows to see what this run would do." : string.Join("  ·  ", parts));
 
-        var handsFree = Pilot is not null && config.Automation.Enabled && coordinator.FocusContainer is null && !(Pilot?.IsRunning ?? false);
-        var needsTravel = plan.AllRows.Any(r => r.Checked && r.IsExecutable && (!r.Item.Slot.Kind.IsAlwaysLoaded() || r.ChosenAction is ActionKind.VendorSell or ActionKind.MarketList));
+        var (handsFree, needsTravel) = RunShape(plan);
+        var items = $"{cap.Items} item{(cap.Items == 1 ? "" : "s")}";
         var verb = cap.Exceeded && !capArmed
-            ? $"Clean {cap.Items} · over your cap, click again"
-            : handsFree && needsTravel ? $"Clean {cap.Items} everywhere" : $"Clean {cap.Items} item{(cap.Items == 1 ? "" : "s")}";
+            ? $"Clean {items} anyway"
+            : handsFree && needsTravel ? $"Clean {items} everywhere" : $"Clean {items}";
         var buttonWidth = 240 * Ui.Scale;
         ImGui.SameLine();
-        Ui.RightAlign(buttonWidth + (handsFree && needsTravel ? 170 : 70) * Ui.Scale + 150 * Ui.Scale);
+        Ui.RightAlign(buttonWidth + (handsFree && needsTravel ? 170 : 70) * Ui.Scale + 170 * Ui.Scale);
         var sortAfter = config.SortAfterRun;
-        if (ImGui.Checkbox("Sort afterwards", ref sortAfter)) { config.SortAfterRun = sortAfter; config.Save(PluginServices.PluginInterface); }
-        Ui.Tooltip("Runs the game's own sort on each container that was cleaned.");
+        if (ImGui.Checkbox(SortAfterLabel, ref sortAfter)) { config.SortAfterRun = sortAfter; config.Save(PluginServices.PluginInterface); }
+        Ui.Tooltip(SortAfterHint);
         ImGui.SameLine();
         if (Ui.LinkButton("Close")) IsOpen = false;
         if (handsFree && needsTravel)
@@ -815,23 +817,51 @@ public sealed class ConfirmationWindow : StyledWindow
             {
                 if (Ui.LinkButton("Clean here only")) { capArmed = false; _ = coordinator.AcceptAsync(); }
             }
-            Ui.Tooltip("Cleans what is reachable right now and leaves the rest waiting for their container.");
+            Ui.Tooltip("Cleans what is reachable right now. The rest waits until you open its container.");
         }
         ImGui.SameLine();
         using (ImRaii.Disabled(cap.Items == 0))
         {
-            if (Ui.PrimaryButton(verb, buttonWidth, danger: cap.Exceeded && !capArmed))
-            {
-                if (cap.Exceeded && !capArmed) capArmed = true;
-                else
-                {
-                    capArmed = false;
-                    if (handsFree && needsTravel) _ = Pilot!.RunAsync(); else _ = coordinator.AcceptAsync();
-                }
-            }
+            if (Ui.PrimaryButton(verb, buttonWidth, danger: cap.Exceeded && !capArmed)) Accept(plan);
         }
-        if (cap.Exceeded) Ui.Tooltip(cap.Explanation);
-        else if (handsFree && needsTravel) Ui.Tooltip("Hands-free: opens the saddlebag, travels to an inn, visits each retainer and the dresser, and cleans as it goes.");
+        if (cap.Exceeded && !capArmed) Ui.Tooltip($"{cap.Explanation} Click again to go ahead.");
+        else if (handsFree && needsTravel) Ui.Tooltip(HandsFreeCleanHint);
+    }
+
+    public const string SortAfterLabel = "Sort bags afterwards";
+    public const string SortAfterHint = "Runs the game's own sort on every container that was touched.";
+    public const string HandsFreeCleanHint = "Hands-free: opens the saddlebag, travels to an inn, visits each retainer and the dresser, and cleans as it goes.";
+    private const string StopHint = "Finishes the current item, then stops.";
+
+    /// <summary>Whether this run would go hands-free, and whether anything ticked needs travel to reach.</summary>
+    private (bool HandsFree, bool NeedsTravel) RunShape(RunPlan plan)
+    {
+        var handsFree = Pilot is not null && config.Automation.Enabled && coordinator.FocusContainer is null && !Pilot.IsRunning;
+        var needsTravel = plan.AllRows.Any(r => r.Checked && r.IsExecutable && (!r.Item.Slot.Kind.IsAlwaysLoaded() || r.ChosenAction is ActionKind.VendorSell or ActionKind.MarketList));
+        return (handsFree, needsTravel);
+    }
+
+    /// <summary>The one way a run starts, whether from the button, Enter or the gamepad: honours the cap and hands-free.</summary>
+    private void Accept(RunPlan plan)
+    {
+        if (coordinator.IsRunning) return;
+        var rowsForCap = coordinator.FocusContainer is { } f ? plan.Sections.Where(s => s.Kind == f).SelectMany(s => s.Rows) : plan.AllRows;
+        var cap = SoftCap.Evaluate(rowsForCap, coordinator.EffectiveProfile.Thresholds);
+        if (cap.Items == 0) return;
+        if (cap.Exceeded && !capArmed) { capArmed = true; return; }
+        capArmed = false;
+        var (handsFree, needsTravel) = RunShape(plan);
+        if (handsFree && needsTravel) _ = Pilot!.RunAsync(); else _ = coordinator.AcceptAsync();
+    }
+
+    private string FocusName(RunPlan plan, ContainerKind kind)
+    {
+        if (kind == ContainerKind.Retainer)
+        {
+            var names = plan.Sections.Where(s => s.Kind == kind).Select(s => s.OwnerName).Where(n => !string.IsNullOrEmpty(n)).Distinct().ToList();
+            if (names.Count == 1) return $"retainer {names[0]}";
+        }
+        return kind.DisplayName().ToLowerInvariant();
     }
 
     private void DrawPilotRunning()
@@ -847,7 +877,7 @@ public sealed class ConfirmationWindow : StyledWindow
         Ui.Gap();
         ImGui.SetCursorPosX((ImGui.GetWindowWidth() - 120 * Ui.Scale) / 2);
         if (Ui.PrimaryButton("Stop", 120 * Ui.Scale, danger: true)) Pilot.Stop();
-        DrawCentered("Stops moving and finishes only the current item.", muted: true);
+        DrawCentered(StopHint, muted: true);
     }
 
     private void DrawRunning()
@@ -861,14 +891,14 @@ public sealed class ConfirmationWindow : StyledWindow
         Ui.Gap();
         ImGui.SetCursorPosX((ImGui.GetWindowWidth() - 120 * Ui.Scale) / 2);
         if (Ui.PrimaryButton("Stop", 120 * Ui.Scale, danger: true)) coordinator.CancelRun();
-        DrawCentered("Stopping finishes the current item and leaves the rest untouched.", muted: true);
+        DrawCentered(StopHint, muted: true);
     }
 
     private static void DrawCentered(string text, bool muted = false) => Ui.Centered(text, muted);
 
     // ---------- keyboard & gamepad ----------
 
-    private void HandleKeyboard()
+    private void HandleKeyboard(RunPlan plan)
     {
         if (!ImGui.IsWindowFocused(ImGuiFocusedFlags.RootAndChildWindows) || ImGui.IsAnyItemActive()) return;
         var count = visibleRows.Count;
@@ -894,9 +924,13 @@ public sealed class ConfirmationWindow : StyledWindow
         if (toggle && cursor >= 0 && cursor < count)
         {
             var row = visibleRows[cursor];
-            if (row.IsExecutable) { row.Checked = !row.Checked; if (!row.Checked) coordinator.SessionSkips.Add(row.Key); }
+            if (row.IsExecutable)
+            {
+                row.Checked = !row.Checked;
+                if (row.Checked) coordinator.SessionSkips.Remove(row.Key); else coordinator.SessionSkips.Add(row.Key);
+            }
         }
-        if (accept && !coordinator.IsRunning) _ = coordinator.AcceptAsync();
+        if (accept) Accept(plan);
         if (cancel) IsOpen = false;
     }
 }

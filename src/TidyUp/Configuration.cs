@@ -186,7 +186,6 @@ public sealed class Configuration : IPluginConfiguration
     public bool ChatSummaryAfterRun { get; set; } = true;
 
     /// <summary>Set once the first spike run confirmed the discard path on this machine.</summary>
-    public bool SpikesVerified { get; set; } = false;
 
     /// <summary>Glamour plate item ids seen the last time the dresser was open, per character, so the dresser rule has data before plates reload.</summary>
     public Dictionary<ulong, List<uint>> LastKnownPlateItems { get; set; } = new();

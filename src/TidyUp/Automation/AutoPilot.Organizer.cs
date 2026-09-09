@@ -7,7 +7,7 @@ using TidyUp.Services;
 namespace TidyUp.Automation;
 
 /// <summary>
-/// Hands-free organising: walks the solver's move list in order, opening whatever storage each stretch of
+/// Hands-free organizing: walks the solver's move list in order, opening whatever storage each stretch of
 /// moves needs (saddlebag here, retainers at an inn bell) and running the moves while it is open.
 /// </summary>
 public sealed partial class AutoPilot
@@ -27,6 +27,7 @@ public sealed partial class AutoPilot
         if (!result.Report.Feasible) { Fail("something would overflow; change a rule or free some space first"); return; }
         if (result.Moves.Count == 0) { Nothing("Nothing to move"); return; }
 
+        Mode = PilotMode.Organize;
         IsRunning = true;
         LastError = null;
         cts?.Dispose();
