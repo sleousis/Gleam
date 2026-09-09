@@ -254,6 +254,21 @@ internal static class Ui
         return clicked;
     }
 
+    /// <summary>A small square button showing only a glyph; the tooltip carries the words.</summary>
+    public static bool GlyphButton(FontAwesomeIcon icon, string id, string tooltip, Vector4? color = null)
+    {
+        var h = ImGui.GetFrameHeight();
+        bool clicked;
+        using (ImRaii.PushColor(ImGuiCol.Button, Vector4.Zero))
+        using (ImRaii.PushColor(ImGuiCol.ButtonHovered, new Vector4(1, 1, 1, 0.08f)))
+        using (ImRaii.PushColor(ImGuiCol.ButtonActive, new Vector4(1, 1, 1, 0.12f)))
+        using (ImRaii.PushColor(ImGuiCol.Text, color ?? Muted))
+        using (ImRaii.PushFont(UiBuilder.IconFont))
+            clicked = ImGui.Button($"{icon.ToIconString()}##{id}", new Vector2(h, h));
+        Tooltip(tooltip);
+        return clicked;
+    }
+
     /// <summary>The one filled button on a screen: gold, rounded, with a soft sheen. Danger turns it red.</summary>
     public static bool PrimaryButton(string label, float width = 0f, bool danger = false)
     {
@@ -557,7 +572,7 @@ internal static class Ui
 
     public static void Tooltip(string text)
     {
-        if (string.IsNullOrEmpty(text) || !ImGui.IsItemHovered()) return;
+        if (string.IsNullOrEmpty(text) || !ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled)) return;
         using var t = ImRaii.Tooltip();
         using var w = ImRaii.TextWrapPos(380f * Scale);
         ImGui.TextUnformatted(text);

@@ -1,4 +1,5 @@
 using Dalamud.Bindings.ImGui;
+using Dalamud.Interface;
 using Dalamud.Interface.Windowing;
 
 namespace TidyUp.Windows;
@@ -10,6 +11,17 @@ public abstract class StyledWindow : Window
 
     protected StyledWindow(string name, ImGuiWindowFlags flags = ImGuiWindowFlags.None) : base(name, flags)
     {
+    }
+
+    /// <summary>A title-bar button that opens another Tidy Up window, so every window can reach every other.</summary>
+    public void AddNav(FontAwesomeIcon icon, string tooltip, Action open)
+    {
+        TitleBarButtons.Add(new TitleBarButton
+        {
+            Icon = icon,
+            Click = _ => open(),
+            ShowTooltip = () => ImGui.SetTooltip(tooltip),
+        });
     }
 
     public override void PreDraw()

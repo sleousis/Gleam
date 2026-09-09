@@ -17,6 +17,8 @@ namespace TidyUp.Automation;
 /// re-validated at the moment it is touched; anything a container reveals that was not in the
 /// accepted plan pauses for the user instead of acting.
 /// </summary>
+public enum PilotMode { Clean, Organize }
+
 public sealed partial class AutoPilot
 {
     private readonly IFramework framework;
@@ -36,6 +38,8 @@ public sealed partial class AutoPilot
     private uint? saddlebagCommandId;
 
     public bool IsRunning { get; private set; }
+    /// <summary>Which window owns the running screen: the cleaner's or the organizer's.</summary>
+    public PilotMode Mode { get; private set; } = PilotMode.Clean;
     public string Status { get; private set; } = string.Empty;
     public string? LastError { get; private set; }
 
@@ -86,6 +90,7 @@ public sealed partial class AutoPilot
         var queue = coordinator.BuildQueueFromPlan(r => true);
         if (queue.Count == 0) { Nothing("Nothing is ticked"); return; }
 
+        Mode = PilotMode.Clean;
         IsRunning = true;
         LastError = null;
         cts?.Dispose();

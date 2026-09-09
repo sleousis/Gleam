@@ -1,4 +1,5 @@
 using Dalamud.Game.Command;
+using Dalamud.Interface;
 using Dalamud.Interface.Windowing;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
@@ -93,6 +94,15 @@ public sealed class Plugin : IDalamudPlugin
         organizerWindow = new OrganizerWindow(organizer, config, db, icons, Save);
         confirmWindow = new ConfirmationWindow(coordinator, icons, db, config, gamepad, () => settingsWindow.IsOpen = true, () => historyWindow.IsOpen = true,
             () => { organizerWindow.IsOpen = true; _ = organizer.PreviewAsync(); });
+        void OpenReview() { confirmWindow.IsOpen = true; if (coordinator.CurrentPlan is null) _ = coordinator.RefreshPlanAsync(openWindow: false); }
+        void OpenOrganizer() { organizerWindow.IsOpen = true; if (organizer.Current is null) _ = organizer.PreviewAsync(); }
+        organizerWindow.AddNav(FontAwesomeIcon.Broom, "Clean", OpenReview);
+        organizerWindow.AddNav(FontAwesomeIcon.Cog, "Settings", () => settingsWindow.IsOpen = true);
+        historyWindow.AddNav(FontAwesomeIcon.Broom, "Clean", OpenReview);
+        historyWindow.AddNav(FontAwesomeIcon.Cog, "Settings", () => settingsWindow.IsOpen = true);
+        settingsWindow.AddNav(FontAwesomeIcon.Broom, "Clean", OpenReview);
+        settingsWindow.AddNav(FontAwesomeIcon.BoxOpen, "Organize", OpenOrganizer);
+        settingsWindow.AddNav(FontAwesomeIcon.History, "History", () => historyWindow.IsOpen = true);
         windows.AddWindow(confirmWindow);
         windows.AddWindow(organizerWindow);
         windows.AddWindow(settingsWindow);
@@ -145,7 +155,7 @@ public sealed class Plugin : IDalamudPlugin
         pi.UiBuilder.OpenMainUi += () => { confirmWindow.IsOpen = true; _ = coordinator.RefreshPlanAsync(false); };
         pi.UiBuilder.OpenConfigUi += () => settingsWindow.IsOpen = true;
 
-        log.Information("Tidy Up loaded. Spikes verified: {Verified}", config.SpikesVerified);
+        log.Information("Tidy Up loaded");
     }
 
     private void ApplyProfileToServices()
@@ -185,7 +195,6 @@ public sealed class Plugin : IDalamudPlugin
                 break;
             case "organize":
             case "organise":
-            case "sort":
                 if (organizerWindow.IsOpen) organizerWindow.IsOpen = false;
                 else { organizerWindow.IsOpen = true; _ = organizer.PreviewAsync(); }
                 break;
