@@ -97,44 +97,45 @@ public sealed partial class SettingsWindow
     /// type: Gleam finds it, says what is in it, and only then offers to bring it in. Browsing is there for
     /// anyone whose game keeps its settings somewhere else.
     /// </summary>
+    /// <summary>
+    /// Two lists can come across from Discard Helper, and go back. Almost nobody needs this, so it is one
+    /// line and one button: what is in the file, and whether to take it. Everything else is a quiet link.
+    /// </summary>
     private void DrawDiscardHelperImport()
     {
-        Ui.Hint("Share lists with Discard Helper");
+        Ui.Hint("Discard Helper");
         importFound ??= FindDiscardHelperFile();
+        var lists = string.IsNullOrEmpty(importFound) ? null : importLists ??= ReadDiscardHelper(importFound);
+        var count = (lists?.Discard.Count ?? 0) + (lists?.Keep.Count ?? 0);
 
-        if (string.IsNullOrEmpty(importFound))
+        if (count > 0)
         {
-            Ui.HintWrapped("Gleam could not find a Discard Helper configuration on this computer.");
-            if (Ui.IconButton(Dalamud.Interface.FontAwesomeIcon.FolderOpen, "Find it myself")) BrowseForDiscardHelper();
-            ImGui.SameLine();
-            if (Ui.LinkButton("Send mine the other way")) SaveForDiscardHelper();
-            if (!string.IsNullOrEmpty(importResult)) Ui.Hint(importResult);
-            return;
-        }
-
-        var lists = importLists ??= ReadDiscardHelper(importFound);
-        if (lists.IsEmpty)
-        {
-            Ui.HintWrapped($"Found {Path.GetFileName(importFound)}, but it has no items in either list yet.");
+            if (Ui.PrimaryButton($"Take its {count} item{(count == 1 ? "" : "s")}", 200 * Ui.Scale))
+            {
+                var junk = lists!.Discard.Count(id => config.AlwaysDiscardList.Add(id, note: "From Discard Helper"));
+                var kept = lists.Keep.Count(id => config.ProtectList.Add(id, note: "From Discard Helper"));
+                importResult = junk + kept == 0 ? "You already have all of them." : $"Added {junk + kept}.";
+                dirty = true;
+            }
+            Ui.Tooltip("What it throws away joins your Always junk list. What it protects joins Keep these.");
         }
         else
         {
-            Ui.HintWrapped($"Found {lists.Discard.Count} item{(lists.Discard.Count == 1 ? "" : "s")} it throws away and {lists.Keep.Count} it protects.");
-            if (Ui.PrimaryButton("Bring them in", 180 * Ui.Scale))
-            {
-                var junk = lists.Discard.Count(id => config.AlwaysDiscardList.Add(id, note: "From Discard Helper"));
-                var kept = lists.Keep.Count(id => config.ProtectList.Add(id, note: "From Discard Helper"));
-                importResult = $"Added {junk} to Always junk and {kept} to Keep these.";
-                dirty = true;
-            }
-            Ui.Tooltip("What it threw away joins your Always junk list. What it protected joins Keep these.");
-            ImGui.SameLine();
+            Ui.Hint(lists is null ? "Nothing found on this computer." : "Its lists are empty.");
         }
-        if (Ui.LinkButton("Use a different file")) BrowseForDiscardHelper();
+
         ImGui.SameLine();
-        if (Ui.LinkButton("Send mine the other way")) SaveForDiscardHelper();
-        Ui.Tooltip("Writes your Always junk and Keep these lists to a file Discard Helper can read.");
-        if (!string.IsNullOrEmpty(importResult)) Ui.Hint(importResult);
+        if (Ui.LinkButton("Give it mine")) SaveForDiscardHelper();
+        Ui.Tooltip("Writes your two lists to a file Discard Helper can read.");
+        ImGui.SameLine();
+        if (Ui.LinkButton("Pick a file")) BrowseForDiscardHelper();
+        Ui.Tooltip(string.IsNullOrEmpty(importFound) ? "Find its settings file yourself." : $"Currently reading {Path.GetFileName(importFound)}.");
+
+        if (!string.IsNullOrEmpty(importResult))
+        {
+            ImGui.SameLine();
+            Ui.Hint(importResult);
+        }
     }
 
     /// <summary>Writes Gleam's two lists out in Discard Helper's shape.</summary>
@@ -143,7 +144,7 @@ public sealed partial class SettingsWindow
         var mine = new Core.Integrations.DiscardHelperLists(
             config.AlwaysDiscardList.Entries.Select(e => e.ItemId).Distinct().ToList(),
             config.ProtectList.Entries.Select(e => e.ItemId).Distinct().ToList());
-        if (mine.IsEmpty) { importResult = "Both of your lists are empty, so there is nothing to send."; return; }
+        if (mine.IsEmpty) { importResult = "Your lists are empty."; return; }
 
         FileDialogs.SaveFileDialog("Where should Gleam write it?", ".json", "ARDiscard.json", ".json", (ok, path) =>
         {
@@ -151,11 +152,11 @@ public sealed partial class SettingsWindow
             try
             {
                 File.WriteAllText(path, Core.Integrations.DiscardHelperImport.Write(mine));
-                importResult = $"Wrote {mine.Discard.Count} to throw away and {mine.Keep.Count} to protect.";
+                importResult = $"Wrote {mine.Discard.Count + mine.Keep.Count}.";
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                importResult = $"Could not write it: {ex.Message}";
+                importResult = "Could not write there.";
             }
         });
     }
@@ -168,7 +169,7 @@ public sealed partial class SettingsWindow
             if (!ok || paths.Count == 0) return;
             importFound = paths[0];
             importLists = ReadDiscardHelper(importFound);
-            importResult = importLists.IsEmpty ? "That file has no Discard Helper lists in it." : string.Empty;
+            importResult = importLists.IsEmpty ? "No lists in that file." : string.Empty;
         }, 1, start, true);
     }
 
@@ -178,9 +179,9 @@ public sealed partial class SettingsWindow
         {
             return Core.Integrations.DiscardHelperImport.Parse(File.ReadAllText(path));
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            importResult = $"Could not read it: {ex.Message}";
+            importResult = "Could not read that file.";
             return Core.Integrations.DiscardHelperLists.Empty;
         }
     }
