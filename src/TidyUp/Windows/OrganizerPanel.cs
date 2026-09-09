@@ -287,6 +287,12 @@ public sealed class OrganizerPanel
             : $"{moves} item{(moves == 1 ? "" : "s")} will move.";
         Ui.Header(icons.LogoSmall, "Gleam", subtitle, 0f, null, null,
             !config.UseClean ? null : () => { if (Ui.ModeSwitch(Ui.AppMode.Organize)) SwitchToClean?.Invoke(); });
+        Ui.Gap(0.2f);
+        using (ImRaii.Disabled(organizer.IsPreviewing))
+        {
+            if (Ui.IconButton(FontAwesomeIcon.Sync, "Look again")) _ = organizer.PreviewAsync();
+        }
+        Ui.Tooltip("Looks through your bags and storage again.");
         Ui.Gap(0.4f);
 
         if (Pilot is { IsRunning: true, Mode: Automation.PilotMode.Organize } || organizer.IsRunning) { DrawRunning(); return; }
@@ -312,6 +318,7 @@ public sealed class OrganizerPanel
                     var opens = result.StoragesToOpen.Select(Name).ToList();
                     Ui.Hint(opens.Count == 0 ? "Everything moves within your bags and armoury chest." : $"Gleam needs {string.Join(" and ", opens)} open. {(Pilot is not null && config.Automation.Enabled ? "It will go there for you." : "Open them and it carries on by itself.")}");
                 }
+                else if (result is not null) DrawNothingToMove(result);
             }
         }
         DrawFooter();
@@ -321,6 +328,50 @@ public sealed class OrganizerPanel
             dirty = false;
             save();
             _ = organizer.PreviewAsync();
+        }
+    }
+
+    /// <summary>
+    /// Nothing will move, and the player deserves to know why. Usually everything is already in place; the
+    /// interesting cases are storage Gleam has never looked inside, and things it deliberately left alone.
+    /// </summary>
+    private void DrawNothingToMove(SolveResult result)
+    {
+        var snapshot = organizer.Snapshot;
+        var unseen = new List<string>();
+        if (snapshot is not null)
+        {
+            foreach (var (id, name) in organizer.RetainerNames.OrderBy(kv => kv.Value))
+                if (!snapshot.LiveContainers.Contains((ContainerKind.Retainer, id)) && !snapshot.Items.Any(i => i.Slot.Kind == ContainerKind.Retainer && i.Slot.OwnerId == id))
+                    unseen.Add(name);
+            if (!snapshot.LiveContainers.Any(c => c.Kind == ContainerKind.Saddlebag) && !snapshot.Items.Any(i => i.Slot.Kind == ContainerKind.Saddlebag))
+                unseen.Add("your chocobo saddlebag");
+        }
+
+        using (Ui.Card("nothing"))
+        {
+            Ui.TextColored(Ui.Ok, "Everything is already where you asked for it.");
+            Ui.HintWrapped("Gleam looked through your bags and armoury chest and found nothing that belongs somewhere else.");
+
+            var left = result.Pinned.Count + result.NoRoom.Count;
+            if (left > 0)
+            {
+                Ui.Gap(0.3f);
+                Ui.Hint($"{left} item{(left == 1 ? "" : "s")} stayed put on purpose. Hover to see why.");
+                if (ImGui.IsItemHovered())
+                {
+                    using var t = Ui.RichTooltip(360);
+                    foreach (var g in result.Pinned.Concat(result.NoRoom).GroupBy(p => p.Reason).OrderByDescending(g => g.Count()).Take(8))
+                        Ui.Text($"{g.Count()} × {g.Key}");
+                }
+            }
+
+            if (unseen.Count > 0)
+            {
+                Ui.Gap(0.4f);
+                Ui.HintWrapped($"Gleam has not seen inside {string.Join(", ", unseen)} yet. Open one and it will look, or let it go there for you.");
+                if (Pilot is not null && !config.Automation.Enabled && Ui.LinkButton("Let Gleam go")) OpenSettings?.Invoke();
+            }
         }
     }
 
@@ -817,7 +868,7 @@ public sealed class OrganizerPanel
             if (organizer.PendingMoves.Count > 0) parts.Add($"{organizer.PendingMoves.Count} from earlier still waiting");
         }
         ImGui.AlignTextToFramePadding();
-        if (Simple) Ui.Hint(organizer.IsPreviewing ? "Looking through your storage…" : r is null ? "" : r.Moves.Count == 0 ? "Nothing to move." : $"{r.Moves.Count} item{(r.Moves.Count == 1 ? "" : "s")} will move.");
+        if (Simple) Ui.Hint(organizer.IsPreviewing ? "Looking through your storage…" : r is null ? "" : r.Moves.Count == 0 ? "Nothing needs moving right now." : $"{r.Moves.Count} item{(r.Moves.Count == 1 ? "" : "s")} will move.");
         else Ui.Hint(parts.Count == 0 ? (string.IsNullOrEmpty(organizer.Status) ? "Refresh to see what would move." : organizer.Status) : string.Join("  ·  ", parts));
 
         var canRun = r is not null && r.Report.Feasible && r.Moves.Count > 0 && !organizer.IsPreviewing;
@@ -840,7 +891,9 @@ public sealed class OrganizerPanel
         {
             var n = r?.Moves.Count ?? 0;
             var items = $"{n} item{(n == 1 ? "" : "s")}";
-            var label = r is { Report.Feasible: false } ? "Make room first" : handsFree && !Simple ? $"Organize {items} everywhere" : $"Organize {items}";
+            var label = r is { Report.Feasible: false } ? "Make room first"
+                : n == 0 ? "Nothing to do"
+                : handsFree && !Simple ? $"Organize {items} everywhere" : $"Organize {items}";
             if (Ui.PrimaryButton(label, buttonWidth))
             {
                 if (handsFree) _ = Pilot!.RunOrganizerAsync(); else _ = organizer.RunAsync();
