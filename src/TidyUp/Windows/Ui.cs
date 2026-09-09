@@ -231,7 +231,21 @@ internal static class Ui
     /// Product header: logo tile, name in gold, one muted line under it. An optional control of the given
     /// width is drawn right-aligned and vertically centred on the same row.
     /// </summary>
-    public static void Header(ImTextureID logo, string title, string subtitle, float rightWidth = 0f, Action? right = null, string? rightNote = null)
+    /// <summary>The two things the plugin does. Shown as one switch in every window header so neither is hidden.</summary>
+    public enum AppMode { Clean, Organize }
+
+    public static readonly IReadOnlyList<(AppMode, string)> ModeOptions = [(AppMode.Clean, "Clean"), (AppMode.Organize, "Organize")];
+
+    /// <summary>The Clean | Organize switch. Returns true when the other mode was picked.</summary>
+    public static bool ModeSwitch(AppMode current)
+    {
+        var mode = current;
+        var changed = Segmented("##mode", ref mode, ModeOptions) && mode != current;
+        Tooltip("Clean gets rid of junk. Organize puts what you keep where you want it.");
+        return changed;
+    }
+
+    public static void Header(ImTextureID logo, string title, string subtitle, float rightWidth = 0f, Action? right = null, string? rightNote = null, Action? afterTitle = null)
     {
         var size = 36f * Scale;
         var start = ImGui.GetCursorPos();
@@ -249,6 +263,12 @@ internal static class Ui
         {
             TextColored(AccentSoft, title);
             Hint(subtitle);
+        }
+        if (afterTitle is not null)
+        {
+            ImGui.SameLine(0, 22f * Scale);
+            ImGui.SetCursorPosY(start.Y + Math.Max(0, (size - ImGui.GetFrameHeight()) / 2));
+            afterTitle();
         }
         if (right is not null)
         {
