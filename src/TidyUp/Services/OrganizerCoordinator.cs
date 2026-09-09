@@ -133,7 +133,6 @@ public sealed class OrganizerCoordinator : IDisposable
     public async Task RunMovesAsync(IReadOnlyList<MoveOp> ops, bool refreshAfter)
     {
         if (IsRunning || cleaner.IsRunning || ops.Count == 0) return;
-        if (!IsPilotRunning() && cleaner.IsPilotRunning()) return;
         IsRunning = true;
         RunTotal = ops.Count;
         RunDone = 0;

@@ -52,6 +52,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly DutyNudge dutyNudge;
     private readonly RunCoordinator coordinator;
     private readonly AllaganToolsSource allagan;
+    private readonly Automation.AutoPilot pilot;
 
     public Plugin(
         IDalamudPluginInterface pi, ICommandManager commands, IClientState clientState, IPluginLog log,
@@ -113,10 +114,7 @@ public sealed class Plugin : IDalamudPlugin
 
         var nav = new VnavmeshIpc(pi);
         var travel = new LifestreamIpc(pi);
-        var pilot = new Automation.AutoPilot(framework, clientState, condition, objectTable, data, chat, log, config, coordinator, nav, travel, db)
-        {
-            IsReviewOpen = () => confirmWindow.IsOpen,
-        };
+        pilot = new Automation.AutoPilot(framework, clientState, condition, objectTable, data, chat, log, config, coordinator, nav, travel, db);
         coordinator.IsPilotRunning = () => pilot.IsRunning || organizer.IsRunning;
         organizer.IsPilotRunning = () => pilot.IsRunning;
         pilot.Organizer = organizer;
@@ -143,8 +141,9 @@ public sealed class Plugin : IDalamudPlugin
         config.Saved += ApplyProfileToServices;
         ApplyProfileToServices();
 
-        clientState.Logout += (_, _) => { coordinator.OnLogout(); organizer.OnLogout(); };
-        clientState.Login += () => framework.RunOnTick(() => _ = coordinator.RefreshPlanAsync(false), delay: TimeSpan.FromSeconds(8));
+        this.framework = framework;
+        clientState.Logout += OnLogout;
+        clientState.Login += OnLogin;
 
         commands.AddHandler(Command, new CommandInfo(OnCommand)
         {
@@ -152,8 +151,8 @@ public sealed class Plugin : IDalamudPlugin
         });
 
         pi.UiBuilder.Draw += windows.Draw;
-        pi.UiBuilder.OpenMainUi += () => { confirmWindow.IsOpen = true; _ = coordinator.RefreshPlanAsync(false); };
-        pi.UiBuilder.OpenConfigUi += () => settingsWindow.IsOpen = true;
+        pi.UiBuilder.OpenMainUi += OpenMain;
+        pi.UiBuilder.OpenConfigUi += OpenConfig;
 
         log.Information("Tidy Up loaded");
     }
@@ -227,11 +226,24 @@ public sealed class Plugin : IDalamudPlugin
         }
     }
 
+    private readonly IFramework framework;
+
+    private void OnLogout(int type, int code) { coordinator.OnLogout(); organizer.OnLogout(); }
+    private void OnLogin() => framework.RunOnTick(() => _ = coordinator.RefreshPlanAsync(false), delay: TimeSpan.FromSeconds(8));
+    private void OpenMain() { confirmWindow.IsOpen = true; _ = coordinator.RefreshPlanAsync(false); }
+    private void OpenConfig() => settingsWindow.IsOpen = true;
+
     public void Dispose()
     {
         pi.UiBuilder.Draw -= windows.Draw;
+        pi.UiBuilder.OpenMainUi -= OpenMain;
+        pi.UiBuilder.OpenConfigUi -= OpenConfig;
+        clientState.Logout -= OnLogout;
+        clientState.Login -= OnLogin;
+        config.Saved -= ApplyProfileToServices;
         commands.RemoveHandler(Command);
         windows.RemoveAllWindows();
+        pilot.Dispose();
         coordinator.Dispose();
         organizer.Dispose();
         dutyNudge.Dispose();

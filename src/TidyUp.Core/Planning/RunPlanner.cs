@@ -166,7 +166,7 @@ public sealed class RunPlanner
                     continue;
                 }
             }
-            var proposal = ContainerConstraints.Apply(ApplyActionOverride(policed, profile));
+            var proposal = ContainerConstraints.Apply(policed);
             var section = GetSection(plan, proposal.Item, inputs);
             var row = new PlanRow { Proposal = proposal, ChosenAction = proposal.Action };
             row.Checked = proposal.DefaultChecked && !inputs.SessionSkips.Contains(row.Key);
@@ -177,17 +177,6 @@ public sealed class RunPlanner
             s.Rows.Sort((a, b) => string.Compare(a.Info.Name, b.Info.Name, StringComparison.OrdinalIgnoreCase));
 
         return plan;
-    }
-
-    private static Proposal ApplyActionOverride(Proposal p, Profile profile)
-    {
-        if (!p.Action.IsDestructive()) return p;
-        if (!profile.RuleActionOverrides.TryGetValue(p.RuleId, out var preferred)) return p;
-        if (preferred == p.Action || !preferred.IsDestructive()) return p;
-        if (!p.Alternatives.Contains(preferred) || !ContainerConstraints.AllowsAction(p.Item.Slot.Kind, preferred)) return p;
-        var alts = new List<ActionKind> { p.Action };
-        alts.AddRange(p.Alternatives.Where(a => a != preferred));
-        return p with { Action = preferred, Alternatives = alts };
     }
 
     private static PlanSection GetSection(RunPlan plan, ScannedItem item, PlannerInputs inputs)

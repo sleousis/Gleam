@@ -24,10 +24,6 @@ public sealed class Profile
     public bool StackMergeBeforeScan { get; set; } = true;
     public bool ShowDtrEntry { get; set; } = true;
     public int FullnessNudgePercent { get; set; } = 90;
-    public bool RetainerSectionsCollapsed { get; set; } = false;
-
-    /// <summary>Per-rule action override: rule id → preferred action. Empty means the rule's own ranking.</summary>
-    public Dictionary<string, ActionKind> RuleActionOverrides { get; set; } = new();
 
     public Profile Clone()
     {
@@ -37,7 +33,6 @@ public sealed class Profile
         c.ContainerEnabled = new Dictionary<ContainerKind, bool>(ContainerEnabled);
         c.AutoOpenOnContainer = new Dictionary<ContainerKind, bool>(AutoOpenOnContainer);
         c.ExcludedRetainerIds = new HashSet<ulong>(ExcludedRetainerIds);
-        c.RuleActionOverrides = new Dictionary<string, ActionKind>(RuleActionOverrides);
         return c;
     }
 
@@ -127,7 +122,6 @@ public sealed class ProfileStore
             HashSet<string> hs => new HashSet<string>(hs),
             HashSet<ulong> hu => new HashSet<ulong>(hu),
             Dictionary<ContainerKind, bool> d => new Dictionary<ContainerKind, bool>(d),
-            Dictionary<string, ActionKind> d2 => new Dictionary<string, ActionKind>(d2),
             _ => value,
         };
         p.SetValue(to, value);

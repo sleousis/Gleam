@@ -55,11 +55,9 @@ public sealed class CallbackSettings
 public enum UnseenRowsMode
 {
     /// <summary>Leave them for the next review.</summary>
-    Skip,
-    /// <summary>Open the review and wait for the user.</summary>
-    Ask,
+    Skip = 0,
     /// <summary>Apply the same rules and clean what they would have checked by default.</summary>
-    Clean,
+    Clean = 2,
 }
 
 /// <summary>Everything the hands-free mode needs. Off by default; it moves the character and drives NPC menus.</summary>
@@ -164,7 +162,10 @@ public sealed class OrganizerSettings
 
 public sealed class Configuration : IPluginConfiguration
 {
-    public int Version { get; set; } = 3;
+    /// <summary>Bump when <see cref="Migrate"/> gains a step. New configs start here and skip the chain.</summary>
+    public const int CurrentVersion = 9;
+
+    public int Version { get; set; } = CurrentVersion;
 
     public ProfileStore Profiles { get; set; } = new();
     public ItemList ProtectList { get; set; } = new();
@@ -182,10 +183,7 @@ public sealed class Configuration : IPluginConfiguration
     public bool UseUniversalis { get; set; } = true;
     public bool UseAllaganTools { get; set; } = true;
     public bool ShowAltSections { get; set; } = true;
-    public bool GamepadNavigation { get; set; } = true;
     public bool ChatSummaryAfterRun { get; set; } = true;
-
-    /// <summary>Set once the first spike run confirmed the discard path on this machine.</summary>
 
     /// <summary>Glamour plate item ids seen the last time the dresser was open, per character, so the dresser rule has data before plates reload.</summary>
     public Dictionary<ulong, List<uint>> LastKnownPlateItems { get; set; } = new();
@@ -196,14 +194,6 @@ public sealed class Configuration : IPluginConfiguration
     public bool Migrate()
     {
         var changed = false;
-        if (Version < 2)
-        {
-            // v1 hid retainer rows behind a collapsed header and paused the pilot at every container.
-            Profiles.Account.RetainerSectionsCollapsed = false;
-            foreach (var o in Profiles.Overrides) o.Values.RetainerSectionsCollapsed = false;
-            Version = 2;
-            changed = true;
-        }
         if (Version < 3)
         {
             if (Callbacks.ActionTimeoutMs < 8000) Callbacks.ActionTimeoutMs = 8000;
@@ -273,7 +263,25 @@ public sealed class Configuration : IPluginConfiguration
             Version = 8;
             changed = true;
         }
+        if (Version < 9)
+        {
+            // The "ask at every container" mode is gone; anyone on it gets the hands-free default.
+            if (Automation.UnseenRows is not (UnseenRowsMode.Skip or UnseenRowsMode.Clean)) Automation.UnseenRows = UnseenRowsMode.Clean;
+            Version = 9;
+            changed = true;
+        }
+        changed |= EnsureDefaults();
         return changed;
+    }
+
+    /// <summary>What every config needs regardless of age: a first layout to organize with.</summary>
+    private bool EnsureDefaults()
+    {
+        if (Organizer.Plans.Count > 0) return false;
+        var starter = Core.Organizer.Model.OrganizerPlan.Starter();
+        Organizer.Plans.Add(starter);
+        Organizer.ActivePlanId = starter.Id;
+        return true;
     }
 
     public void Save(Dalamud.Plugin.IDalamudPluginInterface pi)

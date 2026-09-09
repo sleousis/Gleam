@@ -118,17 +118,6 @@ public class PlannerTests
     }
 
     [Fact]
-    public void Rule_action_override_swaps_primary_when_it_is_an_allowed_alternative()
-    {
-        var profile = MakeProfile();
-        profile.RuleActionOverrides[ObsoleteGearRule.RuleId] = ActionKind.Desynth;
-        var plan = new RunPlanner().Build([ScannedItem.Simple(Arm(0), 4, 1)], Inputs(profile: profile));
-        var row = Assert.Single(plan.AllRows);
-        Assert.Equal(ActionKind.Desynth, row.ChosenAction);
-        Assert.Contains(ActionKind.ExpertDelivery, row.Proposal.Alternatives);
-    }
-
-    [Fact]
     public void Summary_reports_slots_freed_gil_destroyed_and_recovered()
     {
         var always = new ItemList(); always.Add(15); // 5g vendor, marketable → user row, sell

@@ -19,7 +19,7 @@ namespace TidyUp.Automation;
 /// </summary>
 public enum PilotMode { Clean, Organize }
 
-public sealed partial class AutoPilot
+public sealed partial class AutoPilot : IDisposable
 {
     private readonly IFramework framework;
     private readonly IClientState clientState;
@@ -42,9 +42,6 @@ public sealed partial class AutoPilot
     public PilotMode Mode { get; private set; } = PilotMode.Clean;
     public string Status { get; private set; } = string.Empty;
     public string? LastError { get; private set; }
-
-    /// <summary>Set by the plugin so the pilot can tell whether the review window is still open while it waits.</summary>
-    public Func<bool> IsReviewOpen { get; set; } = () => false;
 
     public AutoPilot(IFramework framework, IClientState clientState, ICondition condition, IObjectTable objects, IDataManager data,
         IChatGui chat, IPluginLog log, Configuration config, RunCoordinator coordinator, VnavmeshIpc nav, LifestreamIpc travel, ItemDatabase db)
@@ -78,6 +75,13 @@ public sealed partial class AutoPilot
         nav.Stop();
         travel.Abort();
         coordinator.CancelRun();
+    }
+
+    public void Dispose()
+    {
+        if (IsRunning) Stop();
+        cts?.Dispose();
+        cts = null;
     }
 
     /// <summary>Runs the whole accepted plan, travelling as needed. Returns when done, stopped, or failed.</summary>
@@ -690,38 +694,19 @@ public sealed partial class AutoPilot
     }
 
     /// <summary>
-    /// Re-plans the now-open container with the same rules the review uses. Depending on the setting the
-    /// newly visible rows are cleaned right away (only those the rules would have checked by default),
-    /// shown to the user, or left alone.
+    /// Re-plans the now-open container with the same rules the review uses and cleans the newly visible
+    /// rows the rules would have ticked by default. Off: they wait for the next review.
     /// </summary>
     private async Task HandleUnseen(ContainerKind kind, string what, CancellationToken ct)
     {
-        if (S.UnseenRows == UnseenRowsMode.Skip) return;
+        if (S.UnseenRows != UnseenRowsMode.Clean) return;
         await coordinator.RefreshPlanAsync(openWindow: false, focus: kind).ConfigureAwait(false);
         var plan = coordinator.CurrentPlan;
         if (plan is null || !plan.AllRows.Any(r => r.IsExecutable)) return;
 
-        if (S.UnseenRows == UnseenRowsMode.Clean)
-        {
-            var queue = coordinator.BuildQueueFromPlan(r => r.Checked);
-            if (queue.Count == 0) return;
-            await Step($"Cleaning {queue.Count} more item{(queue.Count == 1 ? "" : "s")} found in {what}", () => Execute(queue), ct).ConfigureAwait(false);
-            return;
-        }
-
-        Status = $"Waiting for you to review the {kind.DisplayName().ToLowerInvariant()}";
-        coordinator.RaiseOpenWindow();
-        chat.Print($"New items found in the {kind.DisplayName().ToLowerInvariant()}. Clean them or close the window to carry on.", "Tidy Up");
-
-        var deadline = DateTime.UtcNow + TimeSpan.FromMinutes(5);
-        var sawRun = false;
-        while (DateTime.UtcNow < deadline)
-        {
-            ct.ThrowIfCancellationRequested();
-            if (coordinator.IsRunning) sawRun = true;
-            else if (sawRun || !IsReviewOpen()) break;
-            await Task.Delay(300, ct).ConfigureAwait(false);
-        }
+        var queue = coordinator.BuildQueueFromPlan(r => r.Checked);
+        if (queue.Count == 0) return;
+        await Step($"Cleaning {queue.Count} more item{(queue.Count == 1 ? "" : "s")} found in {what}", () => Execute(queue), ct).ConfigureAwait(false);
     }
 
     // ---------- movement & interaction ----------
