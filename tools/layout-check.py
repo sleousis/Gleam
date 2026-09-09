@@ -123,6 +123,28 @@ for W in WIDTHS:
           "the search box and its scope tick collide")
     check("list editor table", W, (28 + 90 + 70) * SCALE + 160 * SCALE, card, "the item name column falls under 160px")
 
+    # ---- filter chips: the rows wrap now, so only the widest single chip has to fit a line
+    CHIP = lambda text, glyph=True: w(text) + 18 * SCALE + ((14 * SCALE + 5 * SCALE) if glyph else 0)
+    chip_indent = w("Containers") + ITEM
+    for text in ("Bags 24/24", "Armoury chest 156/156", "Chocobo saddlebag 178/178",
+                 "Retainer 178/178", "Glamour dresser 40/40"):
+        check("container chip", W, CHIP(text), inner - chip_indent, f"'{text}' does not fit a line of its own")
+    for text in ("Gear 151/151", "Materia 35/35", "Materials 13/13", "Consumables 11/11",
+                 "Crystals 99/99", "Housing 1/1", "Collectibles 24/24", "Other 47/47"):
+        check("type chip", W, CHIP(text), inner - chip_indent, f"'{text}' does not fit a line of its own")
+    # the two trade chips wrap as a pair, so they need a line between them
+    pair = CHIP("Tradeable 666") + CHIP("Untradeable 1992") + ITEM
+    check("trade chip pair", W, pair, inner - chip_indent, "the tradeable pair does not fit a line of its own")
+
+    # ---- market cell: the game's coin plus the figure, in a fixed column
+    check("market cell", W, 17 * SCALE + 4 * SCALE + w("99,670"), 96 * SCALE, "a six-figure price and its coin overrun the column")
+
+    # ---- section header: glyph, padded title, count pill
+    tree = 22 * SCALE
+    head_pill = w("178 / 178") + FRAME_PAD * 2
+    check("section header", W, tree + w("    Retainer: Kima'hri") + 22 * SCALE + head_pill, inner,
+          "the section title and its count pill collide")
+
     # ---- run screen bars
     bar = min(max(W * 0.6, 260 * SCALE), 720 * SCALE)
     check("run bar", W, bar, inner, "bar wider than the window")

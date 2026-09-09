@@ -29,7 +29,15 @@ public sealed partial class SettingsWindow
     private readonly ListEditor alwaysEditor;
 
     private bool dirty;
-    private string importResult = string.Empty;
+    private string importResultText = string.Empty;
+    private DateTime importResultUntil;
+
+    /// <summary>What the Discard Helper row last said. Setting it restarts the few seconds it stays on screen.</summary>
+    private string ImportResult
+    {
+        get => importResultText;
+        set { importResultText = value; importResultUntil = DateTime.UtcNow.AddSeconds(6); }
+    }
     private string? importFound;
     private Core.Integrations.DiscardHelperLists? importLists;
 

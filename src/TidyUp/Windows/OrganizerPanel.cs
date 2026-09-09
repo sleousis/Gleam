@@ -457,7 +457,9 @@ public sealed class OrganizerPanel
             ImGui.SameLine();
             if (Ui.LinkButton(quickOpen ? "Hide" : "Show")) quickOpen = !quickOpen;
         }
-        if (!quickOpen) return;
+        var openAmount = Ui.Smooth("quickopen", quickOpen ? 1f : 0f, 16f);
+        if (openAmount <= 0.01f) return;
+        using var quickFade = ImRaii.PushStyle(ImGuiStyleVar.Alpha, ImGui.GetStyle().Alpha * openAmount);
         Ui.Hint("Say where each kind of thing should live. Leave one alone and it stays where it is.");
         ImGui.Spacing();
         var labelW = QuickQuestions.Max(q => ImGui.CalcTextSize(q.Question, false, 0).X) + 12 * Ui.Scale;
@@ -734,15 +736,32 @@ public sealed class OrganizerPanel
             foreach (var id in when.ItemIds.ToList())
             {
                 var info = db.Get(id);
-                Ui.Pill(info?.Name ?? $"item {id}", Ui.Muted);
-                if (ImGui.IsItemClicked() && when.ItemIds is not null) { when.ItemIds.Remove(id); if (when.ItemIds.Count == 0) when.ItemIds = null; dirty = true; }
-                Ui.Tooltip("Click to remove.");
+                var pillKey = $"named:{id}";
+                var left = Ui.Leaving(pillKey, 0.14f);
+                if (left <= 0f)
+                {
+                    when.ItemIds?.Remove(id);
+                    if (when.ItemIds is { Count: 0 }) when.ItemIds = null;
+                    dirty = true;
+                    continue;
+                }
+                using (ImRaii.PushStyle(ImGuiStyleVar.Alpha, ImGui.GetStyle().Alpha * left))
+                {
+                    Ui.Pill(info?.Name ?? $"item {id}", Ui.Muted);
+                    if (ImGui.IsItemClicked()) Ui.Leave(pillKey);
+                    Ui.Tooltip("Click to remove.");
+                }
                 ImGui.SameLine();
             }
             ImGui.NewLine();
         }
     }
 
+    /// <summary>
+    /// Any / yes / no for one item property. These stay dropdowns rather than becoming the sliding control
+    /// the presets use: their options are whole phrases ("High quality", "Not in a gear set"), and three of
+    /// them share a row, so as sliding controls they would not fit the window at its smallest.
+    /// </summary>
     private void TriState(string label, ref OrganizerPredicate when, Func<OrganizerPredicate, bool?> get, Action<OrganizerPredicate, bool?> set, string yes, string no)
     {
         var options = new[] { "Any", yes, no };
@@ -869,7 +888,8 @@ public sealed class OrganizerPanel
         if (leftAlone > 0)
         {
             Ui.Gap(0.5f);
-            Ui.Hint($"Left alone: {leftAlone} item{(leftAlone == 1 ? "" : "s")}. Hover for why.");
+            var alone = (int)Ui.Count("leftAlone", leftAlone);
+            Ui.TextSwap("leftAlone", $"Left alone: {alone} item{(alone == 1 ? "" : "s")}. Hover for why.", Ui.Muted * new Vector4(1, 1, 1, 0.8f));
             if (ImGui.IsItemHovered())
             {
                 using var t = Ui.RichTooltip(360);
@@ -884,16 +904,27 @@ public sealed class OrganizerPanel
         var pos = ImGui.GetCursorScreenPos();
         var h = ImGui.GetTextLineHeight() * 2 + 26 * Ui.Scale;
         var dl = ImGui.GetWindowDrawList();
-        dl.AddRectFilled(pos, pos + new Vector2(width, h), ImGui.GetColorU32(new Vector4(1, 1, 1, 0.035f)), Ui.Rounding);
-        dl.AddRect(pos, pos + new Vector2(width, h), ImGui.GetColorU32(shortfall is null ? Ui.InkLine : Ui.Danger * new Vector4(1, 1, 1, 0.6f)), Ui.Rounding);
+        var cardKey = $"state:{e.Storage}";
+        // Lifts under the cursor like every other card, and eases into its warning colour rather than
+        // flipping to red the instant a storage stops fitting.
+        var hv = Ui.Smooth($"{cardKey}:hv", ImGui.IsMouseHoveringRect(pos, pos + new Vector2(width, h), false) ? 1f : 0f, 14f);
+        var alarm = Ui.Smooth($"{cardKey}:bad", shortfall is null ? 0f : 1f, 8f);
+        dl.AddRectFilled(pos, pos + new Vector2(width, h), ImGui.GetColorU32(new Vector4(1, 1, 1, 0.035f + 0.022f * hv)), Ui.Rounding);
+        dl.AddRect(pos, pos + new Vector2(width, h),
+            ImGui.GetColorU32(Ui.Mix(Ui.Mix(Ui.InkLine, Ui.InkEdge, hv), Ui.Danger * new Vector4(1, 1, 1, 0.6f), alarm)), Ui.Rounding);
         var pad = 10 * Ui.Scale;
         ImGui.SetCursorScreenPos(pos + new Vector2(pad, 6 * Ui.Scale));
         using (ImRaii.Group())
         {
+            ImGui.AlignTextToFramePadding();
+            Ui.Icon(Ui.ContainerIcon(e.Storage.Kind), Ui.Muted);
+            ImGui.SameLine(0, 6f * Ui.Scale);
             Ui.Text(Name(e.Storage));
-            var delta = e.UsedAfter - e.UsedBefore;
+            var before = (int)Ui.Count($"{cardKey}:b", e.UsedBefore);
+            var after = (int)Ui.Count($"{cardKey}:a", e.UsedAfter);
+            var delta = after - before;
             var deltaText = delta == 0 ? "no change" : delta > 0 ? $"+{delta}" : $"{delta}";
-            Ui.Hint($"{e.UsedBefore} → {e.UsedAfter} of {e.Size} · {deltaText}{(e.SizesAreLive ? "" : " · size assumed")}");
+            Ui.Hint($"{before} → {after} of {e.Size} · {deltaText}{(e.SizesAreLive ? "" : " · size assumed")}");
             if (!e.SizesAreLive) Ui.Tooltip("This storage has not been opened yet, so its size is assumed. Open it once for exact numbers.");
             var frac = Ui.Smooth($"state:{e.Storage}", e.Size == 0 ? 0f : Math.Clamp(e.UsedAfter / (float)e.Size, 0f, 1f), 8f);
             var barW = width - pad * 2;

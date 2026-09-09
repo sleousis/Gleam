@@ -390,18 +390,51 @@ public sealed class ConfirmationWindow : StyledWindow
             .ToList();
         if (groups.Count == 0) return;
 
-        Ui.Hint("Containers");
-        ImGui.SameLine();
+        var row = new ChipRow("Containers");
         foreach (var (kind, rows, checkedCount) in groups)
         {
             var active = filterContainer == kind;
-            var label = checkedCount > 0 ? $"{kind.DisplayName()} {checkedCount}/{rows}" : $"{kind.DisplayName()} {rows}";
-            if (Ui.Chip(label, active)) filterContainer = active ? null : kind;
+            var n = (int)Ui.Count($"cchip:{kind}", rows);
+            var picked = (int)Ui.Count($"cchip:{kind}:on", checkedCount);
+            var label = picked > 0 ? $"{kind.DisplayName()} {picked}/{n}" : $"{kind.DisplayName()} {n}";
+            var glyph = Ui.ContainerIcon(kind);
+            row.Place(Ui.ChipWidth(label, glyph));
+            if (Ui.Chip(label, active, glyph)) filterContainer = active ? null : kind;
             Ui.Tooltip(active ? "Showing only this container. Click to show all." : $"Show only the {kind.DisplayName().ToLowerInvariant()}.");
-            ImGui.SameLine();
         }
-        ImGui.NewLine();
+        row.End();
         Ui.Gap(0.2f);
+    }
+
+    /// <summary>
+    /// A label followed by chips that wrap. There are five containers and eight item types, each carrying a
+    /// glyph and a count, so at the window's smallest they no longer fit on one line and used to run off the
+    /// right edge. Wrapped lines start under the first chip rather than under the label.
+    /// </summary>
+    private sealed class ChipRow
+    {
+        private readonly float indent;
+        private float used;
+
+        public ChipRow(string label)
+        {
+            ImGui.AlignTextToFramePadding();
+            Ui.Hint(label);
+            ImGui.SameLine();
+            indent = ImGui.GetCursorPosX();
+        }
+
+        /// <summary>Call before each chip with the width it is about to take.</summary>
+        public void Place(float width)
+        {
+            var room = ImGui.GetContentRegionAvail().X + used;
+            var spacing = ImGui.GetStyle().ItemSpacing.X;
+            if (used > 0f && used + spacing + width <= room) { ImGui.SameLine(); used += spacing + width; return; }
+            if (used > 0f) ImGui.SetCursorPosX(indent);
+            used = width;
+        }
+
+        public void End() => ImGui.NewLine();
     }
 
     /// <summary>Item-type chips. Several can be on at once; none on means every type.</summary>
@@ -419,43 +452,47 @@ public sealed class ConfirmationWindow : StyledWindow
         var hasTradeSplit = rowList.Any(r => r.Info.IsUntradable) && rowList.Any(r => !r.Info.IsUntradable);
         if (groups.Count < 2 && !hasTradeSplit) return;
 
-        Ui.Hint("Types");
-        ImGui.SameLine();
+        var row = new ChipRow("Types");
         foreach (var (tag, count, checkedCount) in groups)
         {
             var active = filterTags.Contains(tag);
-            var label = checkedCount > 0 ? $"{tag.Label()} {checkedCount}/{count}" : $"{tag.Label()} {count}";
-            if (Ui.Chip(label, active))
+            var n = (int)Ui.Count($"tchip:{tag}", count);
+            var picked = (int)Ui.Count($"tchip:{tag}:on", checkedCount);
+            var label = picked > 0 ? $"{tag.Label()} {picked}/{n}" : $"{tag.Label()} {n}";
+            var glyph = Ui.TagIcon(tag);
+            row.Place(Ui.ChipWidth(label, glyph));
+            if (Ui.Chip(label, active, glyph))
             {
                 if (!filterTags.Remove(tag)) filterTags.Add(tag);
             }
             Ui.Tooltip(active ? "Click to stop filtering by this type." : $"Show {tag.Label().ToLowerInvariant()} only. Click more types to add them.");
-            ImGui.SameLine();
         }
         var tradeable = rowList.Count(r => !r.Info.IsUntradable);
         var untradeable = rowList.Count(r => r.Info.IsUntradable);
         if (tradeable > 0 && untradeable > 0)
         {
-            ImGui.TextDisabled("|");
-            ImGui.SameLine();
-            if (Ui.Chip($"Tradeable {tradeable}", filterTradeable == true)) filterTradeable = filterTradeable == true ? null : true;
+            var tradeLabel = $"Tradeable {(int)Ui.Count("chipTrade", tradeable)}";
+            var untradeLabel = $"Untradeable {(int)Ui.Count("chipUntrade", untradeable)}";
+            // The two trade chips are one choice, so they wrap together rather than splitting across lines.
+            row.Place(Ui.ChipWidth(tradeLabel, FontAwesomeIcon.ExchangeAlt) + Ui.ChipWidth(untradeLabel, FontAwesomeIcon.Ban) + ImGui.GetStyle().ItemSpacing.X);
+            if (Ui.Chip(tradeLabel, filterTradeable == true, FontAwesomeIcon.ExchangeAlt)) filterTradeable = filterTradeable == true ? null : true;
             Ui.Tooltip("Only items that can be sold or traded.");
             ImGui.SameLine();
-            if (Ui.Chip($"Untradeable {untradeable}", filterTradeable == false)) filterTradeable = filterTradeable == false ? null : false;
+            if (Ui.Chip(untradeLabel, filterTradeable == false, FontAwesomeIcon.Ban)) filterTradeable = filterTradeable == false ? null : false;
             Ui.Tooltip("Only items that cannot be sold or traded. Discarding is the only way out for these.");
-            ImGui.SameLine();
         }
         // Clear is always on the row, faded out when there is nothing to clear. Drawing it only when a filter
         // is on changed what the row contained, and the row grew the moment you ticked a chip, which pushed
         // the whole list down. It matches the chips' height too, for the same reason.
         var canClear = filterTags.Count > 0 || filterTradeable is not null;
+        row.Place(ImGui.CalcTextSize("Clear", false, 0).X + 12 * Ui.Scale);
         using (ImRaii.PushStyle(ImGuiStyleVar.Alpha, ImGui.GetStyle().Alpha * Ui.Smooth("clearchip", canClear ? 1f : 0f, 14f)))
         using (ImRaii.Disabled(!canClear))
         {
             if (Ui.ChipLink("Clear") && canClear) { filterTags.Clear(); filterTradeable = null; }
             if (canClear) Ui.Tooltip("Shows every type again.");
         }
-        ImGui.NewLine();
+        row.End();
         Ui.Gap(0.2f);
     }
 
@@ -721,14 +758,14 @@ public sealed class ConfirmationWindow : StyledWindow
         if (handsFree || coordinator.FocusContainer is not null) return;
         var away = plan.Sections.Where(s => !s.IsAvailableNow && s.Rows.Count > 0).ToList();
         if (away.Count == 0) return;
-        var total = away.Sum(s => s.Rows.Count);
+        var total = (int)Ui.Count("awayN", away.Sum(s => s.Rows.Count));
         var where = string.Join(" and ", away.Select(s => s.Kind.DisplayName().ToLowerInvariant()).Distinct());
         Ui.Gap(0.6f);
         var missing = Pilot?.MissingDependency();
-        if (missing is null) Ui.Hint($"{total} more item{(total == 1 ? "" : "s")} in your {where}. Gleam goes there for you when you press Clean.");
+        if (missing is null) Ui.TextSwap("away", $"{total} more item{(total == 1 ? "" : "s")} in your {where}. Gleam goes there for you when you press Clean.", Ui.Muted * new Vector4(1, 1, 1, 0.8f));
         else
         {
-            Ui.Hint($"{total} more item{(total == 1 ? "" : "s")} in your {where}. Gleam cannot travel there: {missing}.");
+            Ui.TextSwap("away", $"{total} more item{(total == 1 ? "" : "s")} in your {where}. Gleam cannot travel there: {missing}.", Ui.Muted * new Vector4(1, 1, 1, 0.8f));
             ImGui.SameLine();
             if (Ui.LinkButton("What it needs")) Show(Ui.AppMode.Settings);
         }
@@ -744,16 +781,26 @@ public sealed class ConfirmationWindow : StyledWindow
         var x0 = ImGui.GetCursorPosX();
         bool expanded;
         float labelStart;
+        // The header text is padded to leave a gap, and the container's glyph is drawn into it afterwards:
+        // a collapsing header draws its label in the body font, where an icon codepoint has no glyph.
+        var glyph = Ui.ContainerIcon(section.Kind);
+        var title = $"    {section.Title}";
+        var headerPos = ImGui.GetCursorScreenPos();
         using (ImRaii.PushStyle(ImGuiStyleVar.FramePadding, new Vector2(10 * Ui.Scale, 6 * Ui.Scale)))
         {
             labelStart = ImGui.GetTreeNodeToLabelSpacing();
-            expanded = ImGui.CollapsingHeader($"{section.Title}###{key}", ImGuiTreeNodeFlags.None);
+            expanded = ImGui.CollapsingHeader($"{title}###{key}", ImGuiTreeNodeFlags.None);
         }
+        var headerHeight = ImGui.GetItemRectSize().Y;
+        using (ImRaii.PushFont(UiBuilder.IconFont))
+            ImGui.GetWindowDrawList().AddText(
+                new Vector2(headerPos.X + labelStart, headerPos.Y + (headerHeight - ImGui.GetTextLineHeight()) / 2),
+                ImGui.GetColorU32(Ui.AccentSoft * new Vector4(1, 1, 1, ImGui.GetStyle().Alpha)), glyph.ToIconString());
         sectionOpen[key] = expanded;
         var pillDrop = 5 * Ui.Scale; // pills are shorter than the padded header; centre them on it
 
         ImGui.SameLine();
-        ImGui.SetCursorPosX(x0 + labelStart + ImGui.CalcTextSize(section.Title, false, 0).X + 22 * Ui.Scale);
+        ImGui.SetCursorPosX(x0 + labelStart + ImGui.CalcTextSize(title, false, 0).X + 22 * Ui.Scale);
         ImGui.SetCursorPosY(ImGui.GetCursorPosY() + pillDrop);
         var pillKey = $"sect:{section.Kind}:{section.OwnerId}";
         var pickedHere = (int)Ui.Count($"{pillKey}:on", checkedHere);
@@ -823,8 +870,11 @@ public sealed class ConfirmationWindow : StyledWindow
         ImGui.TableNextRow(ImGuiTableRowFlags.None, 30 * Ui.Scale);
         // A just-toggled row glows gold for a moment; the keyboard cursor row is lifted.
         var glow = rowFlash.TryGetValue(row.Key, out var at) ? (float)Math.Clamp(1 - (ImGui.GetTime() - at) / 0.7, 0, 1) : 0f;
+        // The keyboard cursor fades out of the row it leaves and into the one it lands on, so arrow keys
+        // read as the highlight moving rather than as it teleporting.
+        var onCursor = Ui.Smooth($"cur:{row.Key}", index == cursor ? 1f : 0f, 18f);
         if (glow > 0f) ImGui.TableSetBgColor(ImGuiTableBgTarget.RowBg0, ImGui.GetColorU32(Ui.Accent * new Vector4(1, 1, 1, 0.22f * glow * glow)));
-        else if (index == cursor) ImGui.TableSetBgColor(ImGuiTableBgTarget.RowBg0, ImGui.GetColorU32(ImGuiCol.HeaderHovered));
+        else if (onCursor > 0.01f) ImGui.TableSetBgColor(ImGuiTableBgTarget.RowBg0, ImGui.GetColorU32(Ui.Accent * new Vector4(1, 1, 1, 0.20f * onCursor)));
 
         ImGui.TableNextColumn();
         ImGui.AlignTextToFramePadding();
@@ -876,7 +926,9 @@ public sealed class ConfirmationWindow : StyledWindow
             Ui.Tooltip(config.UseUniversalis ? "Nobody is selling this on your home world right now." : "Market board prices are off.");
             return;
         }
-        Ui.TextColored(Ui.Market, Simple ? $"{unit * row.Item.Quantity:N0}g" : $"{unit:N0}g");
+        // A price lands whenever the lookup answers, which is rarely the frame the row first drew.
+        using (ImRaii.PushStyle(ImGuiStyleVar.Alpha, ImGui.GetStyle().Alpha * Ui.Appear($"px:{row.Info.ItemId}", 0.25f)))
+            Ui.GilLabel(Simple ? unit * row.Item.Quantity : unit);
         var scope = string.IsNullOrEmpty(coordinator.MarketScope) ? "your home world" : coordinator.MarketScope;
         Ui.Tooltip($"Lowest listing on {scope} ({(row.Item.IsHq ? "HQ" : "NQ")}): {unit:N0}g each · {unit * row.Item.Quantity:N0}g for the stack of {row.Item.Quantity}.");
     }
@@ -909,6 +961,9 @@ public sealed class ConfirmationWindow : StyledWindow
         using var sp = ImRaii.PushStyle(ImGuiStyleVar.ItemSpacing, new Vector2(4 * Ui.Scale, 0));
         for (var i = 0; i < pills.Count; i++)
         {
+            // Changing a row's action changes which pills apply, so each one fades in on its own key.
+            using var appear = ImRaii.PushStyle(ImGuiStyleVar.Alpha,
+                ImGui.GetStyle().Alpha * Ui.Appear($"pill:{row.Key}:{pills[i].Text}", 0.18f));
             Ui.Pill(pills[i].Text, pills[i].Color);
             if (i < pills.Count - 1) ImGui.SameLine();
         }
@@ -1066,8 +1121,7 @@ public sealed class ConfirmationWindow : StyledWindow
             {
                 ImGui.TableNextRow(ImGuiTableRowFlags.None, 30 * Ui.Scale);
                 ImGui.TableNextColumn();
-                var tex = icons.Get(p.Info.IconId, p.Item.IsHq);
-                if (!tex.IsNull) ImGui.Image(tex, new Vector2(26 * Ui.Scale, 26 * Ui.Scale));
+                Ui.ImageRounded(icons.Get(p.Info.IconId, p.Item.IsHq), new Vector2(26 * Ui.Scale, 26 * Ui.Scale), 4 * Ui.Scale, $"icon:{p.Info.IconId}");
                 ImGui.TableNextColumn(); ImGui.AlignTextToFramePadding(); Ui.Text(p.Info.Name); if (p.Item.Quantity > 1) { ImGui.SameLine(); Ui.Hint($"× {p.Item.Quantity}"); }
                 ImGui.TableNextColumn(); ImGui.AlignTextToFramePadding(); Ui.Hint($"{p.Item.Slot.Kind.DisplayName()} · {p.Reason}");
             }
@@ -1083,10 +1137,11 @@ public sealed class ConfirmationWindow : StyledWindow
         var parts = new List<string>();
         if (hard > 0) parts.Add($"{hard} that can never be touched");
         if (prot > 0) parts.Add($"{prot} on your never-touch list");
-        Ui.Hint($"Not listed: {string.Join(", ", parts)}. Hover for why.");
+        Ui.TextSwap("excluded", $"Not listed: {string.Join(", ", parts)}. Hover for why.", Ui.Muted * new Vector4(1, 1, 1, 0.8f));
         if (ImGui.IsItemHovered())
         {
-            using var t = ImRaii.Tooltip();
+            // The only tooltip in the plugin that used to pop rather than fade.
+            using var t = Ui.RichTooltip(340);
             foreach (var g in plan.Excluded.GroupBy(e => e.Reason).OrderByDescending(g => g.Count()).Take(12))
                 Ui.Text($"{g.Count()} × {g.Key}");
         }
