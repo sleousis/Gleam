@@ -159,7 +159,7 @@ public class OrganizerSolverTests
             else { Assert.Contains(m.MoveId, outSeen); bagsUsed--; }
             Assert.True(bagsUsed <= 140 - plan.BagStagingReserve, $"bags reached {bagsUsed}");
         }
-        Assert.Equal(1, r.Passes);
+        Assert.Equal(4, r.Passes);                       // 12 items through 3 usable staging slots: four rounds
         Assert.Equal(new[] { RetA, RetB }.ToHashSet(), r.StoragesToOpen.ToHashSet());
     }
 

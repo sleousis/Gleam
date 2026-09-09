@@ -69,6 +69,7 @@ public static class MoveSolver
         // 1. Which stacks move, and where exactly. "Any retainer" is resolved here against the simulated space.
         var pending = new List<(Placement P, StorageId To, uint Page)>();
         var retainers = sim.Keys.Where(k => k.Kind == ContainerKind.Retainer).OrderBy(k => k.OwnerId).ToList();
+        var chosen = new HashSet<StorageId>();   // "any retainer" keeps picking the same one: fewer bells to visit
         foreach (var p in desired.Placements.Where(p => p.WantsMove))
         {
             StorageId? to = p.Destination.Storage;
@@ -79,6 +80,7 @@ public static class MoveSolver
                 to = inScope
                     .Where(r => sim[r].Fits(p.Item.ItemId, p.Item.IsHq, p.Item.Quantity, p.Info.StackSize, plan.MergeStacksAtDestination))
                     .OrderByDescending(r => sim[r].Headroom(p.Item.ItemId, p.Item.IsHq) > 0)
+                    .ThenByDescending(r => chosen.Contains(r))
                     .ThenByDescending(r => sim[r].Free)
                     .Select(r => (StorageId?)r)
                     .FirstOrDefault();
@@ -87,6 +89,7 @@ public static class MoveSolver
                     result.NoRoom.Add(new PinnedItem(p.Item, p.Info, "No retainer has room for it"));
                     continue;
                 }
+                chosen.Add(to.Value);
             }
             if (to is null) continue;
             var page = to.Value.Kind == ContainerKind.Armoury ? p.Info.ArmouryPage : 0u;
@@ -148,7 +151,10 @@ public static class MoveSolver
         foreach (var o in outbound) { if (o.From == BagsId) bags.Release(o.Item, o.Info); ordered.Add(o); }
         foreach (var o in between) { if (o.From == BagsId) bags.Release(o.Item, o.Info); else if (o.To == BagsId) TryAccept(bags, o, plan); ordered.Add(o); }
 
-        var pass = 1;
+        // Each wave is one round: out of the source into the bags, then out of the bags into the destination.
+        // Only one retainer can be open at a time, so the next wave must not start before this one has
+        // drained; that is what the pass number tells the executor and the pilot.
+        var pass = 0;
         var remaining = new Queue<MoveOp>(relays);
         while (remaining.Count > 0)
         {
@@ -162,24 +168,18 @@ public static class MoveSolver
                 if (slots <= waveBags.Free - plan.BagStagingReserve)
                 {
                     waveBags.Accept(o.Item.ItemId, o.Item.IsHq, o.Item.Quantity, o.Info.StackSize, plan.MergeStacksAtDestination);
-                    wave.Add(o with { Pass = pass });
+                    wave.Add(o);
                 }
                 else skipped.Enqueue(o);
             }
             if (wave.Count == 0)
             {
-                // Not even one stack fits beside the reserve: a later pass, after the bags are re-scanned.
-                pass++;
-                if (pass > 3)
-                {
-                    foreach (var o in skipped) result.NoRoom.Add(new PinnedItem(o.Item, o.Info, "The bags never have room to pass it through"));
-                    break;
-                }
-                // Let the second-leg drains of nothing happen; try again with a clean reserve.
-                remaining = skipped;
-                continue;
+                // Not even one stack fits beside the reserve: nothing can relay until the bags are emptier.
+                foreach (var o in skipped) result.NoRoom.Add(new PinnedItem(o.Item, o.Info, "The bags never have room to pass it through"));
+                break;
             }
-            ordered.AddRange(wave);
+            pass++;
+            ordered.AddRange(wave.Select(o => o with { Pass = pass }));
             foreach (var o in wave) ordered.Add(relayIn[o.MoveId] with { Pass = pass });
             remaining = skipped;
         }

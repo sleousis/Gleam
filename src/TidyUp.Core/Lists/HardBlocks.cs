@@ -26,7 +26,7 @@ public static class HardBlocks
     /// item by hand, with the reason shown as a warning.
     /// </summary>
     public static bool IsImmovable(HardBlockReason reason) =>
-        reason is HardBlockReason.Indisposable or HardBlockReason.InGearset or HardBlockReason.InGlamourPlate or HardBlockReason.Protected;
+        reason is HardBlockReason.Indisposable or HardBlockReason.InGearset or HardBlockReason.InGlamourPlate or HardBlockReason.Protected or HardBlockReason.Currency;
 
     /// <summary>Ultimate weapons by shape rather than by id: blue rarity with three materia slots, outside the Bozjan relic range.</summary>
     public static bool IsUltimateWeapon(ItemInfo info) =>
@@ -35,6 +35,7 @@ public static class HardBlocks
     public static HardBlockReason Check(ScannedItem item, ItemInfo info, ItemContext ctx)
     {
         if (info.IsIndisposable) return HardBlockReason.Indisposable;
+        if (info.UiCategory.Equals("Currency", StringComparison.OrdinalIgnoreCase)) return HardBlockReason.Currency;
         if (ctx.ProtectedItemIds.Contains(info.ItemId) || IsUltimateWeapon(info)) return HardBlockReason.Protected;
 
         // A spare copy of something already registered (minion, mount, roll, card...) is plain clutter; the

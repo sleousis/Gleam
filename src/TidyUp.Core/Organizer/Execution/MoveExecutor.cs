@@ -70,11 +70,15 @@ public sealed class MoveExecutor
         var completedFirstLegs = new HashSet<Guid>();
         MoveResult? last = null;
 
+        // Relay rounds run one at a time: a later round's moves wait until nothing from an earlier round is left.
+        var currentRound = ops.Count == 0 ? 1 : ops.Min(o => o.Pass);
+
         var core = new ExecutionCore(delay, options.RateLimit, options.MaxConsecutiveFailures);
         var summary = await core.RunAsync(ops, new ExecutionCore.Hooks<MoveOp>
         {
             BlockedReason = op =>
             {
+                if (op.Pass > currentRound) return "an earlier round has to finish first";
                 if (!game.IsOpen(op.From)) return op.From.Kind.RequirementText();
                 if (!game.IsOpen(op.To)) return op.To.Kind.RequirementText();
                 return null;

@@ -13,7 +13,8 @@ public class ListsAndProfilesTests
         var ctx = Context(gearsetItems: [5u], plateItems: [6u]);
         Assert.Equal(HardBlockReason.Indisposable, HardBlocks.Check(ScannedItem.Simple(Inv(0), 10, 1), Items[10], ctx));
         Assert.Equal(HardBlockReason.UniqueUntradeable, HardBlocks.Check(ScannedItem.Simple(Inv(0), 9, 1), Items[9], ctx));
-        Assert.Equal(HardBlockReason.NeverProposedCategory, HardBlocks.Check(ScannedItem.Simple(Inv(0), 11, 1), Items[11], ctx));
+        Assert.Equal(HardBlockReason.Currency, HardBlocks.Check(ScannedItem.Simple(Inv(0), 11, 1), Items[11], ctx));
+        Assert.True(HardBlocks.IsImmovable(HardBlockReason.Currency));
         Assert.Equal(HardBlockReason.InGearset, HardBlocks.Check(ScannedItem.Simple(Arm(0), 5, 1), Items[5], ctx));
         Assert.Equal(HardBlockReason.InGlamourPlate, HardBlocks.Check(ScannedItem.Simple(SlotRef.Dresser(1), 6, 1), Items[6], ctx));
 
