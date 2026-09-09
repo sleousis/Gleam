@@ -159,6 +159,9 @@ public sealed class OrganizerSettings
     public List<Core.Organizer.Model.OrganizerPlan> Plans { get; set; } = new();
     public Guid? ActivePlanId { get; set; }
 
+    /// <summary>The layout that was in use before the simple screen borrowed the active slot, so it comes back.</summary>
+    public Guid? AdvancedPlanId { get; set; }
+
     /// <summary>
     /// Never serialized: the config serializer would write this plan out a second time and, on load, fill the
     /// very same object in place, appending every rule again on each start.
@@ -171,7 +174,7 @@ public sealed class OrganizerSettings
 public sealed class Configuration : IPluginConfiguration
 {
     /// <summary>Bump when <see cref="Migrate"/> gains a step. New configs start here and skip the chain.</summary>
-    public const int CurrentVersion = 13;
+    public const int CurrentVersion = 14;
 
     public int Version { get; set; } = CurrentVersion;
 
@@ -345,6 +348,19 @@ public sealed class Configuration : IPluginConfiguration
             UseOrganize = true;
             AnsweredOrganizeOffer = true;
             Version = 13;
+            changed = true;
+        }
+        if (Version < 14)
+        {
+            // The simple screen used to edit whichever layout was active, which rewrote layouts built by hand.
+            // It owns one of its own now; take the rules it added back out of everyone else's.
+            string[] itsOwn = ["Gear you are not using", "Gear in a gear set", "Housing items"];
+            foreach (var plan in Organizer.Plans)
+            {
+                plan.Simple = false;
+                plan.Rules.RemoveAll(r => itsOwn.Contains(r.Name));
+            }
+            Version = 14;
             changed = true;
         }
         changed |= EnsureDefaults();

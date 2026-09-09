@@ -140,6 +140,13 @@ public sealed class OrganizerPlan
 {
     public Guid Id { get; set; } = Guid.NewGuid();
     public string Name { get; set; } = "My layout";
+
+    /// <summary>
+    /// True for the one layout the simple screen owns and edits. Layouts built by hand are never marked, and
+    /// the simple screen never touches them.
+    /// </summary>
+    public bool Simple { get; set; }
+
     public List<OrganizerRule> Rules { get; set; } = new();
     public Destination Fallback { get; set; } = Destination.Stay;
 
@@ -158,6 +165,7 @@ public sealed class OrganizerPlan
         {
             Id = Guid.NewGuid(),
             Name = Name,
+            Simple = false,
             Fallback = Fallback,
             MergeStacksAtDestination = MergeStacksAtDestination,
             RetainersInScope = new HashSet<ulong>(RetainersInScope),
