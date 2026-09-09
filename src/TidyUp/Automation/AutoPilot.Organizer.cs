@@ -17,6 +17,7 @@ public sealed partial class AutoPilot
 
     private int movesDone;
     private int movesPending;
+    private int movesSkipped;
 
     public async Task RunOrganizerAsync()
     {
@@ -28,6 +29,7 @@ public sealed partial class AutoPilot
         if (result.Moves.Count == 0) { Nothing("Nothing to move"); return; }
 
         Mode = PilotMode.Organize;
+        PlannedTotal = result.Moves.Count;
         IsRunning = true;
         LastError = null;
         cts?.Dispose();
@@ -35,6 +37,7 @@ public sealed partial class AutoPilot
         var ct = cts.Token;
         movesDone = 0;
         movesPending = 0;
+        movesSkipped = 0;
         tally.Clear();
         try
         {
@@ -54,6 +57,7 @@ public sealed partial class AutoPilot
                 await Organizer.PreviewAsync().ConfigureAwait(false);
                 result = Organizer.Current ?? result;
                 if (!result.Report.Feasible || result.Moves.Count == 0) break;
+                PlannedTotal = PlannedDone + result.Moves.Count;
             }
 
             Status = "Done";
@@ -169,6 +173,7 @@ public sealed partial class AutoPilot
         var report = Organizer.LastReport;
         if (report is null) return;
         movesDone += report.Done;
+        movesSkipped += report.Skipped + report.Failed;
         movesPending += report.Pending.Count;
     }
 }
