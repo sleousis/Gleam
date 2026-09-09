@@ -780,7 +780,7 @@ public sealed partial class AutoPilot : IDisposable
         }
         var me = objects.LocalPlayer?.Position ?? Vector3.Zero;
         return objects
-            .Where(o => o.Address != 0 && o.ObjectKind == Dalamud.Game.ClientState.Objects.Enums.ObjectKind.EventNpc && o.IsTargetable && db.IsVendorNpc(o.DataId))
+            .Where(o => o.Address != 0 && o.ObjectKind == Dalamud.Game.ClientState.Objects.Enums.ObjectKind.EventNpc && o.IsTargetable && db.IsVendorNpc(o.BaseId))
             .OrderBy(o => Vector3.Distance(o.Position, me))
             .FirstOrDefault();
     }
