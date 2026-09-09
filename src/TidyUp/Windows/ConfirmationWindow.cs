@@ -27,7 +27,21 @@ public sealed class ConfirmationWindow : StyledWindow
 
     /// <summary>Set by the plugin when hands-free mode is available.</summary>
     public Automation.AutoPilot? Pilot { get; set; }
-    private readonly Action? openOrganizer;
+
+    /// <summary>The Organize half of this window; set by the plugin.</summary>
+    public OrganizerPanel? Organizer { get; set; }
+
+    /// <summary>Which half is showing. A running job pulls the window to its own half.</summary>
+    internal Ui.AppMode Mode { get; private set; } = Ui.AppMode.Clean;
+
+    /// <summary>Opens the window on the given half.</summary>
+    internal void Show(Ui.AppMode mode)
+    {
+        Mode = mode;
+        IsOpen = true;
+        if (mode == Ui.AppMode.Organize) Organizer?.OnShown();
+        else if (coordinator.CurrentPlan is null && !coordinator.IsRunning) _ = coordinator.RefreshPlanAsync(openWindow: false);
+    }
 
     private string search = string.Empty;
     private ContainerKind? filterContainer;
@@ -61,7 +75,7 @@ public sealed class ConfirmationWindow : StyledWindow
     private readonly List<PlanRow> visibleRows = new();
     private readonly Dictionary<string, bool> sectionOpen = new();
 
-    public ConfirmationWindow(RunCoordinator coordinator, IconCache icons, ItemDatabase db, Configuration config, IGamepadState gamepad, Action openSettings, Action openHistory, Action? openOrganizer = null)
+    public ConfirmationWindow(RunCoordinator coordinator, IconCache icons, ItemDatabase db, Configuration config, IGamepadState gamepad, Action openSettings, Action openHistory)
         : base("Tidy Up###TidyUpConfirm")
     {
         this.coordinator = coordinator;
@@ -69,11 +83,10 @@ public sealed class ConfirmationWindow : StyledWindow
         this.db = db;
         this.config = config;
         this.gamepad = gamepad;
-        this.openOrganizer = openOrganizer;
         Size = new Vector2(860, 600);
         SizeCondition = ImGuiCond.FirstUseEver;
         SizeConstraints = new WindowSizeConstraints { MinimumSize = new Vector2(560, 320), MaximumSize = new Vector2(4000, 3000) };
-        if (openOrganizer is not null) AddNav(FontAwesomeIcon.BoxOpen, "Organize", openOrganizer);
+        AddNav(FontAwesomeIcon.BoxOpen, "Organize", () => Show(Ui.AppMode.Organize));
         AddNav(FontAwesomeIcon.History, "History", openHistory);
         AddNav(FontAwesomeIcon.Cog, "Settings", openSettings);
     }
@@ -83,12 +96,18 @@ public sealed class ConfirmationWindow : StyledWindow
         base.OnOpen();
         capArmed = false;
         cursor = -1;
-        if (coordinator.CurrentPlan is null && !coordinator.IsRunning)
+        if (Mode == Ui.AppMode.Organize) Organizer?.OnShown();
+        else if (coordinator.CurrentPlan is null && !coordinator.IsRunning)
             _ = coordinator.RefreshPlanAsync(openWindow: false);
     }
 
     public override void Draw()
     {
+        // Whatever is running owns the window.
+        if (Pilot is { IsRunning: true }) Mode = Pilot.Mode == Automation.PilotMode.Organize ? Ui.AppMode.Organize : Ui.AppMode.Clean;
+        else if (coordinator.IsRunning) Mode = Ui.AppMode.Clean;
+        if (Mode == Ui.AppMode.Organize && Organizer is not null) { Organizer.Draw(); return; }
+
         var plan = coordinator.CurrentPlan;
         if (Pilot is { IsRunning: true, Mode: Automation.PilotMode.Clean }) { DrawPilotRunning(); return; }
         if (coordinator.IsRunning) { DrawRunning(); return; }
@@ -195,7 +214,7 @@ public sealed class ConfirmationWindow : StyledWindow
                 _ = coordinator.RefreshPlanAsync(openWindow: false, coordinator.FocusContainer);
             }
             Ui.Tooltip("Sell on market board: lists marketable items through your retainers at the lowest price on your home world, sells other tradeable items to a retainer, discards untradeable ones.\nSell to vendors: sells tradeable items to a retainer, discards untradeable ones.\nDiscard all: discards everything proposed.");
-        }, profile.Thresholds.Policy.Describe(), openOrganizer is null ? null : () => { if (Ui.ModeSwitch(Ui.AppMode.Clean)) openOrganizer(); });
+        }, profile.Thresholds.Policy.Describe(), Organizer is null ? null : () => { if (Ui.ModeSwitch(Ui.AppMode.Clean)) Show(Ui.AppMode.Organize); });
 
         if (coordinator.FocusContainer is not null)
         {
