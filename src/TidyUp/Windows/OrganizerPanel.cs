@@ -47,6 +47,9 @@ public sealed class OrganizerPanel
     /// <summary>Set by the host window: flips the header switch back to Clean.</summary>
     public Action? SwitchToClean { get; set; }
 
+    /// <summary>Set by the host window: opens Settings in the same window.</summary>
+    public Action? OpenSettings { get; set; }
+
     public OrganizerPanel(OrganizerCoordinator organizer, Configuration config, ItemDatabase db, IconCache icons, Action save)
     {
         this.organizer = organizer;

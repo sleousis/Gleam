@@ -1,7 +1,6 @@
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility.Raii;
-using Dalamud.Interface.Windowing;
 using TidyUp.Core.Logging;
 using TidyUp.Core.Model;
 using TidyUp.Game;
@@ -10,7 +9,7 @@ using TidyUp.Services;
 namespace TidyUp.Windows;
 
 /// <summary>Everything Gleam ever destroyed, sold, turned in or desynthed, with how to get it back.</summary>
-public sealed class HistoryWindow : StyledWindow
+public sealed class HistoryWindow
 {
     private readonly IRunLog runLog;
     private readonly ItemDatabase db;
@@ -19,21 +18,18 @@ public sealed class HistoryWindow : StyledWindow
     private string search = string.Empty;
     private bool loading;
 
-    public HistoryWindow(IRunLog runLog, ItemDatabase db, IconCache icons) : base("Gleam History###TidyUpHistory")
+    /// <summary>Set by the host window: the way back to the list.</summary>
+    public Action? Back { get; set; }
+
+    public HistoryWindow(IRunLog runLog, ItemDatabase db, IconCache icons)
     {
         this.runLog = runLog;
         this.db = db;
         this.icons = icons;
-        Size = new Vector2(820, 500);
-        SizeCondition = ImGuiCond.FirstUseEver;
-        SizeConstraints = new WindowSizeConstraints { MinimumSize = new Vector2(520, 300), MaximumSize = new Vector2(4000, 3000) };
     }
 
-    public override void OnOpen()
-    {
-        base.OnOpen();
-        Reload();
-    }
+    /// <summary>Called when the panel comes into view.</summary>
+    public void OnShown() => Reload();
 
     private void Reload()
     {
@@ -46,13 +42,14 @@ public sealed class HistoryWindow : StyledWindow
         });
     }
 
-    public override void Draw()
+    public void Draw()
     {
-        Ui.Header(icons.LogoSmall, "History", $"{entries.Count} action{(entries.Count == 1 ? "" : "s")} on record");
+        Ui.Header(icons.LogoSmall, "What Gleam did", $"{entries.Count} item{(entries.Count == 1 ? "" : "s")} on record");
+        if (Back is not null) { if (Ui.BackLink()) Back(); }
         Ui.Gap(0.4f);
         Ui.SearchBox("##hs", ref search, 260 * Ui.Scale);
         ImGui.SameLine();
-        if (Ui.IconButton(Dalamud.Interface.FontAwesomeIcon.Sync, "Refresh")) Reload();
+        if (Ui.IconButton(Dalamud.Interface.FontAwesomeIcon.Sync, "Look again")) Reload();
 
         var rows = entries.Where(e => string.IsNullOrWhiteSpace(search)
             || e.ItemName.Contains(search, StringComparison.OrdinalIgnoreCase)

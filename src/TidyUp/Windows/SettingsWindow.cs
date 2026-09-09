@@ -1,7 +1,6 @@
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility.Raii;
-using Dalamud.Interface.Windowing;
 using Dalamud.Plugin.Services;
 using TidyUp.Core.Lists;
 using TidyUp.Core.Model;
@@ -17,7 +16,7 @@ namespace TidyUp.Windows;
 /// on or off, and the two lists. Everything else is a knob most people never touch and lives behind
 /// one "Advanced" fold at the bottom.
 /// </summary>
-public sealed partial class SettingsWindow : StyledWindow
+public sealed partial class SettingsWindow
 {
     private readonly Configuration config;
     private readonly IPlayerState player;
@@ -44,8 +43,10 @@ public sealed partial class SettingsWindow : StyledWindow
         (PresetName.MarketBoard, PresetName.MarketBoard.Label()), (PresetName.Vendor, PresetName.Vendor.Label()), (PresetName.DiscardAll, PresetName.DiscardAll.Label()),
     ];
 
+    /// <summary>Set by the host window: the way back to the list.</summary>
+    public Action? Back { get; set; }
+
     public SettingsWindow(Configuration config, IPlayerState player, ItemDatabase db, IconCache icons, AllaganToolsSource allagan, RunCoordinator coordinator, Action openDebug)
-        : base("Gleam Settings###TidyUpSettings")
     {
         this.config = config;
         this.player = player;
@@ -56,9 +57,6 @@ public sealed partial class SettingsWindow : StyledWindow
         this.openDebug = openDebug;
         protectEditor = new ListEditor(db, icons, () => config.ProtectList, "Keep these", "Gleam never lists these, whatever else you choose.", () => player.ContentId, MarkDirty);
         alwaysEditor = new ListEditor(db, icons, () => config.AlwaysDiscardList, "Always junk", "Gleam lists these every time, even when no rule picks them.", () => player.ContentId, MarkDirty);
-        Size = new Vector2(620, 560);
-        SizeCondition = ImGuiCond.FirstUseEver;
-        SizeConstraints = new WindowSizeConstraints { MinimumSize = new Vector2(480, 360), MaximumSize = new Vector2(4000, 3000) };
     }
 
     private void MarkDirty() => dirty = true;
@@ -66,15 +64,16 @@ public sealed partial class SettingsWindow : StyledWindow
     /// <summary>The profile the controls edit.</summary>
     private Profile Editing => config.Profiles.Account;
 
-    public override void Draw()
+    public void Draw()
     {
+        var version = typeof(SettingsWindow).Assembly.GetName().Version?.ToString(3) ?? "dev";
+        Ui.Header(icons.LogoSmall, "Settings", $"Gleam v{version} · by Raiden Shinryu");
+        if (Back is not null) { if (Ui.BackLink()) Back(); Ui.Gap(0.2f); }
         using (var body = ImRaii.Child("##body", new Vector2(0, 0), false, ImGuiWindowFlags.None))
         {
             if (body)
             {
-                var version = typeof(SettingsWindow).Assembly.GetName().Version?.ToString(3) ?? "dev";
-                Ui.Header(icons.LogoSmall, "Settings", $"Gleam v{version} · by Raiden Shinryu");
-                Ui.Gap(0.6f);
+                Ui.Gap(0.2f);
                 DrawEssentials();
                 Ui.Gap(0.5f);
                 if (config.AdvancedMode && ImGui.CollapsingHeader("More", ImGuiTreeNodeFlags.None)) DrawAdvancedFold();
