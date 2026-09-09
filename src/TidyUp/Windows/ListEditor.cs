@@ -43,7 +43,7 @@ internal sealed class ListEditor
         if (Ui.InputText($"##s{title}", "Add an item…", ref search, 64))
             results = search.Length >= 2 ? db.Search(search, 30).ToList() : new List<ItemInfo>();
         ImGui.SameLine();
-        ImGui.Checkbox($"This character only##{title}", ref addForThisCharacter);
+        Ui.Check($"This character only##{title}", ref addForThisCharacter);
 
         if (results.Count > 0)
         {
@@ -88,7 +88,7 @@ internal sealed class ListEditor
             if (!string.IsNullOrEmpty(e.Note)) Ui.Tooltip(e.Note);
             ImGui.TableNextColumn();
             var hq = e.IncludeHq;
-            if (ImGui.Checkbox("HQ too", ref hq)) { e.IncludeHq = hq; markDirty(); }
+            if (Ui.Check("HQ too", ref hq)) { e.IncludeHq = hq; markDirty(); }
             ImGui.TableNextColumn();
             if (Ui.LinkButton("Remove")) { entries.Remove(e); markDirty(); }
         }

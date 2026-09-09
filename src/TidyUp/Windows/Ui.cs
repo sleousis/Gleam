@@ -223,13 +223,19 @@ internal static class Ui
         return ImRaii.PushStyle(ImGuiStyleVar.Alpha, ImGui.GetStyle().Alpha * (0.25f + 0.75f * e));
     }
 
-    /// <summary>A tick box that fills and draws its check on, rather than flipping between two pictures.</summary>
+    /// <summary>
+    /// A tick box that fills and draws its check on, rather than flipping between two pictures. Anything
+    /// before "##" is drawn as a label and is part of the click target, so this stands in for a plain checkbox.
+    /// </summary>
     public static bool Check(string id, ref bool value, bool disabled = false)
     {
+        var visible = id.Split("##")[0];
         var h = ImGui.GetFrameHeight();
         var size = Math.Min(h, 19f * Scale);
+        var gap = visible.Length == 0 ? 0f : 8f * Scale;
+        var textW = visible.Length == 0 ? 0f : ImGui.CalcTextSize(visible, false, 0).X;
         var start = ImGui.GetCursorScreenPos();
-        var clicked = ImGui.InvisibleButton(id, new Vector2(size, h)) && !disabled;
+        var clicked = ImGui.InvisibleButton(id, new Vector2(size + gap + textW, h)) && !disabled;
         if (clicked) value = !value;
         var key = $"chk:{ImGui.GetID(id)}";
         RecordHover(key);
@@ -265,6 +271,12 @@ internal static class Ui
                 dl.AddLine(p2, end2, col, w);
                 dl.AddCircleFilled(end2, cap, col, 12);
             }
+        }
+        if (visible.Length > 0)
+        {
+            var text = ImGui.GetStyle().Colors[(int)ImGuiCol.Text];
+            dl.AddText(new Vector2(start.X + size + gap, start.Y + (h - ImGui.GetTextLineHeight()) / 2),
+                ImGui.GetColorU32(Mix(text, text * new Vector4(1, 1, 1, 0.45f), disabled ? 1f : 0f)), visible);
         }
         return clicked;
     }

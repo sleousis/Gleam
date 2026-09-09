@@ -98,11 +98,11 @@ public sealed partial class SettingsWindow
             Ui.TextColored(Ui.Muted, "WHAT GLEAM DOES FOR YOU");
             ImGui.Spacing();
             var clean = config.UseClean;
-            if (ImGui.Checkbox("Clear out my junk", ref clean)) { config.UseClean = clean || !config.UseOrganize; dirty = true; }
+            if (Ui.Check("Clear out my junk", ref clean)) { config.UseClean = clean || !config.UseOrganize; dirty = true; }
             Ui.Tooltip("Off: Gleam never suggests throwing anything away or selling it.");
             ImGui.SameLine(0, 24 * Ui.Scale);
             var org = config.UseOrganize;
-            if (ImGui.Checkbox("Put my things away", ref org)) { config.UseOrganize = org || !config.UseClean; dirty = true; }
+            if (Ui.Check("Put my things away", ref org)) { config.UseOrganize = org || !config.UseClean; dirty = true; }
             Ui.Tooltip("Off: Gleam never moves anything between your bags, saddlebag and retainers.");
         }
 
@@ -130,7 +130,7 @@ public sealed partial class SettingsWindow
             }
             Ui.Gap(0.3f);
             var sortAfter = config.SortAfterRun;
-            if (ImGui.Checkbox(ConfirmationWindow.SortAfterLabel, ref sortAfter)) { config.SortAfterRun = sortAfter; dirty = true; }
+            if (Ui.Check(ConfirmationWindow.SortAfterLabel, ref sortAfter)) { config.SortAfterRun = sortAfter; dirty = true; }
             Ui.Tooltip(ConfirmationWindow.SortAfterHint);
         }
 
@@ -144,32 +144,12 @@ public sealed partial class SettingsWindow
             {
                 var kind = kinds[i];
                 var on = p.IsContainerEnabled(kind);
-                if (ImGui.Checkbox($"{kind.DisplayName()}##en{kind}", ref on)) { p.ContainerEnabled[kind] = on; dirty = true; }
+                if (Ui.Check($"{kind.DisplayName()}##en{kind}", ref on)) { p.ContainerEnabled[kind] = on; dirty = true; }
                 if (i < kinds.Length - 1 && i != 2) ImGui.SameLine();
             }
         }
 
-        using (Ui.Card("auto"))
-        {
-            Ui.TextColored(Ui.Muted, "DO IT FOR ME");
-            ImGui.Spacing();
-            var a = config.Automation;
-            var auto = a.Enabled;
-            if (ImGui.Checkbox("Let Gleam walk and travel for me", ref auto)) { a.Enabled = auto; dirty = true; }
-            ImGui.SameLine();
-            if (Nav is null || !Nav.IsInstalled) Ui.Pill("needs the vnavmesh plugin", Ui.Warn); else Ui.Pill("vnavmesh", Ui.Ok, Dalamud.Interface.FontAwesomeIcon.Check);
-            Ui.Tooltip("vnavmesh is a free plugin that walks your character from place to place. Gleam uses it to reach the bell, the dresser and the merchant.");
-            ImGui.SameLine();
-            if (Travel is null || !Travel.IsInstalled) Ui.Pill("needs the Lifestream plugin", Ui.Warn); else Ui.Pill("Lifestream", Ui.Ok, Dalamud.Interface.FontAwesomeIcon.Check);
-            Ui.Tooltip("Lifestream is a free plugin that teleports between aetherytes and into inns. Gleam uses it to get to a retainer bell.");
-            Ui.HintWrapped("Opens the saddlebag, travels to an inn for the retainers and the dresser, and visits your Grand Company when something is to be turned in. Your character moves on its own while this runs.");
-            using (ImRaii.Disabled(!auto))
-            {
-                var cleanUnseen = a.UnseenRows != UnseenRowsMode.Skip;
-                if (ImGui.Checkbox("Also clean items discovered along the way", ref cleanUnseen)) { a.UnseenRows = cleanUnseen ? UnseenRowsMode.Clean : UnseenRowsMode.Skip; dirty = true; }
-                Ui.Tooltip("Retainers and the dresser only show their contents once open. On: those items are cleaned by the same rules on the spot. Off: they wait for your next review.");
-            }
-        }
+        DrawRequiredPlugins();
 
         if (config.AdvancedMode)
         using (Ui.Card("ventures"))
@@ -178,7 +158,7 @@ public sealed partial class SettingsWindow
             ImGui.Spacing();
             var a = config.Automation;
             var after = a.CleanAfterVentures;
-            if (ImGui.Checkbox("Discard junk from my bags when AutoRetainer finishes a retainer", ref after)) { a.CleanAfterVentures = after; dirty = true; }
+            if (Ui.Check("Discard junk from my bags when AutoRetainer finishes a retainer", ref after)) { a.CleanAfterVentures = after; dirty = true; }
             ImGui.SameLine();
             if (AutoRetainer is null || !AutoRetainer.IsInstalled) Ui.Pill("needs the AutoRetainer plugin", Ui.Warn); else Ui.Pill("AutoRetainer", Ui.Ok, Dalamud.Interface.FontAwesomeIcon.Check);
             Ui.HintWrapped("Only rows the rules would tick on their own, and only discards. Selling and listing still wait for your review.");
@@ -192,9 +172,59 @@ public sealed partial class SettingsWindow
             Ui.TextColored(Ui.Muted, "SHOW MORE");
             ImGui.Spacing();
             var adv = config.AdvancedMode;
-            if (ImGui.Checkbox("Show advanced options", ref adv)) { config.AdvancedMode = adv; dirty = true; }
+            if (Ui.Check("Show advanced options", ref adv)) { config.AdvancedMode = adv; dirty = true; }
             Ui.HintWrapped("Filters and sorting, a choice of action on every row, layouts and rules, and every other setting. Off keeps Gleam to one list and one button.");
         }
+    }
+
+    /// <summary>
+    /// Gleam walks and travels by itself, so the two plugins that make that possible are requirements, not
+    /// options. This says so plainly and shows at a glance whether they are there.
+    /// </summary>
+    private void DrawRequiredPlugins()
+    {
+        var haveNav = Nav is { IsInstalled: true };
+        var haveTravel = Travel is { IsInstalled: true };
+
+        using (Ui.Card("auto"))
+        {
+            Ui.TextColored(Ui.Muted, "PLUGINS GLEAM NEEDS");
+            ImGui.Spacing();
+            Ui.HintWrapped("Gleam does the walking itself. It opens the saddlebag, travels to an inn for your retainers and the dresser, and visits your Grand Company when something is to be turned in. Both of these free plugins have to be installed for that.");
+            Ui.Gap(0.4f);
+
+            Requirement("vnavmesh", haveNav, "Walks your character from place to place, to the bell, the dresser and the merchant.");
+            Requirement("Lifestream", haveTravel, "Teleports between aetherytes and into inns, to reach a retainer bell.");
+
+            if (!haveNav || !haveTravel)
+            {
+                Ui.Gap(0.4f);
+                var which = !haveNav && !haveTravel ? "vnavmesh and Lifestream" : !haveNav ? "vnavmesh" : "Lifestream";
+                Ui.TextColored(Ui.Danger, $"Install {which} to let Gleam finish a run.");
+                Ui.HintWrapped("Until then Gleam still works on whatever you have open yourself, and anything further away waits.");
+            }
+
+            if (config.AdvancedMode)
+            {
+                Ui.Gap(0.4f);
+                var a = config.Automation;
+                var cleanUnseen = a.UnseenRows != UnseenRowsMode.Skip;
+                if (Ui.Check("Also clean items found along the way", ref cleanUnseen)) { a.UnseenRows = cleanUnseen ? UnseenRowsMode.Clean : UnseenRowsMode.Skip; dirty = true; }
+                Ui.Tooltip("Retainers and the dresser only show their contents once open. On: those items are cleaned by the same rules on the spot. Off: they wait for your next review.");
+            }
+        }
+    }
+
+    /// <summary>One required plugin: its state first, then its name, then what Gleam uses it for.</summary>
+    private static void Requirement(string name, bool installed, string what)
+    {
+        if (installed) Ui.Pill("installed", Ui.Ok, Dalamud.Interface.FontAwesomeIcon.Check);
+        else Ui.Pill("missing", Ui.Danger, Dalamud.Interface.FontAwesomeIcon.ExclamationTriangle);
+        ImGui.SameLine();
+        ImGui.AlignTextToFramePadding();
+        Ui.Text(name);
+        ImGui.SameLine();
+        Ui.Hint(what);
     }
 
     // ---------- everything else, folded ----------
