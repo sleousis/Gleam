@@ -75,6 +75,15 @@ public sealed class ConfirmationWindow : StyledWindow
     private readonly Dictionary<string, double> rowFlash = new();
     private object? staggerPlan;
     private double staggerAt;
+    private string? hoveredRow;
+
+    /// <summary>The item picture grows a touch under the cursor, so the row you are on is felt as well as seen.</summary>
+    private Vector2 IconSize(PlanRow row)
+    {
+        var lift = Ui.Smooth($"rowicon:{row.Key}", hoveredRow == row.Key ? 1f : 0f, 16f);
+        var s = (26f + 2.5f * lift) * Ui.Scale;
+        return new Vector2(s, s);
+    }
 
     /// <summary>
     /// Rows fade in one after another when a fresh list arrives, so the eye follows it down the page. Only
@@ -331,7 +340,7 @@ public sealed class ConfirmationWindow : StyledWindow
         DrawFilterMenu();
 
         ImGui.SameLine();
-        if (Ui.IconButton(FontAwesomeIcon.Sync, "Refresh")) _ = coordinator.RefreshPlanAsync(openWindow: false, coordinator.FocusContainer);
+        if (Ui.IconButton(FontAwesomeIcon.Sync, "Refresh", busy: coordinator.IsScanning)) _ = coordinator.RefreshPlanAsync(openWindow: false, coordinator.FocusContainer);
         Ui.Tooltip("Looks through your containers again.");
 
         ImGui.SameLine();
@@ -361,7 +370,7 @@ public sealed class ConfirmationWindow : StyledWindow
     {
         var total = plan.AllRows.Count();
         if (total > 40) { Ui.SearchBox("##search", ref search, 260 * Ui.Scale); ImGui.SameLine(); }
-        if (Ui.IconButton(FontAwesomeIcon.Sync, "Look again")) _ = coordinator.RefreshPlanAsync(openWindow: false, coordinator.FocusContainer);
+        if (Ui.IconButton(FontAwesomeIcon.Sync, "Look again", busy: coordinator.IsScanning)) _ = coordinator.RefreshPlanAsync(openWindow: false, coordinator.FocusContainer);
         Ui.Tooltip("Looks through your containers again.");
         ImGui.SameLine();
         Ui.RightAlign(90 * Ui.Scale);
@@ -527,11 +536,15 @@ public sealed class ConfirmationWindow : StyledWindow
         // Arrow right after the title, inside the same cell.
         var min = ImGui.GetItemRectMin();
         var h = ImGui.GetItemRectSize().Y;
-        var icon = (curDir > 0 ? FontAwesomeIcon.SortUp : FontAwesomeIcon.SortDown).ToIconString();
         var textW = ImGui.CalcTextSize(col.Label, false, 0).X;
+        // Up and down cross-fade, so reversing the sort turns the arrow rather than swapping it.
+        var up = Ui.Smooth($"sort:{sectionKey}:{col.Key}", curDir > 0 ? 1f : 0f, 16f);
         using var f = ImRaii.PushFont(UiBuilder.IconFont);
         var iconH = ImGui.GetTextLineHeight();
-        ImGui.GetWindowDrawList().AddText(new Vector2(min.X + textW + 8 * Ui.Scale, min.Y + (h - iconH) / 2), ImGui.GetColorU32(Ui.AccentSoft), icon);
+        var at = new Vector2(min.X + textW + 8 * Ui.Scale, min.Y + (h - iconH) / 2);
+        var dl = ImGui.GetWindowDrawList();
+        dl.AddText(at, ImGui.GetColorU32(Ui.AccentSoft * new Vector4(1, 1, 1, up)), FontAwesomeIcon.SortUp.ToIconString());
+        dl.AddText(at, ImGui.GetColorU32(Ui.AccentSoft * new Vector4(1, 1, 1, 1f - up)), FontAwesomeIcon.SortDown.ToIconString());
     }
 
     /// <summary>
@@ -677,13 +690,13 @@ public sealed class ConfirmationWindow : StyledWindow
         if (Ui.Check("##c", ref chk, !row.IsExecutable)) SetChecked(row, chk);
 
         ImGui.TableNextColumn();
-        Ui.ImageRounded(icons.Get(row.Info.IconId, row.Item.IsHq), new Vector2(26 * Ui.Scale, 26 * Ui.Scale), 4 * Ui.Scale);
+        Ui.ImageRounded(icons.Get(row.Info.IconId, row.Item.IsHq), IconSize(row), 4 * Ui.Scale);
 
         ImGui.TableNextColumn();
         ImGui.AlignTextToFramePadding();
         if (ImGui.Selectable(row.Info.Name + (row.Item.IsHq ? " " : ""), false, ImGuiSelectableFlags.AllowItemOverlap, Vector2.Zero) && row.IsExecutable)
             SetChecked(row, !row.Checked);
-        if (ImGui.IsItemHovered()) DrawRowTooltip(row);
+        if (ImGui.IsItemHovered()) { hoveredRow = row.Key; DrawRowTooltip(row); }
         DrawRowContextMenu(row);
         if (row.Item.Quantity > 1) { ImGui.SameLine(); Ui.Hint($"× {row.Item.Quantity}"); }
 
@@ -752,6 +765,7 @@ public sealed class ConfirmationWindow : StyledWindow
 
         var cols = new List<HeaderColumn>();
         Vector2 tableMin, tableMax;
+        using var opened = ImRaii.PushStyle(ImGuiStyleVar.Alpha, ImGui.GetStyle().Alpha * Ui.Appear($"sect:{key}", 0.16f));
         using (var table = ImRaii.Table($"##t{key}", Simple ? 5 : 6, ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingFixedFit | ImGuiTableFlags.NoSavedSettings | ImGuiTableFlags.PadOuterX))
         {
         if (!table) return;
@@ -806,7 +820,7 @@ public sealed class ConfirmationWindow : StyledWindow
         if (Ui.Check("##c", ref chk, !row.IsExecutable)) SetChecked(row, chk);
 
         ImGui.TableNextColumn();
-        Ui.ImageRounded(icons.Get(row.Info.IconId, row.Item.IsHq), new Vector2(26 * Ui.Scale, 26 * Ui.Scale), 4 * Ui.Scale);
+        Ui.ImageRounded(icons.Get(row.Info.IconId, row.Item.IsHq), IconSize(row), 4 * Ui.Scale);
 
         ImGui.TableNextColumn();
         ImGui.AlignTextToFramePadding();
@@ -817,7 +831,7 @@ public sealed class ConfirmationWindow : StyledWindow
             SetChecked(row, !row.Checked);
             cursor = index;
         }
-        if (ImGui.IsItemHovered()) DrawRowTooltip(row);
+        if (ImGui.IsItemHovered()) { hoveredRow = row.Key; DrawRowTooltip(row); }
         DrawRowContextMenu(row);
         if (row.Item.Quantity > 1) { ImGui.SameLine(); Ui.Hint($"× {row.Item.Quantity}"); }
 

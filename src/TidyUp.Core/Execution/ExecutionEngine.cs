@@ -210,7 +210,7 @@ public sealed class ExecutionEngine
             {
                 var why = game.LastFailure ?? "no reason given";
                 if (options.OnMateriaFailure == MateriaFailurePolicy.LeaveItem)
-                    return new ActionResult(action, ActionOutcome.Pending, $"its materia could not be removed ({why}). Remove it by hand first");
+                    return new ActionResult(action, ActionOutcome.Pending, $"its materia could not be removed: {why}");
             }
             else
             {
