@@ -70,7 +70,7 @@ public sealed class RunPlanner
             // 2. Protect list: checked before any rule runs.
             if (inputs.ProtectList.Contains(item.ItemId, item.IsHq, ctx.CharacterId))
             {
-                plan.Excluded.Add(new ExcludedItem(item, info, "On your protect list", false));
+                plan.Excluded.Add(new ExcludedItem(item, info, "On your Never touch list", false));
                 continue;
             }
 
@@ -107,7 +107,7 @@ public sealed class RunPlanner
                 var value = canSell ? (long)info.VendorPrice * item.Quantity : 0;
                 var warnings = new List<string>();
                 if (why is not null) warnings.Add(why);
-                warnings.Add("Not proposed by any rule");
+                else warnings.Add("Not suggested by any rule");
                 if (info.IsUsable) warnings.Add("Usable item");
                 if (info.IsUntradable && why is null) warnings.Add("Untradeable");
                 proposals.Add(new Proposal
@@ -117,7 +117,7 @@ public sealed class RunPlanner
                     Alternatives = canSell ? [ActionKind.Discard] : [],
                     Confidence = Confidence.Low,
                     RuleId = "manual",
-                    Reason = "Hand-picked",
+                    Reason = "Picked by hand",
                     ValueGil = value,
                     ValueLabel = value > 0 ? $"{value:N0}g" : "—",
                     Warnings = warnings,
@@ -135,7 +135,7 @@ public sealed class RunPlanner
                 Alternatives = info.VendorPrice > 0 ? [ActionKind.Discard] : [],
                 Confidence = Confidence.User,
                 RuleId = "always-discard",
-                Reason = "On your always-discard list",
+                Reason = "On your Always clean list",
                 ValueGil = vendorTotal,
                 ValueLabel = vendorTotal > 0 ? $"{vendorTotal:N0}g" : "—",
                 Warnings = item.HasMateria ? [$"Retrieve materia first ({item.MateriaCount} slotted)"] : [],

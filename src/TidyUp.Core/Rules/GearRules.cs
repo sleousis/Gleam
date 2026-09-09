@@ -76,7 +76,7 @@ public sealed class RetiredCurrencyGearRule : IRule
             Alternatives = alternatives,
             Confidence = Confidence.High,
             RuleId = Id,
-            Reason = $"Bought with a retired currency · iL{info.ItemLevel}",
+            Reason = $"Bought with a retired currency · IL {info.ItemLevel}",
             ValueGil = valueGil,
             ValueLabel = valueLabel,
             Warnings = warnings,

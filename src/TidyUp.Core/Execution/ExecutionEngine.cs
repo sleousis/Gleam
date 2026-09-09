@@ -141,24 +141,23 @@ public sealed class ExecutionEngine
             if (found is null)
             {
                 return live is null
-                    ? new ActionResult(action, ActionOutcome.SkippedChanged, "Not found in the container any more")
-                    : new ActionResult(action, ActionOutcome.SkippedChanged,
-                        $"planned slot holds item {live.ItemId} ×{live.Quantity}{(live.IsHq ? " HQ" : "")} and no other slot holds item {action.ItemId} ×{action.Quantity}{(action.IsHq ? " HQ" : "")}");
+                    ? new ActionResult(action, ActionOutcome.SkippedChanged, "no longer in this container")
+                    : new ActionResult(action, ActionOutcome.SkippedChanged, "something else is in its place and it is not elsewhere in this container");
             }
             target = found.Value;
             live = game.ReadSlot(target);
             if (live is null || live.ItemId != action.ItemId || live.Quantity != action.Quantity || live.IsHq != action.IsHq)
-                return new ActionResult(action, ActionOutcome.SkippedChanged, "Item moved while it was being located");
+                return new ActionResult(action, ActionOutcome.SkippedChanged, "it moved while being located");
         }
         touched.Add(target);
 
         if (action.Kind == ContainerKind.GlamourDresser)
         {
             if (game.FreeInventorySlots() < 1)
-                return new ActionResult(action, ActionOutcome.Pending, "No free inventory slot to restore into");
+                return new ActionResult(action, ActionOutcome.Pending, "no free bag space to restore it into");
             var restored = await game.RestoreFromDresserAsync(target, action.ItemId, ct).ConfigureAwait(false);
             if (restored is null)
-                return new ActionResult(action, ActionOutcome.Failed, "Restore from dresser failed");
+                return new ActionResult(action, ActionOutcome.Failed, $"the dresser did not return it{(game.LastFailure is { } r0 ? $": {r0}" : string.Empty)}");
             target = restored.Value;
             await delay.Wait(options.RateLimit, ct).ConfigureAwait(false);
         }
@@ -171,7 +170,7 @@ public sealed class ExecutionEngine
 
             // Retainer menus have no "Retrieve Materia": bring the item home and finish there.
             if (game.FreeInventorySlots() < 1)
-                return new ActionResult(action, ActionOutcome.Pending, "No free inventory slot to bring the item back for materia retrieval");
+                return new ActionResult(action, ActionOutcome.Pending, "no free bag space to bring it back for its materia");
             var landed = await game.MoveToInventoryAsync(target, action.ItemId, action.Quantity, action.IsHq, ct).ConfigureAwait(false);
             if (landed is null)
                 return new ActionResult(action, ActionOutcome.Pending, $"materia cannot be retrieved here and the item could not be brought back ({game.LastFailure ?? "no reason given"})");
@@ -184,11 +183,11 @@ public sealed class ExecutionEngine
         if (ContainerConstraints.NeedsTripHome(action.Kind, action.Action))
         {
             if (game.FreeInventorySlots() < 1)
-                return new ActionResult(action, ActionOutcome.Pending, $"No free inventory slot to bring the item back to {action.Action.Label()} it");
+                return new ActionResult(action, ActionOutcome.Pending, $"no free bag space to bring it back and {action.Action.Verb()} it");
             var home = await game.MoveToInventoryAsync(target, action.ItemId, action.Quantity, action.IsHq, ct).ConfigureAwait(false);
             if (home is null)
                 return new ActionResult(action, ActionOutcome.Pending, $"could not be brought back from the retainer ({game.LastFailure ?? "no reason given"})");
-            return new ActionResult(action, ActionOutcome.Moved, $"brought back to you to {action.Action.Label()} later")
+            return new ActionResult(action, ActionOutcome.Moved, $"brought back to your bags to {action.Action.Verb()} later")
             {
                 Followup = action with { Slot = home.Value, BroughtHome = true },
             };
@@ -197,13 +196,13 @@ public sealed class ExecutionEngine
         if (live.HasMateria && game.CanRetrieveMateriaIn(action.Kind))
         {
             if (game.FreeInventorySlots() < live.MateriaCount)
-                return new ActionResult(action, ActionOutcome.Pending, "Not enough free inventory slots to retrieve materia");
+                return new ActionResult(action, ActionOutcome.Pending, "not enough free bag space for its materia");
             var ok = await game.RetrieveMateriaAsync(target, action.ItemId, ct).ConfigureAwait(false);
             if (!ok)
             {
                 var why = game.LastFailure ?? "no reason given";
                 if (options.OnMateriaFailure == MateriaFailurePolicy.LeaveItem)
-                    return new ActionResult(action, ActionOutcome.Pending, $"materia could not be retrieved ({why}); remove it by hand or allow acting anyway in settings");
+                    return new ActionResult(action, ActionOutcome.Pending, $"its materia could not be removed ({why}); remove it by hand first");
             }
             else
             {
@@ -231,7 +230,7 @@ public sealed class ExecutionEngine
 
         return success
             ? new ActionResult(action, ActionOutcome.Done, action.Action.Label())
-            : new ActionResult(action, ActionOutcome.Failed, $"{action.Action.Label()} did not complete{(game.LastFailure is { } reason ? $": {reason}" : string.Empty)}");
+            : new ActionResult(action, ActionOutcome.Failed, $"could not {action.Action.Verb()} it{(game.LastFailure is { } reason ? $": {reason}" : string.Empty)}");
     }
 
     private static void Park(RunReport report, QueuedAction action, string reason)

@@ -81,11 +81,10 @@ public sealed class RunReport
     public string Summary()
     {
         var parts = new List<string> { $"{Done} cleaned" };
-        if (Skipped > 0) parts.Add($"{Skipped} had moved and were left alone");
+        if (Skipped > 0) parts.Add($"{Skipped} had moved and {(Skipped == 1 ? "was" : "were")} left alone");
         if (Failed > 0) parts.Add($"{Failed} failed");
-        if (Moved.Count > 0) parts.Add($"{Moved.Count} brought home for later");
+        if (Moved.Count > 0) parts.Add($"{Moved.Count} brought back to your bags");
         if (Pending.Count > 0) parts.Add($"{Pending.Count} waiting");
-        if (Aborted) parts.Add($"stopped: {AbortReason}");
         return string.Join(", ", parts);
     }
 }

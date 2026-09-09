@@ -90,7 +90,7 @@ public sealed class OrganizerCoordinator : IDisposable
         try
         {
             var plan = config.Organizer.Active;
-            if (plan is null) { Status = "No layout yet."; return; }
+            if (plan is null) { Status = "No layout yet"; return; }
             Plan = plan;
 
             var snapshot = await snapshots.CaptureAsync(cleaner.EffectiveProfile).ConfigureAwait(false);
@@ -113,7 +113,7 @@ public sealed class OrganizerCoordinator : IDisposable
         catch (Exception ex)
         {
             log.Error(ex, "Organizer preview failed");
-            Status = $"Could not work out the moves: {ex.Message}";
+            Status = "The moves could not be worked out";
         }
         finally
         {
@@ -138,7 +138,7 @@ public sealed class OrganizerCoordinator : IDisposable
         RunTotal = ops.Count;
         RunDone = 0;
         LastProgress = null;
-        Status = "Moving…";
+        Status = "Organizing…";
         Changed?.Invoke();
         runCts?.Dispose();
         runCts = new CancellationTokenSource();
@@ -161,20 +161,21 @@ public sealed class OrganizerCoordinator : IDisposable
             PendingMoves.AddRange(report.Pending);
             Status = report.Summary();
 
+            log.Information("Organize finished: {Summary}", report.Summary());
             if (config.ChatSummaryAfterRun && !IsPilotRunning())
             {
-                chat.Print($"Tidy Up: {report.Summary()}.", "Tidy Up");
+                chat.Print($"{report.Summary()}.", "Tidy Up");
                 foreach (var (reason, count) in report.PendingByReason())
-                    chat.Print($"  {count} waiting: {(string.IsNullOrEmpty(reason) ? "storage not open" : reason)}.", "Tidy Up");
+                    chat.Print($"{count} waiting: {(string.IsNullOrEmpty(reason) ? "its storage is not open" : reason)}.", "Tidy Up");
+                if (report.Aborted && report.Failed > 0)
+                    chat.PrintError($"Stopped: {report.AbortReason}. Nothing after that was moved.", "Tidy Up");
             }
-            if (report.Aborted && report.Failed > 0)
-                chat.PrintError($"Tidy Up stopped organising after repeated failures: {report.AbortReason}.", "Tidy Up");
         }
         catch (Exception ex)
         {
             log.Error(ex, "Organizer run failed");
-            Status = $"Run failed: {ex.Message}";
-            chat.PrintError($"Tidy Up could not finish organising: {ex.Message}", "Tidy Up");
+            Status = "The run did not finish";
+            chat.PrintError("Organizing did not finish. Details are in the Dalamud log.", "Tidy Up");
         }
         finally
         {
@@ -192,7 +193,7 @@ public sealed class OrganizerCoordinator : IDisposable
         if (IsRunning || cleaner.IsRunning || cleaner.IsPilotRunning() || !player.IsLoaded) return;
         var ready = PendingMoves.Where(m => m.RequiresOpen is { } s && s.Kind == kind && mover.IsOpen(s)).ToList();
         if (ready.Count == 0) return;
-        toast.ShowNormal($"Tidy Up: putting away {ready.Count} item{(ready.Count == 1 ? "" : "s")} you approved earlier.");
+        toast.ShowNormal($"Tidy Up: putting away {ready.Count} item{(ready.Count == 1 ? "" : "s")} from your earlier preview.");
         await RunMovesAsync(ready, refreshAfter: true).ConfigureAwait(false);
     }
 }

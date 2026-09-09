@@ -24,7 +24,7 @@ public sealed class DresserZeroPlatesRule : IRule
 
         var warnings = new List<string> { "Restored to inventory first, then discarded" };
         if (item.IsDyed) warnings.Add("Dye is lost");
-        if (ctx.GearsetItemIds.Contains(info.ItemId)) warnings.Add("Same item id is in a gearset");
+        if (ctx.GearsetItemIds.Contains(info.ItemId)) warnings.Add("The same item is in a gear set");
 
         return new Proposal
         {
@@ -33,7 +33,7 @@ public sealed class DresserZeroPlatesRule : IRule
             Alternatives = info.VendorPrice > 0 ? [ActionKind.VendorSell] : [],
             Confidence = Confidence.High,
             RuleId = Id,
-            Reason = "In 0 plates",
+            Reason = "Not in any glamour plate",
             ValueGil = 0,
             // The restore step is expected, not a reason to uncheck: only real warnings should.
             Warnings = warnings.Count > 1 ? warnings.Skip(1).ToList() : [],

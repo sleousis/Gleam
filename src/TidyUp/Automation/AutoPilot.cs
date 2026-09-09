@@ -63,8 +63,8 @@ public sealed partial class AutoPilot
 
     public string? MissingDependency()
     {
-        if (S.TravelToInn && !travel.IsInstalled) return "Lifestream is not installed";
-        if (!nav.IsInstalled) return "vnavmesh is not installed";
+        if (S.TravelToInn && !travel.IsInstalled) return "the Lifestream plugin is not installed";
+        if (!nav.IsInstalled) return "the vnavmesh plugin is not installed";
         return null;
     }
 
@@ -81,10 +81,10 @@ public sealed partial class AutoPilot
     {
         if (IsRunning || coordinator.CurrentPlan is null) return;
         if (MissingDependency() is { } missing) { Fail(missing); return; }
-        if (condition[ConditionFlag.InCombat] || condition[ConditionFlag.BoundByDuty]) { Fail("Not while in combat or in a duty"); return; }
+        if (condition[ConditionFlag.InCombat] || condition[ConditionFlag.BoundByDuty]) { Fail("not while in combat or in a duty"); return; }
 
         var queue = coordinator.BuildQueueFromPlan(r => true);
-        if (queue.Count == 0) { Fail("Nothing selected"); return; }
+        if (queue.Count == 0) { Nothing("Nothing is ticked"); return; }
 
         IsRunning = true;
         LastError = null;
@@ -108,7 +108,7 @@ public sealed partial class AutoPilot
             Status = "Closing leftover windows";
             await RecoverUiAsync(ct).ConfigureAwait(false);
 
-            if (here.Count > 0) await Leg("bags", () => Step("Cleaning inventory and armoury", () => Execute(here), ct), ct);
+            if (here.Count > 0) await Leg("bags", () => Step("Cleaning your bags and armoury chest", () => Execute(here), ct), ct);
 
             // Go only where the ticked rows are, unless the user asked to sweep everything.
             var sweep = S.VisitContainersWithoutRows && S.UnseenRows != UnseenRowsMode.Skip;
@@ -134,21 +134,22 @@ public sealed partial class AutoPilot
                 sells.AddRange(broughtBack.Where(b => b.Action == ActionKind.VendorSell));
                 seals.AddRange(broughtBack.Where(b => b.Action == ActionKind.ExpertDelivery));
                 var here2 = broughtBack.Where(b => b.Action is not ActionKind.VendorSell and not ActionKind.ExpertDelivery and not ActionKind.MarketList).ToList();
-                if (here2.Count > 0) await Leg("brought back", () => Step("Finishing items brought back from retainers", () => Execute(here2), ct), ct);
+                if (here2.Count > 0) await Leg("items brought back", () => Step("Finishing items brought back from retainers", () => Execute(here2), ct), ct);
             }
 
-            if (S.VisitGrandCompany && seals.Count > 0) await Leg("Grand Company", () => GrandCompanyAsync(seals, ct), ct);
+            if (S.VisitGrandCompany && seals.Count > 0) await Leg("expert delivery", () => GrandCompanyAsync(seals, ct), ct);
             if (S.SellAtVendor && sells.Count > 0) await Leg("merchant", () => VendorAsync(sells, ct), ct);
 
             Status = "Done";
-            chat.Print($"Tidy Up: hands-free run finished. {tally.Summary()}", "Tidy Up");
-            foreach (var line in tally.PendingLines()) chat.Print($"  {line}", "Tidy Up");
-            foreach (var line in tally.LegFailures) chat.PrintError($"  {line}", "Tidy Up");
+            log.Information("Hands-free clean finished: {Summary}", tally.Summary());
+            chat.Print($"Hands-free clean finished: {tally.Summary()}", "Tidy Up");
+            foreach (var line in tally.PendingLines()) chat.Print(line, "Tidy Up");
+            foreach (var line in tally.LegFailures) chat.PrintError(line, "Tidy Up");
         }
         catch (OperationCanceledException)
         {
             Status = "Stopped";
-            chat.Print("Tidy Up: stopped. Nothing else was touched.", "Tidy Up");
+            chat.Print("Stopped. Nothing else was touched.", "Tidy Up");
         }
         catch (AutoPilotException ex)
         {
@@ -191,7 +192,7 @@ public sealed partial class AutoPilot
         public string Summary()
         {
             var parts = new List<string> { $"{Done} cleaned" };
-            if (Skipped > 0) parts.Add($"{Skipped} skipped because they changed");
+            if (Skipped > 0) parts.Add($"{Skipped} had moved and {(Skipped == 1 ? "was" : "were")} left alone");
             if (Failed > 0) parts.Add($"{Failed} failed");
             if (LegFailures.Count > 0) parts.Add($"{LegFailures.Count} step{(LegFailures.Count == 1 ? "" : "s")} could not finish");
             var pending = Pending.Values.Sum();
@@ -200,7 +201,7 @@ public sealed partial class AutoPilot
         }
 
         public IEnumerable<string> PendingLines() =>
-            Pending.Where(kv => kv.Value > 0).Select(kv => $"{kv.Value} waiting: {(string.IsNullOrEmpty(kv.Key) ? "container not open" : kv.Key)}.");
+            Pending.Where(kv => kv.Value > 0).Select(kv => $"{kv.Value} waiting: {(string.IsNullOrEmpty(kv.Key) ? "its storage is not open" : kv.Key)}.");
     }
 
     /// <summary>Runs one leg; a failure is recorded and the run moves on to the next leg. Cancellation still stops everything.</summary>
@@ -276,7 +277,7 @@ public sealed partial class AutoPilot
         await Step("Opening the saddlebag", async () =>
         {
             var id = saddlebagCommandId ??= db.MainCommandIdForEnglishName(S.SaddlebagCommandName);
-            if (id is null) throw new AutoPilotException("The saddlebag could not be opened");
+            if (id is null) throw new AutoPilotException("the saddlebag could not be opened");
             // Right after a teleport or a bell session the game refuses commands for a moment ("while occupied").
             await WaitUntilFreeAsync(ct).ConfigureAwait(false);
             for (var attempt = 0; attempt < 3; attempt++)
@@ -294,7 +295,7 @@ public sealed partial class AutoPilot
                     await WaitUntilFreeAsync(ct).ConfigureAwait(false);
                 }
             }
-            throw new AutoPilotException("The saddlebag did not open");
+            throw new AutoPilotException("the saddlebag did not open");
         }, ct);
     }
 
@@ -323,10 +324,10 @@ public sealed partial class AutoPilot
     private async Task TravelToInnAsync(CancellationToken ct)
     {
         if (await OnFramework(IsInInn).ConfigureAwait(false)) return;
-        if (!S.TravelToInn) throw new AutoPilotException("Not in an inn room, and travelling there is turned off");
+        if (!S.TravelToInn) throw new AutoPilotException("not in an inn room, and travelling there is turned off");
         await Step("Travelling to an inn", async () =>
         {
-            if (!travel.GoToInn(S.InnIndex)) throw new AutoPilotException("The teleport to the inn did not start");
+            if (!travel.GoToInn(S.InnIndex)) throw new AutoPilotException("the teleport to the inn did not start");
             await Task.Delay(1500, ct).ConfigureAwait(false);
             await WaitUntil(() => !travel.IsBusy && !condition[ConditionFlag.BetweenAreas] && !condition[ConditionFlag.BetweenAreas51] && IsInInn(),
                 TimeSpan.FromSeconds(S.TravelTimeoutSeconds), "the inn room", ct).ConfigureAwait(false);
@@ -365,7 +366,7 @@ public sealed partial class AutoPilot
             if (!ok) await EnsureRetainerListAsync(ct).ConfigureAwait(false);
         }
 
-        if (listingFailure is not null) tally.LegFailures.Add($"Market listing stopped: {listingFailure}");
+        if (listingFailure is not null) tally.LegFailures.Add($"market listing stopped at {listingFailure}");
         await framework.RunOnFrameworkThread(() => GameUi.Close("RetainerList")).ConfigureAwait(false);
     }
 
@@ -413,7 +414,7 @@ public sealed partial class AutoPilot
                     return;
             }
         }
-        throw new AutoPilotException("Could not get back to the retainer list; close the retainer windows and run again");
+        throw new AutoPilotException("could not get back to the retainer list; close the retainer windows and run again");
     }
 
     private async Task OneRetainerAsync(int index, ulong id, string name, List<QueuedAction> allRows, List<QueuedAction> listings, List<QueuedAction> sells, CancellationToken ct)
@@ -429,7 +430,7 @@ public sealed partial class AutoPilot
         {
             // The retainer buys at the vendor price, so bag items marked "sell" are handed over and sold here.
             var batch = sells.ToList();
-            await Step($"Selling {batch.Count} through {name}", () => Execute(batch), ct);
+            await Step($"Selling {batch.Count} item{(batch.Count == 1 ? "" : "s")} through {name}", () => Execute(batch), ct);
             var sold = coordinator.LastReport?.Results.Where(r => r.Outcome == Core.Execution.ActionOutcome.Done).Select(r => r.Action).ToHashSet()
                        ?? new HashSet<QueuedAction>();
             sells.RemoveAll(sold.Contains);
@@ -551,7 +552,7 @@ public sealed partial class AutoPilot
         }, ct);
 
         var batch = rows.Take(free).ToList();
-        await Step($"Listing {batch.Count} on the market through {name}", () => Execute(batch), ct);
+        await Step($"Listing {batch.Count} item{(batch.Count == 1 ? "" : "s")} with {name}", () => Execute(batch), ct);
         var report = coordinator.LastReport;
         var done = report?.Results.Where(r => r.Outcome == Core.Execution.ActionOutcome.Done).Select(r => r.Action).ToHashSet()
                    ?? new HashSet<QueuedAction>();
@@ -561,7 +562,7 @@ public sealed partial class AutoPilot
         if (done.Count == 0 && report is not null && report.Failed > 0)
         {
             var why = report.Results.FirstOrDefault(r => r.Outcome == Core.Execution.ActionOutcome.Failed)?.Message ?? report.AbortReason;
-            listingFailure = $"{name} listed nothing ({why})";
+            listingFailure = $"{name}: {why}";
         }
 
         await framework.RunOnFrameworkThread(() => { GameUi.Close("RetainerSell"); GameUi.Close("RetainerSellList"); }).ConfigureAwait(false);
@@ -599,7 +600,7 @@ public sealed partial class AutoPilot
             await Step($"Teleporting to {db.LocalizePlaceName(S.VendorAetheryte)} for a merchant", async () =>
             {
                 var before = clientState.TerritoryType;
-                if (!travel.Execute(db.LocalizePlaceName(S.VendorAetheryte))) throw new AutoPilotException("The teleport did not start");
+                if (!travel.Execute(db.LocalizePlaceName(S.VendorAetheryte))) throw new AutoPilotException("the teleport did not start");
                 await Task.Delay(1500, ct).ConfigureAwait(false);
                 await WaitUntil(() => !travel.IsBusy && !condition[ConditionFlag.BetweenAreas] && !condition[ConditionFlag.BetweenAreas51] && clientState.TerritoryType != before,
                     TimeSpan.FromSeconds(S.TravelTimeoutSeconds), db.LocalizePlaceName(S.VendorAetheryte), ct).ConfigureAwait(false);
@@ -613,7 +614,8 @@ public sealed partial class AutoPilot
         if (npc is null)
         {
             var nearby = await OnFramework(NearbyObjectNames).ConfigureAwait(false);
-            var reason = $"no merchant found near {db.LocalizePlaceName(S.VendorAetheryte)}; nearby: {string.Join(", ", nearby.Take(6))}";
+            log.Debug("No merchant near {Place}; nearby: {Nearby}", S.VendorAetheryte, string.Join(", ", nearby.Take(8)));
+            var reason = $"no merchant found near {db.LocalizePlaceName(S.VendorAetheryte)}";
             tally.Pending[reason] = tally.Pending.GetValueOrDefault(reason) + sells.Count;
             return;
         }
@@ -636,19 +638,19 @@ public sealed partial class AutoPilot
     private async Task GrandCompanyAsync(List<QueuedAction> seals, CancellationToken ct)
     {
         var gc = await OnFramework(GrandCompanyId).ConfigureAwait(false);
-        if (gc == 0) throw new AutoPilotException("No Grand Company on this character");
+        if (gc == 0) throw new AutoPilotException("this character has no Grand Company");
 
         var officer = await OnFramework(() => FindNearest(db.LocalizeNpcName(S.PersonnelOfficerName))).ConfigureAwait(false);
         if (officer is null)
         {
             if (!S.TravelToInn) throw new AutoPilotException($"No '{db.LocalizeNpcName(S.PersonnelOfficerName)}' nearby and travel is off");
             if (!S.GcCityAetheryte.TryGetValue(gc, out var city) || string.IsNullOrEmpty(city))
-                throw new AutoPilotException("No destination is set for your Grand Company's city");
+                throw new AutoPilotException("no destination is set for your Grand Company's city");
 
             await Step($"Teleporting to {city}", async () =>
             {
                 var before = clientState.TerritoryType;
-                if (!travel.Execute(db.LocalizePlaceName(city))) throw new AutoPilotException("The teleport did not start");
+                if (!travel.Execute(db.LocalizePlaceName(city))) throw new AutoPilotException("the teleport did not start");
                 await Task.Delay(1500, ct).ConfigureAwait(false);
                 await WaitUntil(() => !travel.IsBusy && !condition[ConditionFlag.BetweenAreas] && !condition[ConditionFlag.BetweenAreas51] && clientState.TerritoryType != before,
                     TimeSpan.FromSeconds(S.TravelTimeoutSeconds), city, ct).ConfigureAwait(false);
@@ -657,9 +659,9 @@ public sealed partial class AutoPilot
 
             if (S.GcAethernetShard.TryGetValue(gc, out var shard) && !string.IsNullOrEmpty(shard))
             {
-                await Step($"Aethernet to {shard}", async () =>
+                await Step($"Taking the aethernet to {shard}", async () =>
                 {
-                    if (!travel.AethernetTeleport(db.LocalizePlaceName(shard))) throw new AutoPilotException($"The aethernet trip to {shard} did not start");
+                    if (!travel.AethernetTeleport(db.LocalizePlaceName(shard))) throw new AutoPilotException($"the aethernet trip to {shard} did not start");
                     await Task.Delay(1500, ct).ConfigureAwait(false);
                     await WaitUntil(() => !travel.IsBusy && !condition[ConditionFlag.BetweenAreas] && !condition[ConditionFlag.BetweenAreas51],
                         TimeSpan.FromSeconds(S.TravelTimeoutSeconds), shard, ct).ConfigureAwait(false);
@@ -698,13 +700,13 @@ public sealed partial class AutoPilot
         {
             var queue = coordinator.BuildQueueFromPlan(r => r.Checked);
             if (queue.Count == 0) return;
-            await Step($"Cleaning {what} by the rules ({queue.Count})", () => Execute(queue), ct).ConfigureAwait(false);
+            await Step($"Cleaning {queue.Count} more item{(queue.Count == 1 ? "" : "s")} found in {what}", () => Execute(queue), ct).ConfigureAwait(false);
             return;
         }
 
         Status = $"Waiting for you to review the {kind.DisplayName().ToLowerInvariant()}";
         coordinator.RaiseOpenWindow();
-        chat.Print($"Tidy Up: new items found in the {kind.DisplayName().ToLowerInvariant()}. Clean them or close the window to carry on.", "Tidy Up");
+        chat.Print($"New items found in the {kind.DisplayName().ToLowerInvariant()}. Clean them or close the window to carry on.", "Tidy Up");
 
         var deadline = DateTime.UtcNow + TimeSpan.FromMinutes(5);
         var sawRun = false;
@@ -725,7 +727,7 @@ public sealed partial class AutoPilot
         if (target is null)
         {
             var nearby = await OnFramework(NearbyObjectNames).ConfigureAwait(false);
-            throw new AutoPilotException($"No {objectName.ToLowerInvariant()} nearby");
+            throw new AutoPilotException($"no {objectName.ToLowerInvariant()} nearby");
         }
 
         await Step($"Walking to the {objectName.ToLowerInvariant()}", async () =>
@@ -738,10 +740,10 @@ public sealed partial class AutoPilot
                     Status = "Waiting for the pathfinder to learn this area";
                     await WaitUntil(() => nav.IsReady, TimeSpan.FromSeconds(45), "vnavmesh to finish building the navmesh for this zone", ct).ConfigureAwait(false);
                 }
-                if (!nav.MoveCloseTo(pos, S.InteractRange - 0.5f)) throw new AutoPilotException("No path could be found there");
+                if (!nav.MoveCloseTo(pos, S.InteractRange - 0.5f)) throw new AutoPilotException("no path could be found there");
                 await Task.Delay(500, ct).ConfigureAwait(false);
                 await WaitUntil(() => !nav.IsMoving, TimeSpan.FromSeconds(60), $"arrival at the {objectName.ToLowerInvariant()}", ct).ConfigureAwait(false);
-                if (Distance(pos) > S.InteractRange + 1.5f) throw new AutoPilotException($"Stopped {Distance(pos):0.0}y from the {objectName.ToLowerInvariant()}");
+                if (Distance(pos) > S.InteractRange + 1.5f) throw new AutoPilotException($"could not get within reach of the {objectName.ToLowerInvariant()}");
             }
         }, ct);
 
@@ -752,12 +754,12 @@ public sealed partial class AutoPilot
                 await framework.RunOnFrameworkThread(() => GameUi.Interact(target)).ConfigureAwait(false);
                 try
                 {
-                    await WaitUntil(() => GameUi.IsVisible(expectAddon) || (orMenu && GameUi.SelectStringReady()), TimeSpan.FromSeconds(6), expectAddon, ct).ConfigureAwait(false);
+                    await WaitUntil(() => GameUi.IsVisible(expectAddon) || (orMenu && GameUi.SelectStringReady()), TimeSpan.FromSeconds(6), $"the {objectName.ToLowerInvariant()} to respond", ct).ConfigureAwait(false);
                     return;
                 }
                 catch (AutoPilotException) when (attempt < 2) { }
             }
-            throw new AutoPilotException($"The {objectName.ToLowerInvariant()} did not respond. If a retainer, shop or dresser window is still open, close it and run again.");
+            throw new AutoPilotException($"the {objectName.ToLowerInvariant()} did not respond; close any retainer, shop or dresser window and run again");
         }, ct);
         await Task.Delay(600, ct).ConfigureAwait(false);
     }
@@ -864,8 +866,8 @@ public sealed partial class AutoPilot
         var chosen = await framework.RunOnFrameworkThread(() => GameUi.SelectStringChoose(text)).ConfigureAwait(false);
         if (chosen < 0)
             throw new AutoPilotException(entries.Count == 0
-                ? $"The menu stayed empty, so '{text}' could not be chosen"
-                : $"The menu had no '{text}' option");
+                ? $"the menu stayed empty, so '{text}' could not be chosen"
+                : $"the menu had no '{text}' option");
         await Task.Delay(400, ct).ConfigureAwait(false);
     }
 
@@ -876,7 +878,7 @@ public sealed partial class AutoPilot
     private async Task Step(string status, Func<Task> body, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
-        if (condition[ConditionFlag.InCombat]) throw new AutoPilotException("Combat started");
+        if (condition[ConditionFlag.InCombat]) throw new AutoPilotException("combat started");
         Status = status;
         log.Information("AutoPilot: {Status}", status);
         await body().ConfigureAwait(false);
@@ -891,17 +893,25 @@ public sealed partial class AutoPilot
             if (await OnFramework(cond).ConfigureAwait(false)) return;
             await Task.Delay(250, ct).ConfigureAwait(false);
         }
-        throw new AutoPilotException($"Timed out waiting for {what}");
+        throw new AutoPilotException($"waited too long for {what}");
     }
 
     private Task<T> OnFramework<T>(Func<T> f) => framework.RunOnFrameworkThread(f);
 
+    /// <summary>A real stop: the run cannot go on. Message completes "Stopped: ...", so it starts lower-case.</summary>
     private void Fail(string message)
     {
         LastError = message;
         Status = $"Stopped: {message}";
-        log.Warning("AutoPilot: {Message}", message);
-        chat.PrintError($"Tidy Up stopped: {message}", "Tidy Up");
+        log.Warning("Hands-free run stopped: {Message}", message);
+        chat.PrintError($"Stopped: {message}.", "Tidy Up");
+    }
+
+    /// <summary>Nothing to do: not an error, one quiet line.</summary>
+    private void Nothing(string message)
+    {
+        Status = message;
+        chat.Print($"{message}.", "Tidy Up");
     }
 
     private sealed class AutoPilotException(string message) : Exception(message);

@@ -32,6 +32,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly ICommandManager commands;
     private readonly IClientState clientState;
     private readonly IPluginLog log;
+    private readonly IChatGui chat;
 
     private readonly Configuration config;
     private readonly WindowSystem windows = new("TidyUp");
@@ -61,6 +62,7 @@ public sealed class Plugin : IDalamudPlugin
         this.commands = commands;
         this.clientState = clientState;
         this.log = log;
+        this.chat = chat;
         PluginServices.Init(pi, data);
 
         config = pi.GetPluginConfig() as Configuration ?? new Configuration();
@@ -126,7 +128,7 @@ public sealed class Plugin : IDalamudPlugin
             CleanableCount = () => coordinator.LastCleanableCount,
         };
         dutyNudge = new DutyNudge(dutyState, framework, coordinator.CountCleanableAsync,
-            count => toast.ShowNormal($"Tidy Up: {count} item{(count == 1 ? "" : "s")} from that duty could be cleaned. /tidyup to review."));
+            count => toast.ShowNormal($"Tidy Up: {count} item{(count == 1 ? "" : "s")} could be cleaned. /tidyup to review."));
 
         config.Saved += ApplyProfileToServices;
         ApplyProfileToServices();
@@ -196,12 +198,18 @@ public sealed class Plugin : IDalamudPlugin
                 _ = coordinator.RefreshPlanAsync(openWindow: true);
                 break;
             case "merge":
-                _ = coordinator.StackMergeAsync().ContinueWith(t => log.Information("Merged {N} stacks", t.Result));
+                _ = coordinator.StackMergeAsync().ContinueWith(t =>
+                {
+                    if (t.IsFaulted) { log.Error(t.Exception, "Merge failed"); return; }
+                    chat.Print(t.Result > 0 ? $"Merged {t.Result} split stack{(t.Result == 1 ? "" : "s")}." : "Nothing to merge.", "Tidy Up");
+                });
                 break;
             case "stop":
+                var wasRunning = coordinator.IsRunning || organizer.IsRunning || (confirmWindow.Pilot?.IsRunning ?? false);
                 confirmWindow.Pilot?.Stop();
                 coordinator.CancelRun();
                 organizer.CancelRun();
+                if (!wasRunning) chat.Print("Nothing is running.", "Tidy Up");
                 break;
             default:
                 if (confirmWindow.IsOpen) confirmWindow.IsOpen = false;

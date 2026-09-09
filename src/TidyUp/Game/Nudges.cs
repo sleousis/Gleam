@@ -62,9 +62,8 @@ public sealed class DtrEntry : IDisposable
             if (!nudgedThisCrossing)
             {
                 nudgedThisCrossing = true;
-                toast.ShowNormal(cleanable > 0
-                    ? $"Inventory {pct}% full. Tidy Up found {cleanable} items it could clean."
-                    : $"Inventory {pct}% full.");
+                if (cleanable > 0)
+                    toast.ShowNormal($"Tidy Up: your bags are {pct}% full. {cleanable} item{(cleanable == 1 ? "" : "s")} could be cleaned. /tidyup to review.");
             }
         }
         else if (pct < NudgePercent - 5)

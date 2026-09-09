@@ -175,7 +175,7 @@ public class PlannerTests
         Assert.Equal(ActionKind.VendorSell, rows[ContainerKind.Retainer].ChosenAction);
         Assert.Contains(ActionKind.Discard, rows[ContainerKind.Retainer].Proposal.Alternatives);
         Assert.Equal(ActionKind.Discard, rows[ContainerKind.Saddlebag].ChosenAction);
-        Assert.Contains("withdraw", rows[ContainerKind.Saddlebag].Proposal.Reason);
+        Assert.Contains("bring it to your bags", rows[ContainerKind.Saddlebag].Proposal.Reason);
 
         // The always-discard list follows the same physics.
         var always = new ItemList(); always.Add(15);

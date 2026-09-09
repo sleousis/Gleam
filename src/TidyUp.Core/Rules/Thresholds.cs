@@ -19,10 +19,10 @@ public static class ActionPolicyExtensions
 {
     public static string Describe(this ActionPolicy p) => p switch
     {
-        ActionPolicy.SellOnly => "Only sells tradeable items. Never discards anything.",
-        ActionPolicy.DiscardUntradeableSellTradeable => "Vendor tradeable, discard untradeable.",
-        ActionPolicy.DiscardAll => "Discard everything.",
-        ActionPolicy.MarketListTradeable => "Market for marketable, vendor the rest, discard untradeable.",
+        ActionPolicy.SellOnly => "Sells tradeable items to a vendor, never discards.",
+        ActionPolicy.DiscardUntradeableSellTradeable => "Sells tradeable items to a vendor, discards the rest.",
+        ActionPolicy.DiscardAll => "Discards everything listed.",
+        ActionPolicy.MarketListTradeable => "Lists marketable items, sells the rest to a vendor, discards untradeable ones.",
         _ => "Each rule picks its own action.",
     };
 }
@@ -81,8 +81,8 @@ public static class PresetNameExtensions
 {
     public static string Label(this PresetName p) => p switch
     {
-        PresetName.MarketBoard => "Sell on marketboard",
-        PresetName.Vendor => "Sell on vendors",
+        PresetName.MarketBoard => "Sell on market board",
+        PresetName.Vendor => "Sell to vendors",
         PresetName.DiscardAll => "Discard all",
         _ => "Custom",
     };
