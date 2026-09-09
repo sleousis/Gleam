@@ -604,14 +604,9 @@ internal static class Ui
         var dl = ImGui.GetWindowDrawList();
         var r = h / 2;
 
-        // Track: a shallow groove, with a slow sweep along it so a run that is travelling still looks alive.
+        // Track: a still, shallow groove. Anything moving here would read as a second bar.
         dl.AddRectFilled(pos, pos + new Vector2(width, h), ImGui.GetColorU32(new Vector4(1, 1, 1, 0.07f)), r);
         dl.AddRect(pos, pos + new Vector2(width, h), ImGui.GetColorU32(new Vector4(0, 0, 0, 0.35f)), r);
-        dl.PushClipRect(pos, pos + new Vector2(width, h), true);
-        var driftW = width * 0.22f;
-        var driftX = pos.X - driftW + (width + driftW) * (float)((now * 0.28) % 1.0);
-        dl.AddRectFilled(new Vector2(driftX, pos.Y), new Vector2(driftX + driftW, pos.Y + h), ImGui.GetColorU32(new Vector4(1, 1, 1, 0.035f)), r);
-        dl.PopClipRect();
 
         if (fraction is { } target)
         {
@@ -642,15 +637,12 @@ internal static class Ui
 
                 dl.AddRectFilled(pos, end, ImGui.GetColorU32(Accent), r);
                 dl.PushClipRect(pos, end, true);
-                // Top sheen, a brighter cap at the leading edge, a drifting highlight, and the finish pulse.
-                dl.AddRectFilled(pos, new Vector2(end.X, pos.Y + h * 0.55f), ImGui.GetColorU32(new Vector4(1, 1, 1, 0.14f)), r, ImDrawFlags.RoundCornersTop);
-                dl.AddRectFilled(new Vector2(end.X - 3f * Scale, pos.Y), end, ImGui.GetColorU32(AccentSoft * new Vector4(1, 1, 1, 0.75f)), r);
-                var sweep = (float)((now * 0.55) % 1.6) / 1.6f;
-                var bandW = Math.Min(fillW, 70f * Scale);
-                var bandX = pos.X - bandW + (fillW + bandW) * Math.Min(1f, sweep * 1.25f);
-                dl.AddRectFilled(new Vector2(bandX, pos.Y), new Vector2(bandX + bandW, end.Y), ImGui.GetColorU32(new Vector4(1, 1, 1, 0.18f)), r);
+                // A still top sheen and a brighter cap at the leading edge. The only movement is the value
+                // itself, plus a brief lift each time a step finishes.
+                dl.AddRectFilled(pos, new Vector2(end.X, pos.Y + h * 0.55f), ImGui.GetColorU32(new Vector4(1, 1, 1, 0.12f)), r, ImDrawFlags.RoundCornersTop);
+                dl.AddRectFilled(new Vector2(end.X - 3f * Scale, pos.Y), end, ImGui.GetColorU32(AccentSoft * new Vector4(1, 1, 1, 0.7f)), r);
                 if (pulse > 0.01f)
-                    dl.AddRectFilled(pos, end, ImGui.GetColorU32(new Vector4(1, 1, 1, 0.22f * pulse * pulse)), r);
+                    dl.AddRectFilled(pos, end, ImGui.GetColorU32(new Vector4(1, 1, 1, 0.20f * pulse * pulse)), r);
                 dl.PopClipRect();
             }
         }
