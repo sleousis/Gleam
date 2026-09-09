@@ -339,6 +339,18 @@ internal static class Ui
         return clicked;
     }
 
+    /// <summary>Width reserved for the title and subtitle, so anything pinned after them never moves.</summary>
+    private const float TitleColumn = 300f;
+
+    /// <summary>Cuts text to fit, with an ellipsis, rather than letting it push its neighbours along.</summary>
+    private static string Clip(string text, float maxWidth)
+    {
+        if (string.IsNullOrEmpty(text) || ImGui.CalcTextSize(text, false, 0).X <= maxWidth) return text;
+        var cut = text;
+        while (cut.Length > 1 && ImGui.CalcTextSize(cut + "…", false, 0).X > maxWidth) cut = cut[..^1];
+        return cut + "…";
+    }
+
     public static void Header(ImTextureID logo, string title, string subtitle, float rightWidth = 0f, Action? right = null, string? rightNote = null, Action? afterTitle = null)
     {
         var size = 36f * Scale;
@@ -355,13 +367,17 @@ internal static class Ui
         ImGui.SetCursorPosY(start.Y + Math.Max(0, (size - block) / 2));
         using (ImRaii.Group())
         {
-            TextColored(AccentSoft, title);
-            Hint(subtitle);
+            // With something pinned beside it, the title block keeps to its column rather than pushing it along.
+            var room = afterTitle is null ? float.MaxValue : (TitleColumn - 12f) * Scale;
+            TextColored(AccentSoft, Clip(title, room));
+            Hint(Clip(subtitle, room));
         }
         if (afterTitle is not null)
         {
-            ImGui.SameLine(0, 22f * Scale);
-            ImGui.SetCursorPosY(start.Y + Math.Max(0, (size - ImGui.GetFrameHeight()) / 2));
+            // A fixed column, so switching page never moves the switch you just pressed.
+            ImGui.SameLine();
+            ImGui.SetCursorPos(new Vector2(start.X + (logo.IsNull ? 0f : size + 10f * Scale) + TitleColumn * Scale,
+                start.Y + Math.Max(0, (size - ImGui.GetFrameHeight()) / 2)));
             afterTitle();
         }
         if (right is not null)
@@ -581,15 +597,30 @@ internal static class Ui
     /// </summary>
     private static readonly Dictionary<string, (float Last, double At)> progressPulse = new();
 
-    public static void ProgressBar(string id, float? fraction, float width, string? label = null, string? caption = null)
+    /// <summary>
+    /// The run bar. One primary bar carries the whole run; a secondary one, indented and slimmer, carries
+    /// the part being worked on now, so the two read as a hierarchy rather than as two things racing.
+    ///
+    /// A bar with a number stays still: the value is the only thing that moves, plus a brief lift when a
+    /// step finishes. Movement belongs to the shape without a number, which is what says "working, nothing
+    /// to count yet" while the character is travelling.
+    /// </summary>
+    public static void ProgressBar(string id, float? fraction, float width, string? label = null, string? caption = null, bool primary = true)
     {
         var now = ImGui.GetTime();
-        var h = 11f * Scale;
+        var h = (primary ? 12f : 6f) * Scale;
+        if (!primary)
+        {
+            var indent = 16f * Scale;
+            ImGui.SetCursorPosX(ImGui.GetCursorPosX() + indent);
+            width -= indent;
+        }
+
         if (caption is not null)
         {
             // Caption on the left, count on the right, bar underneath.
             var lineStart = ImGui.GetCursorPos();
-            Hint(caption);
+            if (primary) Text(caption); else Hint(caption);
             if (!string.IsNullOrEmpty(label))
             {
                 var lw = ImGui.CalcTextSize(label, false, 0).X;
@@ -597,9 +628,10 @@ internal static class Ui
                 Hint(label);
             }
             ImGui.SetCursorPosX(lineStart.X);
-            ImGui.SetCursorPosY(ImGui.GetCursorPosY() + 2f * Scale);
+            ImGui.SetCursorPosY(ImGui.GetCursorPosY() + 3f * Scale);
             label = null;
         }
+
         var pos = ImGui.GetCursorScreenPos();
         var dl = ImGui.GetWindowDrawList();
         var r = h / 2;
@@ -627,28 +659,19 @@ internal static class Ui
             {
                 var fillW = Math.Max(h, width * shown);
                 var end = pos + new Vector2(fillW, h);
-
-                // A bloom that hugs the bar rather than a blob sitting proud of it.
-                for (var i = 0; i < 3; i++)
-                {
-                    var spread = h * (0.7f + i * 0.35f);
-                    dl.AddCircleFilled(new Vector2(end.X - r, pos.Y + r), spread, ImGui.GetColorU32(Accent * new Vector4(1, 1, 1, 0.055f - i * 0.015f)), 24);
-                }
-
-                dl.AddRectFilled(pos, end, ImGui.GetColorU32(Accent), r);
+                dl.AddRectFilled(pos, end, ImGui.GetColorU32(Accent * new Vector4(1, 1, 1, primary ? 1f : 0.6f)), r);
                 dl.PushClipRect(pos, end, true);
-                // A still top sheen and a brighter cap at the leading edge. The only movement is the value
-                // itself, plus a brief lift each time a step finishes.
                 dl.AddRectFilled(pos, new Vector2(end.X, pos.Y + h * 0.55f), ImGui.GetColorU32(new Vector4(1, 1, 1, 0.12f)), r, ImDrawFlags.RoundCornersTop);
-                dl.AddRectFilled(new Vector2(end.X - 3f * Scale, pos.Y), end, ImGui.GetColorU32(AccentSoft * new Vector4(1, 1, 1, 0.7f)), r);
+                if (fillW > h * 1.4f)
+                    dl.AddRectFilled(new Vector2(end.X - 3f * Scale, pos.Y), end, ImGui.GetColorU32(AccentSoft * new Vector4(1, 1, 1, 0.6f)), r);
                 if (pulse > 0.01f)
-                    dl.AddRectFilled(pos, end, ImGui.GetColorU32(new Vector4(1, 1, 1, 0.20f * pulse * pulse)), r);
+                    dl.AddRectFilled(pos, end, ImGui.GetColorU32(new Vector4(1, 1, 1, 0.15f * pulse * pulse)), r);
                 dl.PopClipRect();
             }
         }
         else
         {
-            // Indeterminate: a pill eases back and forth, leaving a short trail behind it.
+            // Nothing to count: a pill eases back and forth, leaving a short trail behind it.
             var t = (float)((now * 0.85) % 2.0);
             var phase = t < 1f ? t : 2f - t;
             var eased = phase < 0.5f ? 2f * phase * phase : 1f - MathF.Pow(-2f * phase + 2f, 2f) / 2f;
@@ -659,8 +682,8 @@ internal static class Ui
             var trail = back ? new Vector2(x - pillW * 0.55f, pos.Y) : new Vector2(x + pillW, pos.Y);
             var trailEnd = back ? new Vector2(x, pos.Y + h) : new Vector2(x + pillW * 1.55f, pos.Y + h);
             dl.AddRectFilled(trail, trailEnd, ImGui.GetColorU32(Accent * new Vector4(1, 1, 1, 0.18f)), r);
-            dl.AddRectFilled(new Vector2(x, pos.Y), new Vector2(x + pillW, pos.Y + h), ImGui.GetColorU32(Accent * new Vector4(1, 1, 1, 0.8f)), r);
-            dl.AddRectFilled(new Vector2(x, pos.Y), new Vector2(x + pillW, pos.Y + h * 0.55f), ImGui.GetColorU32(new Vector4(1, 1, 1, 0.14f)), r, ImDrawFlags.RoundCornersTop);
+            dl.AddRectFilled(new Vector2(x, pos.Y), new Vector2(x + pillW, pos.Y + h), ImGui.GetColorU32(Accent * new Vector4(1, 1, 1, 0.85f)), r);
+            dl.AddRectFilled(new Vector2(x, pos.Y), new Vector2(x + pillW, pos.Y + h * 0.55f), ImGui.GetColorU32(new Vector4(1, 1, 1, 0.14f)), r);
             dl.PopClipRect();
         }
 
@@ -674,7 +697,7 @@ internal static class Ui
 
     /// <summary>A quiet "n of m · 42%" for the bar; empty while there is nothing to count.</summary>
     public static string ProgressLabel(int done, int total) =>
-        total <= 0 ? string.Empty : $"{done} of {total} · {(int)Math.Round(100.0 * done / total)}%";
+        total <= 0 ? string.Empty : $"{done} of {total}";
 
     /// <summary>The top of a running screen: the logo breathing softly, the title, and the step under way.</summary>
     public static void RunningHeader(ImTextureID logo, string title, string? status)
