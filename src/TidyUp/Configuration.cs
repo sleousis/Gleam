@@ -74,6 +74,9 @@ public sealed class AutomationSettings
 
     public bool Enabled { get; set; } = false;
 
+    /// <summary>After AutoRetainer collects a retainer's ventures, discard the junk that landed in the bags.</summary>
+    public bool CleanAfterVentures { get; set; } = false;
+
     /// <summary>Travel to an inn with Lifestream when retainers, sells, or the dresser are involved.</summary>
     public bool TravelToInn { get; set; } = true;
 
@@ -179,6 +182,9 @@ public sealed class Configuration : IPluginConfiguration
 
     /// <summary>Run the game's own sort on each container that was cleaned, once the run is over.</summary>
     public bool SortAfterRun { get; set; } = true;
+
+    /// <summary>Largest stack per market listing; 0 lists whole stacks.</summary>
+    public int MarketListStackSize { get; set; }
 
     public bool UseUniversalis { get; set; } = true;
     public bool UseAllaganTools { get; set; } = true;

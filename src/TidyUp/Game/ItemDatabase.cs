@@ -82,7 +82,8 @@ public sealed class ItemDatabase
             marketable,
             VendorBuyable.Contains(itemId),
             row.ItemAction.RowId != 0,
-            SlotOf(row.EquipSlotCategory.ValueNullable));
+            SlotOf(row.EquipSlotCategory.ValueNullable),
+            row.MateriaSlotCount);
     }
 
     /// <summary>Which body slot an EquipSlotCategory row allows. Two-handed weapons are main-hand; rings share one page.</summary>

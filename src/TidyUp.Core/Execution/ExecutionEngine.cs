@@ -16,6 +16,9 @@ public sealed class ExecutionOptions
 
     /// <summary>What to do with a slotted item whose materia could not be retrieved.</summary>
     public MateriaFailurePolicy OnMateriaFailure { get; init; } = MateriaFailurePolicy.LeaveItem;
+
+    /// <summary>Largest stack put up in one market listing; 0 lists the whole stack at once.</summary>
+    public int MarketStackSize { get; init; }
 }
 
 public enum MateriaFailurePolicy
@@ -83,7 +86,12 @@ public sealed class ExecutionEngine
                 if (result.Outcome == ActionOutcome.Done)
                     await log.AppendAsync(RunLogEntry.From(action, identity, result.Outcome)).ConfigureAwait(false);
                 if (result.Outcome == ActionOutcome.Moved && result.Followup is { } follow)
+                {
                     report.Moved.Add(follow);
+                    // A partly listed stack: what did go up is history, the rest carries on as a smaller action.
+                    if (!follow.BroughtHome && follow.Quantity < action.Quantity)
+                        await log.AppendAsync(RunLogEntry.From(action with { Quantity = action.Quantity - follow.Quantity }, identity, ActionOutcome.Done)).ConfigureAwait(false);
+                }
                 return new StepOutcome(ToStep(result.Outcome), result.Message);
             },
             Park = (action, reason) => Park(report, action, reason),
@@ -213,15 +221,15 @@ public sealed class ExecutionEngine
         if (action.Action == ActionKind.MarketList)
         {
             if (action.UnitPrice <= 0)
-                return new ActionResult(action, ActionOutcome.Pending, "no market price is known for it; rescan with market prices on");
+                return new ActionResult(action, ActionOutcome.Pending, "no market price is known for it; refresh with market prices on");
             if (game.FreeMarketSlots() <= 0)
                 return new ActionResult(action, ActionOutcome.Pending, "this retainer's market slots are full; another retainer can take it");
+            return await ListAsync(action, target, ct).ConfigureAwait(false);
         }
 
         var success = action.Action switch
         {
             ActionKind.Discard => await game.DiscardAsync(target, action.ItemId, ct).ConfigureAwait(false),
-            ActionKind.MarketList => await game.MarketListAsync(target, action.ItemId, action.UnitPrice, action.Quantity, ct).ConfigureAwait(false),
             ActionKind.VendorSell => await game.VendorSellAsync(target, action.ItemId, ct).ConfigureAwait(false),
             ActionKind.ExpertDelivery => await game.ExpertDeliveryAsync(target, action.ItemId, ct).ConfigureAwait(false),
             ActionKind.Desynth => await game.DesynthAsync(target, action.ItemId, ct).ConfigureAwait(false),
@@ -232,6 +240,34 @@ public sealed class ExecutionEngine
             ? new ActionResult(action, ActionOutcome.Done, action.Action.Label())
             : new ActionResult(action, ActionOutcome.Failed, $"could not {action.Action.Verb()} it{(game.LastFailure is { } reason ? $": {reason}" : string.Empty)}");
     }
+
+    /// <summary>Lists the stack, in pieces when a stack size is set, until it is gone or the retainer runs out of market slots.</summary>
+    private async Task<ActionResult> ListAsync(QueuedAction action, SlotRef target, CancellationToken ct)
+    {
+        var per = options.MarketStackSize > 0 ? Math.Min(options.MarketStackSize, action.Quantity) : action.Quantity;
+        var remaining = action.Quantity;
+        var listings = 0;
+        while (remaining > 0)
+        {
+            if (game.FreeMarketSlots() <= 0) break;
+            var qty = Math.Min(per, remaining);
+            if (!await game.MarketListAsync(target, action.ItemId, action.UnitPrice, qty, ct).ConfigureAwait(false))
+            {
+                var why = game.LastFailure is { } r ? $": {r}" : string.Empty;
+                if (listings == 0) return new ActionResult(action, ActionOutcome.Failed, $"could not list it on the market board{why}");
+                return Partial(action, target, remaining, $"listed {action.Quantity - remaining} of {action.Quantity}; the rest could not be listed{why}");
+            }
+            remaining -= qty;
+            listings++;
+            if (remaining > 0) await delay.Wait(options.RateLimit, ct).ConfigureAwait(false);
+        }
+        if (remaining == 0)
+            return new ActionResult(action, ActionOutcome.Done, listings > 1 ? $"{ActionKind.MarketList.Label()} · {listings} listings" : ActionKind.MarketList.Label());
+        return Partial(action, target, remaining, $"listed {action.Quantity - remaining} of {action.Quantity}; this retainer's market slots are full");
+    }
+
+    private static ActionResult Partial(QueuedAction action, SlotRef target, int remaining, string message) =>
+        new(action, ActionOutcome.Moved, message) { Followup = action with { Slot = target, Quantity = remaining } };
 
     private static void Park(RunReport report, QueuedAction action, string reason)
     {

@@ -25,6 +25,9 @@ public sealed class Profile
     public bool ShowDtrEntry { get; set; } = true;
     public int FullnessNudgePercent { get; set; } = 90;
 
+    /// <summary>Rules leave stacks at least this big alone; the player can still tick them by hand. 0 turns the guard off.</summary>
+    public int LargeStackGuard { get; set; } = 200;
+
     public Profile Clone()
     {
         var c = (Profile)MemberwiseClone();

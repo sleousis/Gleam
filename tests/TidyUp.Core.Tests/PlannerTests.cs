@@ -14,8 +14,10 @@ public class PlannerTests
         ItemList? protect = null,
         ItemList? always = null,
         IReadOnlySet<string>? skips = null,
-        Func<ContainerKind, ulong, bool>? available = null) => new()
+        Func<ContainerKind, ulong, bool>? available = null,
+        bool includeUnproposed = false) => new()
     {
+        IncludeUnproposed = includeUnproposed,
         Context = ctx ?? Context(),
         Profile = profile ?? MakeProfile(),
         InfoLookup = Lookup,
@@ -115,6 +117,23 @@ public class PlannerTests
         var plan = new RunPlanner().Build(items, Inputs(profile: profile));
         var row = Assert.Single(plan.AllRows);
         Assert.Equal(0xCAFEu, row.Item.Slot.OwnerId);
+    }
+
+    [Fact]
+    public void Large_stacks_are_left_for_hand_picking_unless_the_guard_is_off()
+    {
+        var hoard = new[] { ScannedItem.Simple(Inv(0), 1, 250) };   // Allagan Bronze Pieces, vendor junk
+
+        var guarded = new RunPlanner().Build(hoard, Inputs(profile: MakeProfile(), includeUnproposed: true));
+        var row = Assert.Single(guarded.AllRows);
+        Assert.Equal("manual", row.Proposal.RuleId);
+        Assert.Contains(row.Proposal.Warnings, w => w.StartsWith("Stack of 250"));
+        Assert.False(row.Checked);
+
+        var open = MakeProfile();
+        open.LargeStackGuard = 0;
+        var proposed = new RunPlanner().Build(hoard, Inputs(profile: open, includeUnproposed: true));
+        Assert.NotEqual("manual", Assert.Single(proposed.AllRows).Proposal.RuleId);
     }
 
     [Fact]

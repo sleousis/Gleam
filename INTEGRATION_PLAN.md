@@ -266,3 +266,13 @@ Steps 1–5 are pure refactors and infrastructure; nothing user-visible changes 
 - Live capacity constants for premium saddlebag pages (4100/4101) depend on the account; capacity must be read live when the container is open and the preview must say when it is estimating from a cache.
 - Allagan Tools cache can be stale (items moved by hand since). Existing identity re-validation covers execution; the preview should show a "last seen" hint for cached containers.
 - Relay staging shares bag space with the discard pilot's "brought home" follow-ups; the two features must not run concurrently (single `IsRunning` gate in `RunCoordinator`, extended to the organizer).
+
+### 2.9 Borrowed from other plugins (2026-09-09) — to verify in game
+
+1. **Bag highlighting** (`BagHighlighter`): with the review open, ticked items glow gold in Inventory / InventoryLarge / InventoryExpansion, the retainer inventory and the saddlebag; with the organizer preview open, items to move glow blue. Check the tint follows the game's sort order (display position, not raw slot), survives tab switches, and clears when the window closes. Not yet covered: the armoury chest.
+2. **Keep N in the bags** on an organizer rule: whole stacks only; smallest stacks stay first; one oversized stack stays.
+3. **Export / Import** in the organizer plan bar: text starts with `TIDYUP1:`; retainers the importer does not own become "any retainer".
+4. **List in stacks of N** (Settings, market board preset): each piece is one listing; when a retainer's slots run out the remainder is reported as "partly listed" and waits.
+5. **Leave stacks of N or more alone** (Settings → More → What counts as junk, default 200): such rows show as hand-pick with the reason; 0 turns it off.
+6. **Protected items**: Ultimate tokens, the special earrings, Ceruleum Tank and Magitek Repair Materials (curated.json) plus Ultimate weapons recognised by shape are never listed.
+7. **After ventures** (Settings): with AutoRetainer, after each retainer's ventures Tidy Up discards default-ticked bag rows and prints one chat line; it always hands the turn back.

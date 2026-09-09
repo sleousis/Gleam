@@ -5,6 +5,7 @@ using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using TidyUp.Core.Integrations;
 using TidyUp.Core.Logging;
+using TidyUp.Core.Model;
 using TidyUp.Game;
 using TidyUp.Integrations;
 using TidyUp.Services;
@@ -53,12 +54,15 @@ public sealed class Plugin : IDalamudPlugin
     private readonly RunCoordinator coordinator;
     private readonly AllaganToolsSource allagan;
     private readonly Automation.AutoPilot pilot;
+    private readonly AutoRetainerIpc autoRetainer;
+    private readonly VentureHook ventures;
+    private readonly BagHighlighter highlighter;
 
     public Plugin(
         IDalamudPluginInterface pi, ICommandManager commands, IClientState clientState, IPluginLog log,
         IFramework framework, IDataManager data, IPlayerState player, IGameInventory inventory, IAddonLifecycle addonLifecycle,
         IContextMenu contextMenuService, IChatGui chat, IToastGui toast, IDtrBar dtrBar, IDutyState dutyState,
-        ITextureProvider textures, IReliableFileStorage storage, IGamepadState gamepad, ICondition condition, IObjectTable objectTable)
+        ITextureProvider textures, IReliableFileStorage storage, IGamepadState gamepad, ICondition condition, IObjectTable objectTable, IGameGui gameGui)
     {
         this.pi = pi;
         this.commands = commands;
@@ -115,7 +119,25 @@ public sealed class Plugin : IDalamudPlugin
         var nav = new VnavmeshIpc(pi);
         var travel = new LifestreamIpc(pi);
         pilot = new Automation.AutoPilot(framework, clientState, condition, objectTable, data, chat, log, config, coordinator, nav, travel, db);
-        coordinator.IsPilotRunning = () => pilot.IsRunning || organizer.IsRunning;
+        autoRetainer = new AutoRetainerIpc(pi);
+        ventures = new VentureHook(autoRetainer, coordinator, config, chat, log);
+        settingsWindow.AutoRetainer = autoRetainer;
+        coordinator.IsPilotRunning = () => pilot.IsRunning || organizer.IsRunning || ventures.IsRunning;
+
+        // Tint the game's own bag windows: gold for what the review will clean, blue for what the organizer will move.
+        highlighter = new BagHighlighter(framework, gameGui, log)
+        {
+            Source = () =>
+            {
+                var tints = new Dictionary<SlotRef, System.Numerics.Vector4>();
+                if (organizerWindow.IsOpen && organizer.Current is { } solve)
+                    foreach (var m in solve.Moves) tints[m.Item.Slot] = BagHighlighter.MoveTint;
+                if (confirmWindow.IsOpen && coordinator.CurrentPlan is { } plan)
+                    foreach (var row in plan.AllRows)
+                        if (row.Checked && row.IsExecutable) tints[row.Item.Slot] = BagHighlighter.CleanTint;
+                return tints;
+            },
+        };
         organizer.IsPilotRunning = () => pilot.IsRunning;
         pilot.Organizer = organizer;
         organizerWindow.Pilot = pilot;
@@ -243,6 +265,9 @@ public sealed class Plugin : IDalamudPlugin
         config.Saved -= ApplyProfileToServices;
         commands.RemoveHandler(Command);
         windows.RemoveAllWindows();
+        highlighter.Dispose();
+        ventures.Dispose();
+        autoRetainer.Dispose();
         pilot.Dispose();
         coordinator.Dispose();
         organizer.Dispose();

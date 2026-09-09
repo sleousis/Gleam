@@ -31,6 +31,37 @@ public class OrganizerSolverTests
     }
 
     [Fact]
+    public void Keep_in_bags_holds_back_whole_stacks_up_to_the_number_and_moves_the_rest()
+    {
+        var rule = Rule("widgets away", new OrganizerPredicate { ItemIds = [15] }, Destination.Saddlebag);
+        rule.KeepInBags = 40;
+        var plan = Plan(rule);
+        var items = new[]
+        {
+            ScannedItem.Simple(Inv(0), 15, 99),
+            ScannedItem.Simple(Inv(1), 15, 30),
+            ScannedItem.Simple(Inv(2), 15, 5),
+            ScannedItem.Simple(Ret(0, 0xA), 15, 50),   // already elsewhere: untouched by the keep count
+        };
+
+        var desired = DesiredStateBuilder.Build(items, plan, Context(), Lookup, NoNeverTouch, new[] { 0xAul });
+        var byslot = desired.Placements.ToDictionary(p => p.Item.Slot);
+        Assert.False(byslot[Inv(2)].WantsMove);   // 5 kept
+        Assert.False(byslot[Inv(1)].WantsMove);   // 5 + 30 = 35 ≤ 40 kept
+        Assert.True(byslot[Inv(0)].WantsMove);    // 99 would overshoot: goes
+        Assert.Equal(DestinationKind.Saddlebag, byslot[Ret(0, 0xA)].Destination.Kind);
+    }
+
+    [Fact]
+    public void Keep_in_bags_never_splits_so_a_single_oversized_stack_stays()
+    {
+        var rule = Rule("widgets away", new OrganizerPredicate { ItemIds = [15] }, Destination.Saddlebag);
+        rule.KeepInBags = 10;
+        var desired = DesiredStateBuilder.Build([ScannedItem.Simple(Inv(0), 15, 99)], Plan(rule), Context(), Lookup, NoNeverTouch, []);
+        Assert.False(desired.Placements.Single().WantsMove);
+    }
+
+    [Fact]
     public void First_matching_rule_wins_and_unmatched_items_follow_the_fallback()
     {
         // item 15: stackable widget (Other), item 12: potion (Consumables), item 6: coat (Gear)

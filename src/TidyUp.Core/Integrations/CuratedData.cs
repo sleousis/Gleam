@@ -15,6 +15,9 @@ public sealed class CuratedData
     /// <summary>English names of currencies that can no longer be earned (scrips; tomestones are derived from game data).</summary>
     [JsonPropertyName("retiredCurrencyNames")] public List<string> RetiredCurrencyNames { get; set; } = new();
 
+    /// <summary>Items that can never be regained once lost (Ultimate tokens, the special earrings...). Never listed, not even for hand-picking.</summary>
+    [JsonPropertyName("protectedItemIds")] public List<uint> ProtectedItemIds { get; set; } = new();
+
     public static CuratedData Empty => new();
 
     public static CuratedData Parse(string json)

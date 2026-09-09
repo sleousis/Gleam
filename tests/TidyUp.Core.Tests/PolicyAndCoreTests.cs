@@ -246,6 +246,24 @@ public class HardBlockRegisteredSpareTests
     }
 
     [Fact]
+    public void Curated_protected_ids_and_ultimate_weapons_are_immovable()
+    {
+        var token = ItemInfo.Test(21197, "UCOB token", vendor: 0, marketable: false, untradable: true, category: "Miscellany");
+        var protectedCtx = new ItemContext { CharacterId = 1, ProtectedItemIds = new HashSet<uint> { 21197 }, Registered = new Dictionary<uint, bool> { [21197] = true } };
+        var reason = HardBlocks.Check(ScannedItem.Simple(Inv(0), 21197, 1), token, protectedCtx);
+        Assert.Equal(HardBlockReason.Protected, reason);
+        Assert.True(HardBlocks.IsImmovable(reason));
+
+        var ultimate = new ItemInfo(40000, "Ultimate Blade", 0, 0, 0, true, true, false, false, 3, 90, 665, 0, "Two-handed Sword", 1, true, false, 1, false, false, false, false, EquipSlot.MainHand, 3);
+        Assert.True(HardBlocks.IsUltimateWeapon(ultimate));
+        Assert.Equal(HardBlockReason.Protected, HardBlocks.Check(ScannedItem.Simple(Arm(0), 40000, 1), ultimate, Context()));
+
+        var bozjan = ultimate with { ItemId = 33200 };
+        Assert.False(HardBlocks.IsUltimateWeapon(bozjan));
+        Assert.Equal(HardBlockReason.UniqueUntradeable, HardBlocks.Check(ScannedItem.Simple(Arm(0), 33200, 1), bozjan, Context()));
+    }
+
+    [Fact]
     public void Registration_never_overrides_the_games_own_refusal()
     {
         var reason = HardBlocks.Check(ScannedItem.Simple(Inv(0), 10, 1), Items[10], Context(registered: new Dictionary<uint, bool> { [10] = true }));

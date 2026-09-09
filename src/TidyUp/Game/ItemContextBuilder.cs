@@ -52,6 +52,7 @@ public sealed unsafe class ItemContextBuilder
             MaxGearsetItemLevel = maxIlvl,
             RecipesUsing = db.RecipesUsing,
             SeasonalItemIds = new HashSet<uint>(db.Curated.SeasonalItemIds),
+            ProtectedItemIds = new HashSet<uint>(db.Curated.ProtectedItemIds),
             RetiredCurrencyGearIds = db.RetiredCurrencyGear(),
             MarketPrices = market ?? new Dictionary<uint, MarketPrice>(),
         };

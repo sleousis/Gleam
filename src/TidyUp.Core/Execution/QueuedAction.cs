@@ -83,7 +83,9 @@ public sealed class RunReport
         var parts = new List<string> { $"{Done} cleaned" };
         if (Skipped > 0) parts.Add($"{Skipped} had moved and {(Skipped == 1 ? "was" : "were")} left alone");
         if (Failed > 0) parts.Add($"{Failed} failed");
-        if (Moved.Count > 0) parts.Add($"{Moved.Count} brought back to your bags");
+        var home = Moved.Count(m => m.BroughtHome);
+        if (home > 0) parts.Add($"{home} brought back to your bags");
+        if (Moved.Count - home > 0) parts.Add($"{Moved.Count - home} partly listed");
         if (Pending.Count > 0) parts.Add($"{Pending.Count} waiting");
         return string.Join(", ", parts);
     }

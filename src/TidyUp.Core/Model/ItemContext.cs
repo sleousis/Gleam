@@ -39,6 +39,9 @@ public sealed class ItemContext
     public Func<uint, IReadOnlyList<RecipeUse>> RecipesUsing { get; init; } = _ => Array.Empty<RecipeUse>();
 
     public IReadOnlySet<uint> SeasonalItemIds { get; init; } = new HashSet<uint>();
+
+    /// <summary>Curated ids that can never be regained once lost; they are never listed.</summary>
+    public IReadOnlySet<uint> ProtectedItemIds { get; init; } = new HashSet<uint>();
     public IReadOnlySet<uint> RetiredCurrencyGearIds { get; init; } = new HashSet<uint>();
 
     public IReadOnlyDictionary<uint, MarketPrice> MarketPrices { get; init; } = new Dictionary<uint, MarketPrice>();

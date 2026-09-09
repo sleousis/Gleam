@@ -111,6 +111,7 @@ public sealed class GameActions : IGameActions
         LastFailure = null;
         if (unitPrice <= 0) { LastFailure = "no market price known"; return false; }
         if (!AddonDriver.IsAddonVisible("RetainerSellList")) { LastFailure = "the retainer's sell list is not open"; return false; }
+        var before = scanner.ReadSlot(slot)?.Quantity ?? quantity;
 
         var opened = await context.InvokeAsync(slot, config.Callbacks.PutUpForSaleLabel, ct).ConfigureAwait(false);
         if (!opened) { LastFailure = context.LastFailure; return false; }
@@ -133,7 +134,7 @@ public sealed class GameActions : IGameActions
         while (DateTime.UtcNow < deadline)
         {
             var live = scanner.ReadSlot(slot);
-            if (live is null || live.ItemId != itemId || live.Quantity < quantity) return true;
+            if (live is null || live.ItemId != itemId || live.Quantity <= before - quantity) return true;
             await Task.Delay(100, ct).ConfigureAwait(false);
         }
 
