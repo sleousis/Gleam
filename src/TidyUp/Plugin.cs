@@ -151,11 +151,15 @@ public sealed class Plugin : IDalamudPlugin
         watcher.ContainerOpened += kind => _ = organizer.OnContainerOpenedAsync(kind);
         watcher.ActionWindowOpened += coordinator.OnActionWindowOpened;
 
-        contextMenu = new ContextMenuIntegration(contextMenuService, player, chat, config, db, Save);
+        contextMenu = new ContextMenuIntegration(contextMenuService, player, chat, config, db, Save)
+        {
+            OpenWindow = () => confirmWindow.Show(confirmWindow.HomePage),
+        };
 
-        dtr = new DtrEntry(dtrBar, toast, framework, () => confirmWindow.Show(Ui.AppMode.Clean))
+        dtr = new DtrEntry(dtrBar, toast, framework, () => confirmWindow.Show(confirmWindow.HomePage))
         {
             CleanableCount = () => coordinator.LastCleanableCount,
+            OpenOrganize = () => confirmWindow.Show(Ui.AppMode.Organize),
         };
         dutyNudge = new DutyNudge(dutyState, framework, coordinator.CountCleanableAsync,
             count => toast.ShowNormal($"Gleam: {count} item{(count == 1 ? "" : "s")} could be cleaned. /gleam to review."));

@@ -579,10 +579,12 @@ internal static class Ui
     /// and a sheen drifting across; without one (nothing to count yet, travelling) a light pill sweeps the track.
     /// The label sits under the bar.
     /// </summary>
+    private static readonly Dictionary<string, (float Last, double At)> progressPulse = new();
+
     public static void ProgressBar(string id, float? fraction, float width, string? label = null, string? caption = null)
     {
         var now = ImGui.GetTime();
-        var h = 10f * Scale;
+        var h = 11f * Scale;
         if (caption is not null)
         {
             // Caption on the left, count on the right, bar underneath.
@@ -602,9 +604,14 @@ internal static class Ui
         var dl = ImGui.GetWindowDrawList();
         var r = h / 2;
 
-        // Track: a shallow groove.
+        // Track: a shallow groove, with a slow sweep along it so a run that is travelling still looks alive.
         dl.AddRectFilled(pos, pos + new Vector2(width, h), ImGui.GetColorU32(new Vector4(1, 1, 1, 0.07f)), r);
         dl.AddRect(pos, pos + new Vector2(width, h), ImGui.GetColorU32(new Vector4(0, 0, 0, 0.35f)), r);
+        dl.PushClipRect(pos, pos + new Vector2(width, h), true);
+        var driftW = width * 0.22f;
+        var driftX = pos.X - driftW + (width + driftW) * (float)((now * 0.28) % 1.0);
+        dl.AddRectFilled(new Vector2(driftX, pos.Y), new Vector2(driftX + driftW, pos.Y + h), ImGui.GetColorU32(new Vector4(1, 1, 1, 0.035f)), r);
+        dl.PopClipRect();
 
         if (fraction is { } target)
         {
@@ -615,33 +622,54 @@ internal static class Ui
             if (Math.Abs(target - shown) < 0.0015f) shown = target;
             progressAnim[id] = (shown, now);
 
+            // A step finishing gives the bar a brief lift, so progress is felt as well as read.
+            var (lastSeen, pulseAt) = progressPulse.TryGetValue(id, out var ps) ? ps : (target, 0d);
+            if (target > lastSeen + 0.0005f) pulseAt = now;
+            progressPulse[id] = (target, pulseAt);
+            var pulse = (float)Math.Clamp(1 - (now - pulseAt) / 0.45, 0, 1);
+
             if (shown > 0f)
             {
                 var fillW = Math.Max(h, width * shown);
                 var end = pos + new Vector2(fillW, h);
-                // Glow behind the leading edge, then the fill, then a top sheen and a drifting highlight.
-                dl.AddCircleFilled(new Vector2(end.X - r, pos.Y + r), h * 1.6f, ImGui.GetColorU32(Accent * new Vector4(1, 1, 1, 0.16f)));
+
+                // A bloom that hugs the bar rather than a blob sitting proud of it.
+                for (var i = 0; i < 3; i++)
+                {
+                    var spread = h * (0.7f + i * 0.35f);
+                    dl.AddCircleFilled(new Vector2(end.X - r, pos.Y + r), spread, ImGui.GetColorU32(Accent * new Vector4(1, 1, 1, 0.055f - i * 0.015f)), 24);
+                }
+
                 dl.AddRectFilled(pos, end, ImGui.GetColorU32(Accent), r);
-                dl.AddRectFilled(pos, new Vector2(end.X, pos.Y + h * 0.5f), ImGui.GetColorU32(new Vector4(1, 1, 1, 0.16f)), r, ImDrawFlags.RoundCornersTop);
-                var sweep = (float)((now * 0.55) % 1.6) / 1.6f;            // one drift every 1.6 s, then a pause
+                dl.PushClipRect(pos, end, true);
+                // Top sheen, a brighter cap at the leading edge, a drifting highlight, and the finish pulse.
+                dl.AddRectFilled(pos, new Vector2(end.X, pos.Y + h * 0.55f), ImGui.GetColorU32(new Vector4(1, 1, 1, 0.14f)), r, ImDrawFlags.RoundCornersTop);
+                dl.AddRectFilled(new Vector2(end.X - 3f * Scale, pos.Y), end, ImGui.GetColorU32(AccentSoft * new Vector4(1, 1, 1, 0.75f)), r);
+                var sweep = (float)((now * 0.55) % 1.6) / 1.6f;
                 var bandW = Math.Min(fillW, 70f * Scale);
                 var bandX = pos.X - bandW + (fillW + bandW) * Math.Min(1f, sweep * 1.25f);
-                dl.PushClipRect(pos, end, true);
-                dl.AddRectFilled(new Vector2(bandX, pos.Y), new Vector2(bandX + bandW, end.Y), ImGui.GetColorU32(new Vector4(1, 1, 1, 0.22f)), r);
+                dl.AddRectFilled(new Vector2(bandX, pos.Y), new Vector2(bandX + bandW, end.Y), ImGui.GetColorU32(new Vector4(1, 1, 1, 0.18f)), r);
+                if (pulse > 0.01f)
+                    dl.AddRectFilled(pos, end, ImGui.GetColorU32(new Vector4(1, 1, 1, 0.22f * pulse * pulse)), r);
                 dl.PopClipRect();
             }
         }
         else
         {
-            // Indeterminate: a pill eases back and forth along the track.
-            var t = (float)((now * 0.9) % 2.0);
+            // Indeterminate: a pill eases back and forth, leaving a short trail behind it.
+            var t = (float)((now * 0.85) % 2.0);
             var phase = t < 1f ? t : 2f - t;
             var eased = phase < 0.5f ? 2f * phase * phase : 1f - MathF.Pow(-2f * phase + 2f, 2f) / 2f;
-            var pillW = width * 0.28f;
+            var pillW = width * 0.26f;
             var x = pos.X + (width - pillW) * eased;
-            dl.AddCircleFilled(new Vector2(x + pillW / 2, pos.Y + r), h * 1.4f, ImGui.GetColorU32(Accent * new Vector4(1, 1, 1, 0.10f)));
-            dl.AddRectFilled(new Vector2(x, pos.Y), new Vector2(x + pillW, pos.Y + h), ImGui.GetColorU32(Accent * new Vector4(1, 1, 1, 0.75f)), r);
-            dl.AddRectFilled(new Vector2(x, pos.Y), new Vector2(x + pillW, pos.Y + h * 0.5f), ImGui.GetColorU32(new Vector4(1, 1, 1, 0.14f)), r, ImDrawFlags.RoundCornersTop);
+            dl.PushClipRect(pos, pos + new Vector2(width, h), true);
+            var back = t < 1f;
+            var trail = back ? new Vector2(x - pillW * 0.55f, pos.Y) : new Vector2(x + pillW, pos.Y);
+            var trailEnd = back ? new Vector2(x, pos.Y + h) : new Vector2(x + pillW * 1.55f, pos.Y + h);
+            dl.AddRectFilled(trail, trailEnd, ImGui.GetColorU32(Accent * new Vector4(1, 1, 1, 0.18f)), r);
+            dl.AddRectFilled(new Vector2(x, pos.Y), new Vector2(x + pillW, pos.Y + h), ImGui.GetColorU32(Accent * new Vector4(1, 1, 1, 0.8f)), r);
+            dl.AddRectFilled(new Vector2(x, pos.Y), new Vector2(x + pillW, pos.Y + h * 0.55f), ImGui.GetColorU32(new Vector4(1, 1, 1, 0.14f)), r, ImDrawFlags.RoundCornersTop);
+            dl.PopClipRect();
         }
 
         ImGui.Dummy(new Vector2(width, h));
@@ -664,13 +692,21 @@ internal static class Ui
         ImGui.SetCursorPosY(ImGui.GetCursorPosY() + Math.Max(0, avail.Y * 0.14f));
         if (!logo.IsNull)
         {
-            var pulse = 0.55f + 0.20f * (0.5f + 0.5f * MathF.Sin((float)ImGui.GetTime() * 2.2f));
+            var t = (float)ImGui.GetTime();
+            var breathe = 0.5f + 0.5f * MathF.Sin(t * 1.9f);
             ImGui.SetCursorPosX(Math.Max(0, (ImGui.GetWindowWidth() - size) / 2));
             var pos = ImGui.GetCursorScreenPos();
             ImGui.Dummy(new Vector2(size, size));
             var dl = ImGui.GetWindowDrawList();
-            dl.AddCircleFilled(pos + new Vector2(size / 2, size / 2), size * 0.72f, ImGui.GetColorU32(Accent * new Vector4(1, 1, 1, 0.06f + 0.05f * (pulse - 0.55f) / 0.20f)));
-            dl.AddImageRounded(logo, pos, pos + new Vector2(size, size), Vector2.Zero, Vector2.One, ImGui.GetColorU32(new Vector4(1, 1, 1, pulse)), 14f * Scale);
+            var mid = pos + new Vector2(size / 2, size / 2);
+            // Four rings of falling alpha read as a soft glow; one flat disc reads as a grey plate.
+            for (var i = 0; i < 4; i++)
+            {
+                var spread = size * (0.52f + i * 0.11f) + breathe * 2.5f * Scale;
+                dl.AddCircleFilled(mid, spread, ImGui.GetColorU32(Accent * new Vector4(1, 1, 1, 0.05f - i * 0.011f)), 48);
+            }
+            dl.AddImageRounded(logo, pos, pos + new Vector2(size, size), Vector2.Zero, Vector2.One,
+                ImGui.GetColorU32(new Vector4(1, 1, 1, (0.82f + 0.12f * breathe) * ImGui.GetStyle().Alpha)), 16f * Scale);
             Gap(0.6f);
         }
         Centered(title);
