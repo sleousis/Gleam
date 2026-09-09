@@ -68,18 +68,44 @@ public sealed class OrganizerPanel
     private OrganizerPlan? Plan => config.Organizer.Active;
     private bool Simple => !config.AdvancedMode;
 
-    public void Draw()
+    /// <summary>
+    /// The simple screen works on a layout of its own, made from the questions. Whatever layout was in use
+    /// is remembered and handed back the moment advanced options come on again.
+    /// </summary>
+    private OrganizerPlan BorrowSimpleLayout()
     {
-        var plan = Plan;
-        if (Simple && plan is null)
+        var mine = config.Organizer.Plans.FirstOrDefault(p => p.Simple);
+        if (mine is null)
         {
-            // The simple layer has exactly one place things go; make it without asking.
-            plan = QuestionsLayout();
-            config.Organizer.Plans.Add(plan);
-            config.Organizer.ActivePlanId = plan.Id;
+            mine = QuestionsLayout();
+            mine.Simple = true;
+            config.Organizer.Plans.Add(mine);
             dirty = true;
         }
-        if (Simple) { DrawSimple(plan!); return; }
+        if (config.Organizer.ActivePlanId != mine.Id)
+        {
+            if (config.Organizer.Active is { Simple: false } theirs) config.Organizer.AdvancedPlanId = theirs.Id;
+            config.Organizer.ActivePlanId = mine.Id;
+            dirty = true;
+        }
+        return mine;
+    }
+
+    private void ReturnAdvancedLayout()
+    {
+        if (config.Organizer.Active is not { Simple: true }) return;
+        var back = config.Organizer.Plans.FirstOrDefault(p => p.Id == config.Organizer.AdvancedPlanId && !p.Simple)
+                   ?? config.Organizer.Plans.FirstOrDefault(p => !p.Simple);
+        if (back is null) return;
+        config.Organizer.ActivePlanId = back.Id;
+        dirty = true;
+    }
+
+    public void Draw()
+    {
+        if (Simple) { DrawSimple(BorrowSimpleLayout()); return; }
+        ReturnAdvancedLayout();
+        var plan = Plan;
 
         var enabled = plan?.Rules.Count(r => r.Enabled) ?? 0;
         var subtitle = plan is null ? "No layout yet" : $"{plan.Name} · {enabled} rule{(enabled == 1 ? "" : "s")}";
@@ -187,7 +213,8 @@ public sealed class OrganizerPanel
 
     private void DrawPlanBar()
     {
-        var plans = config.Organizer.Plans;
+        // The simple screen's own layout is not one of the player's; it never appears in this list.
+        var plans = config.Organizer.Plans.Where(p => !p.Simple).ToList();
         var active = Plan;
         var idx = active is null ? -1 : plans.IndexOf(active);
         ImGui.SetNextItemWidth(220 * Ui.Scale);
@@ -203,7 +230,7 @@ public sealed class OrganizerPanel
         if (Ui.IconButton(FontAwesomeIcon.Plus, "New"))
         {
             var p = new OrganizerPlan { Name = $"Layout {plans.Count + 1}" };
-            plans.Add(p);
+            config.Organizer.Plans.Add(p);
             config.Organizer.ActivePlanId = p.Id;
             view = View.Rules;
             dirty = true;
@@ -215,7 +242,8 @@ public sealed class OrganizerPanel
             {
                 var c = active.Clone();
                 c.Name = $"{active.Name} copy";
-                plans.Add(c);
+                c.Simple = false;
+                config.Organizer.Plans.Add(c);
                 config.Organizer.ActivePlanId = c.Id;
                 dirty = true;
             }
@@ -229,8 +257,8 @@ public sealed class OrganizerPanel
                 if (!confirmDelete) confirmDelete = true;
                 else
                 {
-                    plans.Remove(active);
-                    config.Organizer.ActivePlanId = plans.FirstOrDefault()?.Id;
+                    config.Organizer.Plans.Remove(active);
+                    config.Organizer.ActivePlanId = config.Organizer.Plans.FirstOrDefault(p => !p.Simple)?.Id;
                     confirmDelete = false;
                     dirty = true;
                 }
@@ -251,7 +279,8 @@ public sealed class OrganizerPanel
             if (imported is null) Note("Nothing to import. Copy a Gleam layout first.");
             else
             {
-                plans.Add(imported);
+                imported.Simple = false;
+                config.Organizer.Plans.Add(imported);
                 config.Organizer.ActivePlanId = imported.Id;
                 view = View.Rules;
                 dirty = true;
@@ -279,7 +308,6 @@ public sealed class OrganizerPanel
 
     private void DrawSimple(OrganizerPlan plan)
     {
-        PutQuestionsFirst(plan);
         var moves = organizer.Current?.Moves.Count ?? 0;
         var subtitle = organizer.IsPreviewing ? "Looking through your storage…"
             : organizer.Current is null ? "Where things go"
@@ -386,24 +414,6 @@ public sealed class OrganizerPanel
         ("Housing items", "Housing items", new OrganizerPredicate { Tags = [ItemTag.Housing] }, Destination.AnyRetainer),
     ];
 
-    /// <summary>
-    /// The first rule that matches decides, so in the simple layer the questions have to be tried first.
-    /// A layout built in advanced mode can hold older rules that would otherwise answer first and quietly
-    /// win, leaving the dropdowns saying one thing while the run does another.
-    /// </summary>
-    private void PutQuestionsFirst(OrganizerPlan plan)
-    {
-        var order = QuickQuestions.Select(q => q.Name).ToList();
-        var quick = plan.Rules.Where(r => order.Contains(r.Name)).OrderBy(r => order.IndexOf(r.Name)).ToList();
-        if (quick.Count == 0) return;
-        var rest = plan.Rules.Where(r => !order.Contains(r.Name)).ToList();
-        if (plan.Rules.SequenceEqual(quick.Concat(rest))) return;
-        plan.Rules.Clear();
-        plan.Rules.AddRange(quick);
-        plan.Rules.AddRange(rest);
-        dirty = true;
-    }
-
     /// <summary>A layout the questions own outright: one rule per question, in question order.</summary>
     private static OrganizerPlan QuestionsLayout()
     {
@@ -438,17 +448,16 @@ public sealed class OrganizerPanel
             ImGui.SameLine(labelW);
             if (!DestinationCombo($"##quick{name}", ref dest, allowStay: true)) continue;
             if (dest.Kind == DestinationKind.Stay) { if (rule is not null) plan.Rules.Remove(rule); }
-            else if (rule is null) plan.Rules.Insert(0, new OrganizerRule { Name = name, When = Clone(when), Then = dest });
+            else if (rule is null)
+            {
+                var order = QuickQuestions.Select(q => q.Name).ToList();
+                var at = plan.Rules.Count(r => order.IndexOf(r.Name) is var i && i >= 0 && i < order.IndexOf(name));
+                plan.Rules.Insert(Math.Min(at, plan.Rules.Count), new OrganizerRule { Name = name, When = Clone(when), Then = dest });
+            }
             else rule.Then = dest;
             dirty = true;
         }
-        if (!Simple) { Ui.Hint("Everything else is listed below, where you can fine-tune or add your own rules."); return; }
-        var extra = plan.Rules.Count(r => QuickQuestions.All(q => q.Name != r.Name));
-        if (extra > 0)
-        {
-            Ui.Gap(0.2f);
-            Ui.Hint($"Your answers come first. {extra} other rule{(extra == 1 ? "" : "s")} you made earlier still handle anything they do not cover.");
-        }
+        if (!Simple) Ui.Hint("Everything else is listed below, where you can fine-tune or add your own rules.");
     }
 
     private static OrganizerPredicate Clone(OrganizerPredicate p) => new()
