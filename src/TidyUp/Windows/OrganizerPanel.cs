@@ -74,8 +74,7 @@ public sealed class OrganizerPanel
         if (Simple && plan is null)
         {
             // The simple layer has exactly one place things go; make it without asking.
-            plan = OrganizerPlan.Starter();
-            plan.Name = "Where things go";
+            plan = QuestionsLayout();
             config.Organizer.Plans.Add(plan);
             config.Organizer.ActivePlanId = plan.Id;
             dirty = true;
@@ -280,6 +279,7 @@ public sealed class OrganizerPanel
 
     private void DrawSimple(OrganizerPlan plan)
     {
+        PutQuestionsFirst(plan);
         var moves = organizer.Current?.Moves.Count ?? 0;
         var subtitle = organizer.IsPreviewing ? "Looking through your storage…"
             : organizer.Current is null ? "Where things go"
@@ -377,14 +377,41 @@ public sealed class OrganizerPanel
 
     // ---------- quick setup: four questions that write the rules ----------
 
-    private static readonly (string Name, string Question, OrganizerPredicate When)[] QuickQuestions =
+    private static readonly (string Name, string Question, OrganizerPredicate When, Destination Default)[] QuickQuestions =
     [
-        ("Materia", "Materia", new OrganizerPredicate { Tags = [ItemTag.Materia] }),
-        ("Crystals", "Crystals and shards", new OrganizerPredicate { Tags = [ItemTag.Crystals] }),
-        ("Gear you are not using", "Gear that is not in a gear set", new OrganizerPredicate { Tags = [ItemTag.Gear], InGearset = false }),
-        ("Gear in a gear set", "Gear that is in a gear set", new OrganizerPredicate { Tags = [ItemTag.Gear], InGearset = true }),
-        ("Housing items", "Housing items", new OrganizerPredicate { Tags = [ItemTag.Housing] }),
+        ("Materia", "Materia", new OrganizerPredicate { Tags = [ItemTag.Materia] }, Destination.Saddlebag),
+        ("Crystals", "Crystals and shards", new OrganizerPredicate { Tags = [ItemTag.Crystals] }, Destination.Saddlebag),
+        ("Gear you are not using", "Gear that is not in a gear set", new OrganizerPredicate { Tags = [ItemTag.Gear], InGearset = false }, Destination.AnyRetainer),
+        ("Gear in a gear set", "Gear that is in a gear set", new OrganizerPredicate { Tags = [ItemTag.Gear], InGearset = true }, Destination.Armoury),
+        ("Housing items", "Housing items", new OrganizerPredicate { Tags = [ItemTag.Housing] }, Destination.AnyRetainer),
     ];
+
+    /// <summary>
+    /// The first rule that matches decides, so in the simple layer the questions have to be tried first.
+    /// A layout built in advanced mode can hold older rules that would otherwise answer first and quietly
+    /// win, leaving the dropdowns saying one thing while the run does another.
+    /// </summary>
+    private void PutQuestionsFirst(OrganizerPlan plan)
+    {
+        var order = QuickQuestions.Select(q => q.Name).ToList();
+        var quick = plan.Rules.Where(r => order.Contains(r.Name)).OrderBy(r => order.IndexOf(r.Name)).ToList();
+        if (quick.Count == 0) return;
+        var rest = plan.Rules.Where(r => !order.Contains(r.Name)).ToList();
+        if (plan.Rules.SequenceEqual(quick.Concat(rest))) return;
+        plan.Rules.Clear();
+        plan.Rules.AddRange(quick);
+        plan.Rules.AddRange(rest);
+        dirty = true;
+    }
+
+    /// <summary>A layout the questions own outright: one rule per question, in question order.</summary>
+    private static OrganizerPlan QuestionsLayout()
+    {
+        var plan = new OrganizerPlan { Name = "Where things go" };
+        foreach (var (name, _, when, dest) in QuickQuestions)
+            plan.Rules.Add(new OrganizerRule { Name = name, When = Clone(when), Then = dest });
+        return plan;
+    }
 
     private bool quickOpen = true;
 
@@ -402,7 +429,7 @@ public sealed class OrganizerPanel
         Ui.Hint("Say where each kind of thing should live. Leave one alone and it stays where it is.");
         ImGui.Spacing();
         var labelW = QuickQuestions.Max(q => ImGui.CalcTextSize(q.Question, false, 0).X) + 12 * Ui.Scale;
-        foreach (var (name, question, when) in QuickQuestions)
+        foreach (var (name, question, when, _) in QuickQuestions)
         {
             var rule = plan.Rules.FirstOrDefault(r => r.Name == name);
             var dest = rule?.Then ?? Destination.Stay;
@@ -411,11 +438,17 @@ public sealed class OrganizerPanel
             ImGui.SameLine(labelW);
             if (!DestinationCombo($"##quick{name}", ref dest, allowStay: true)) continue;
             if (dest.Kind == DestinationKind.Stay) { if (rule is not null) plan.Rules.Remove(rule); }
-            else if (rule is null) plan.Rules.Add(new OrganizerRule { Name = name, When = Clone(when), Then = dest });
+            else if (rule is null) plan.Rules.Insert(0, new OrganizerRule { Name = name, When = Clone(when), Then = dest });
             else rule.Then = dest;
             dirty = true;
         }
-        if (!Simple) Ui.Hint("Everything else is listed below, where you can fine-tune or add your own rules.");
+        if (!Simple) { Ui.Hint("Everything else is listed below, where you can fine-tune or add your own rules."); return; }
+        var extra = plan.Rules.Count(r => QuickQuestions.All(q => q.Name != r.Name));
+        if (extra > 0)
+        {
+            Ui.Gap(0.2f);
+            Ui.Hint($"Your answers come first. {extra} other rule{(extra == 1 ? "" : "s")} you made earlier still handle anything they do not cover.");
+        }
     }
 
     private static OrganizerPredicate Clone(OrganizerPredicate p) => new()
