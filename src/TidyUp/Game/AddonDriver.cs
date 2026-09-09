@@ -56,7 +56,7 @@ public sealed unsafe class AddonDriver : IDisposable
         LastRejection = null;
         if (framework.IsInFrameworkUpdateThread ? IsAddonVisible(addonName) : framework.RunOnFrameworkThread(() => IsAddonVisible(addonName)).Result)
         {
-            LastRejection = "a game window that Gleam needs to answer is already open; close it first";
+            LastRejection = "a game window that Gleam needs to answer is already open. Close it first";
             return Task.FromResult(false);
         }
 

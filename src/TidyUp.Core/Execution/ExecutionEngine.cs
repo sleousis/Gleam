@@ -174,7 +174,7 @@ public sealed class ExecutionEngine
         if (live!.HasMateria && !game.CanRetrieveMateriaIn(action.Kind) && options.OnMateriaFailure == MateriaFailurePolicy.LeaveItem)
         {
             if (action.Kind != ContainerKind.Retainer)
-                return new ActionResult(action, ActionOutcome.Pending, "materia cannot be removed while a retainer is summoned; it is finished once you leave the bell");
+                return new ActionResult(action, ActionOutcome.Pending, "materia cannot be removed while a retainer is summoned. It is finished once you leave the bell");
 
             // Retainer menus have no "Retrieve Materia": bring the item home and finish there.
             if (game.FreeInventorySlots() < 1)
@@ -182,7 +182,7 @@ public sealed class ExecutionEngine
             var landed = await game.MoveToInventoryAsync(target, action.ItemId, action.Quantity, action.IsHq, ct).ConfigureAwait(false);
             if (landed is null)
                 return new ActionResult(action, ActionOutcome.Pending, $"materia cannot be retrieved here and the item could not be brought back ({game.LastFailure ?? "no reason given"})");
-            return new ActionResult(action, ActionOutcome.Moved, "brought back to you; its materia comes off once the retainer is closed")
+            return new ActionResult(action, ActionOutcome.Moved, "brought back to you. Its materia comes off once the retainer is closed")
             {
                 Followup = action with { Slot = landed.Value, RetrieveMateriaFirst = true, BroughtHome = true },
             };
@@ -210,7 +210,7 @@ public sealed class ExecutionEngine
             {
                 var why = game.LastFailure ?? "no reason given";
                 if (options.OnMateriaFailure == MateriaFailurePolicy.LeaveItem)
-                    return new ActionResult(action, ActionOutcome.Pending, $"its materia could not be removed ({why}); remove it by hand first");
+                    return new ActionResult(action, ActionOutcome.Pending, $"its materia could not be removed ({why}). Remove it by hand first");
             }
             else
             {
@@ -221,9 +221,9 @@ public sealed class ExecutionEngine
         if (action.Action == ActionKind.MarketList)
         {
             if (action.UnitPrice <= 0)
-                return new ActionResult(action, ActionOutcome.Pending, "no market price is known for it; refresh with market prices on");
+                return new ActionResult(action, ActionOutcome.Pending, "no market price is known for it. Refresh with market prices on");
             if (game.FreeMarketSlots() <= 0)
-                return new ActionResult(action, ActionOutcome.Pending, "this retainer's market slots are full; another retainer can take it");
+                return new ActionResult(action, ActionOutcome.Pending, "this retainer's market slots are full. Another retainer can take it");
             return await ListAsync(action, target, ct).ConfigureAwait(false);
         }
 
@@ -255,7 +255,7 @@ public sealed class ExecutionEngine
             {
                 var why = game.LastFailure is { } r ? $": {r}" : string.Empty;
                 if (listings == 0) return new ActionResult(action, ActionOutcome.Failed, $"could not list it on the market board{why}");
-                return Partial(action, target, remaining, $"listed {action.Quantity - remaining} of {action.Quantity}; the rest could not be listed{why}");
+                return Partial(action, target, remaining, $"listed {action.Quantity - remaining} of {action.Quantity}. The rest could not be listed{why}");
             }
             remaining -= qty;
             listings++;
@@ -263,7 +263,7 @@ public sealed class ExecutionEngine
         }
         if (remaining == 0)
             return new ActionResult(action, ActionOutcome.Done, listings > 1 ? $"{ActionKind.MarketList.Label()} · {listings} listings" : ActionKind.MarketList.Label());
-        return Partial(action, target, remaining, $"listed {action.Quantity - remaining} of {action.Quantity}; this retainer's market slots are full");
+        return Partial(action, target, remaining, $"listed {action.Quantity - remaining} of {action.Quantity}. This retainer's market slots are full");
     }
 
     private static ActionResult Partial(QueuedAction action, SlotRef target, int remaining, string message) =>

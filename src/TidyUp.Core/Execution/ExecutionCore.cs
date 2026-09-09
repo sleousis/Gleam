@@ -123,7 +123,7 @@ public sealed class ExecutionCore
                     if (consecutiveFailures >= maxConsecutiveFailures)
                     {
                         aborted = true;
-                        abortReason = $"{consecutiveFailures} items failed in a row; the last was {hooks.Describe(op)} ({outcome.Message})";
+                        abortReason = $"{consecutiveFailures} items failed in a row, the last was {hooks.Describe(op)} ({outcome.Message})";
                     }
                     break;
                 case StepStatus.Done:

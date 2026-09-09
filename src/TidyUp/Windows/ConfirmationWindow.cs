@@ -863,7 +863,7 @@ public sealed class ConfirmationWindow : StyledWindow
             if (Ui.PrimaryButton(verb, buttonWidth, danger: cap.Exceeded && !capArmed)) Accept(plan);
         }
         var discards = plan.AllRows.Count(r => r.Checked && r.IsExecutable && r.ChosenAction == ActionKind.Discard);
-        var irreversible = discards > 0 ? $"{discards} will be discarded for good; sold and listed items can be bought back." : string.Empty;
+        var irreversible = discards > 0 ? $"{discards} will be discarded for good. Sold and listed items can be bought back." : string.Empty;
         if (cap.Exceeded && !capArmed) Ui.Tooltip($"{cap.Explanation} Click again to go ahead.");
         else if (handsFree && needsTravel) Ui.Tooltip(string.IsNullOrEmpty(irreversible) ? HandsFreeCleanHint : $"{HandsFreeCleanHint} {irreversible}");
         else Ui.Tooltip(irreversible);

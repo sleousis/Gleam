@@ -17,10 +17,10 @@ Nothing is changed until you press the button. Items that will be cleaned or mov
 Commands: /gleam or /gl. Sub-commands: organize, history, settings, stop.
 
 Other plugins:
-- None are needed for cleaning and organizing. You open the saddlebag and your retainers yourself; Gleam does the rest.
-- vnavmesh and Lifestream: needed only for hands-free mode, where Gleam travels to the inn and the bell for you.
-- AutoRetainer: optional. Lets Gleam discard junk after each retainer's ventures.
-- Allagan Tools: optional. Shows retainer contents without summoning them.
+None are needed for cleaning and organizing. You open the saddlebag and your retainers yourself, and Gleam does the rest.
+vnavmesh and Lifestream are needed only for hands-free mode, where Gleam travels to the inn and the bell for you.
+AutoRetainer is optional. It lets Gleam discard junk after each retainer's ventures.
+Allagan Tools is optional. It shows retainer contents without summoning them.
 Market prices come from Universalis and need an internet connection.</Description>
     <RepoUrl>https://github.com/savvasleousis/TidyUp</RepoUrl>
     <Tags>inventory;cleanup;discard;organize;sort;retainer;saddlebag;market board;glamour;qol</Tags>

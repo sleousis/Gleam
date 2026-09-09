@@ -201,7 +201,7 @@ public class OrganizerScenarios
 
         var report = await Organize(world, preview.Moves);                       // and the executor agrees
         Assert.Equal(0, report.Done);
-        Assert.Empty(world.Calls.Where(c => c.StartsWith("move:")));
+        Assert.DoesNotContain(world.Calls, c => c.StartsWith("move:"));
         Assert.Equal(90, world.Slots[Saddlebag(0)].Quantity);
     }
 
@@ -215,7 +215,7 @@ public class OrganizerScenarios
 
         var preview = Preview(world, layout, Context(gearset: [5u]));
         Assert.Single(preview.Moves);
-        Assert.Contains(preview.Pinned, p => p.Item.ItemId == 5 && p.Reason.Contains("gearset"));
+        Assert.Contains(preview.Pinned, p => p.Item.ItemId == 5 && p.Reason.Contains("gear set"));
 
         await OrganizeEverywhere(world, preview.Moves);
         Assert.True(world.Has(Bag(0)));

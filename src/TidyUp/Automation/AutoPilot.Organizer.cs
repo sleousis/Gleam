@@ -25,7 +25,7 @@ public sealed partial class AutoPilot
         if (MissingDependency() is { } missing) { Fail(missing); return; }
         if (condition[ConditionFlag.InCombat] || condition[ConditionFlag.BoundByDuty]) { Fail("not while in combat or in a duty"); return; }
         var result = Organizer.Current;
-        if (!result.Report.Feasible) { Fail("something would overflow; change a rule or free some space first"); return; }
+        if (!result.Report.Feasible) { Fail("something would overflow. Change a rule or free some space first"); return; }
         if (result.Moves.Count == 0) { Nothing("Nothing to move"); return; }
 
         Mode = PilotMode.Organize;

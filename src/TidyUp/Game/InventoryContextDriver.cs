@@ -120,7 +120,7 @@ public sealed class InventoryContextDriver
         {
             var offered = string.Join(" | ", entries.Select(e => e.Text.Length > 0 ? e.Text : e.LabelId.ToString()));
             var hint = entries.Any(e => e.Text.Contains("Retainer", StringComparison.OrdinalIgnoreCase))
-                ? " while a retainer was open; leave the bell first"
+                ? " while a retainer was open. Leave the bell first"
                 : string.Empty;
             log.Debug("Menu for {Slot} had no '{Label}'. Offered: {Offered}", slot, englishLabel, offered);
             LastFailure = $"the item's menu had no '{englishLabel}' option{hint}";

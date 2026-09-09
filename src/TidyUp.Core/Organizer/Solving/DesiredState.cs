@@ -111,7 +111,7 @@ public static class DesiredStateBuilder
         if (to.Storage is { } target && target == current) return null;
 
         if (info.IsEquipment && ctx.GearsetItemIds.Contains(info.ItemId) && to.Kind is DestinationKind.Saddlebag or DestinationKind.Retainer)
-            return "Part of a gearset; gearsets only see the bags and armoury";
+            return "Part of a gear set. Gear sets only see the bags and armoury";
         if (to.Kind == DestinationKind.Armoury && info.ArmouryPage == 0)
             return "Only equipment goes in the armoury chest";
         if (info.UiCategory.Equals("Soul Crystal", StringComparison.OrdinalIgnoreCase) && to.Kind is DestinationKind.Saddlebag or DestinationKind.Retainer)

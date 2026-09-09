@@ -65,13 +65,13 @@ public static class HardBlocks
     public static string Describe(HardBlockReason reason) => reason switch
     {
         HardBlockReason.Indisposable => "Cannot be discarded",
-        HardBlockReason.UniqueUntradeable => "Unique and untradeable; can never be reacquired",
+        HardBlockReason.UniqueUntradeable => "Unique and untradeable. Can never be reacquired",
         HardBlockReason.InGearset => "In a gear set",
         HardBlockReason.InGlamourPlate => "Used by a glamour plate",
         HardBlockReason.NeverProposedCategory => "Never suggested by any rule",
         HardBlockReason.Currency => "Currency",
-        HardBlockReason.IrreplaceableUntradeable => "Untradeable with no vendor value; cannot be bought back",
-        HardBlockReason.Protected => "Can never be regained; Gleam never touches it",
+        HardBlockReason.IrreplaceableUntradeable => "Untradeable with no vendor value. Cannot be bought back",
+        HardBlockReason.Protected => "Can never be regained. Gleam never touches it",
         _ => string.Empty,
     };
 }
