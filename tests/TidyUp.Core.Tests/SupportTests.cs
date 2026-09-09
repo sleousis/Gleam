@@ -107,15 +107,6 @@ public class IntegrationParsingTests
     }
 
     [Fact]
-    public void DiscardHelper_import_collects_item_ids_under_discard_or_item_keys_only()
-    {
-        var json = """{"Version":3,"DiscardingItems":[4,5,1000006],"IgnoredCharacters":[12345678901],"Nested":{"ItemsToKeep":[9]},"Other":[1,2]}""";
-        var ids = DiscardHelperImport.ParseItemIds(json);
-        Assert.Equal([4u, 5u, 9u], ids); // 1000006 > 1M rejected, "Other" ignored, huge char ids ignored
-        Assert.Empty(DiscardHelperImport.ParseItemIds("not json"));
-    }
-
-    [Fact]
     public void Curated_data_parses_and_tolerates_garbage()
     {
         var d = CuratedData.Parse("""{"version":"1","updatedForPatch":"7.56","seasonalItemIds":[1,2],"retiredCurrencyNames":["Red Crafters' Scrip"]}""");

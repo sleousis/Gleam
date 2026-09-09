@@ -33,47 +33,42 @@ public sealed class CuratedData
     }
 }
 
+/// <summary>What a Discard Helper configuration says: what it throws away, and what it protects.</summary>
+public sealed record DiscardHelperLists(IReadOnlyList<uint> Discard, IReadOnlyList<uint> Keep)
+{
+    public static DiscardHelperLists Empty { get; } = new(Array.Empty<uint>(), Array.Empty<uint>());
+    public bool IsEmpty => Discard.Count == 0 && Keep.Count == 0;
+}
+
 /// <summary>
-/// Reads an ARDiscard (Discard Helper) configuration and returns the item ids it would discard, so a
-/// switcher can seed the always-discard list. The format is not documented, so this is deliberately
-/// tolerant: any array of integers under a key mentioning "discard" or "item" counts.
+/// Reads a Discard Helper (ARDiscard) configuration. Its two lists mean opposite things: "DiscardingItems"
+/// is what it throws away, "BlacklistedItems" is what it must never touch. Mixing them up would turn a
+/// player's protected items into junk, so the names are matched exactly rather than guessed at.
 /// </summary>
 public static class DiscardHelperImport
 {
-    public static IReadOnlyList<uint> ParseItemIds(string json)
+    public static DiscardHelperLists Parse(string json)
     {
-        var ids = new HashSet<uint>();
         try
         {
             using var doc = JsonDocument.Parse(json);
-            Walk(doc.RootElement, null, ids);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object) return DiscardHelperLists.Empty;
+            return new DiscardHelperLists(Ids(doc.RootElement, "DiscardingItems"), Ids(doc.RootElement, "BlacklistedItems"));
         }
         catch (JsonException)
         {
-            return Array.Empty<uint>();
+            return DiscardHelperLists.Empty;
         }
-        return ids.OrderBy(i => i).ToList();
     }
 
-    private static void Walk(JsonElement e, string? key, HashSet<uint> ids)
+    private static IReadOnlyList<uint> Ids(JsonElement root, string property)
     {
-        switch (e.ValueKind)
-        {
-            case JsonValueKind.Object:
-                foreach (var p in e.EnumerateObject()) Walk(p.Value, p.Name, ids);
-                break;
-            case JsonValueKind.Array:
-                var relevant = key is not null &&
-                               (key.Contains("discard", StringComparison.OrdinalIgnoreCase) ||
-                                key.Contains("item", StringComparison.OrdinalIgnoreCase));
-                foreach (var el in e.EnumerateArray())
-                {
-                    if (el.ValueKind == JsonValueKind.Number && relevant && el.TryGetUInt32(out var id) && id > 0 && id < 1_000_000)
-                        ids.Add(id);
-                    else if (el.ValueKind is JsonValueKind.Object or JsonValueKind.Array)
-                        Walk(el, key, ids);
-                }
-                break;
-        }
+        if (!root.TryGetProperty(property, out var array) || array.ValueKind != JsonValueKind.Array)
+            return Array.Empty<uint>();
+        var ids = new List<uint>();
+        foreach (var el in array.EnumerateArray())
+            if (el.ValueKind == JsonValueKind.Number && el.TryGetUInt32(out var id) && id is > 0 and < 1_000_000)
+                ids.Add(id);
+        return ids;
     }
 }

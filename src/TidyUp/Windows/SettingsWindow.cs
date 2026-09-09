@@ -29,8 +29,12 @@ public sealed partial class SettingsWindow
     private readonly ListEditor alwaysEditor;
 
     private bool dirty;
-    private string importPath = string.Empty;
     private string importResult = string.Empty;
+    private string? importFound;
+    private Core.Integrations.DiscardHelperLists? importLists;
+
+    /// <summary>Dalamud's own file browser, drawn by this window so it can sit above the game.</summary>
+    private readonly Dalamud.Interface.ImGuiFileDialog.FileDialogManager FileDialogs = new();
 
     /// <summary>Set by the plugin so the Automation section can show dependency status.</summary>
     public Automation.AutoPilot? Pilot { get; set; }
@@ -79,6 +83,8 @@ public sealed partial class SettingsWindow
                 if (config.AdvancedMode && ImGui.CollapsingHeader("More", ImGuiTreeNodeFlags.None)) DrawAdvancedFold();
             }
         }
+
+        FileDialogs.Draw();
 
         if (dirty)
         {

@@ -89,24 +89,85 @@ public sealed partial class SettingsWindow
         else Ui.Pill("Allagan Tools", Ui.Ok, Dalamud.Interface.FontAwesomeIcon.Check);
 
         Ui.Gap(0.4f);
-        Ui.Hint("Bring in a Discard Helper list");
-        ImGui.SetNextItemWidth(-110 * Ui.Scale);
-        Ui.InputText("##import", "Path to ARDiscard.json", ref importPath, 512);
-        ImGui.SameLine();
-        if (Ui.Button("Import", 96 * Ui.Scale))
+        DrawDiscardHelperImport();
+    }
+
+    /// <summary>
+    /// Brings across the lists from Discard Helper. Its file lives in a known place, so there is nothing to
+    /// type: Gleam finds it, says what is in it, and only then offers to bring it in. Browsing is there for
+    /// anyone whose game keeps its settings somewhere else.
+    /// </summary>
+    private void DrawDiscardHelperImport()
+    {
+        Ui.Hint("Bring in your Discard Helper lists");
+        importFound ??= FindDiscardHelperFile();
+
+        if (string.IsNullOrEmpty(importFound))
         {
-            try
+            Ui.HintWrapped("Gleam could not find a Discard Helper configuration on this computer.");
+            if (Ui.IconButton(Dalamud.Interface.FontAwesomeIcon.FolderOpen, "Find it myself")) BrowseForDiscardHelper();
+            if (!string.IsNullOrEmpty(importResult)) Ui.Hint(importResult);
+            return;
+        }
+
+        var lists = importLists ??= ReadDiscardHelper(importFound);
+        if (lists.IsEmpty)
+        {
+            Ui.HintWrapped($"Found {Path.GetFileName(importFound)}, but it has no items in either list yet.");
+        }
+        else
+        {
+            Ui.HintWrapped($"Found {lists.Discard.Count} item{(lists.Discard.Count == 1 ? "" : "s")} it throws away and {lists.Keep.Count} it protects.");
+            if (Ui.PrimaryButton("Bring them in", 180 * Ui.Scale))
             {
-                var ids = Core.Integrations.DiscardHelperImport.ParseItemIds(File.ReadAllText(importPath));
-                var added = ids.Count(id => config.AlwaysDiscardList.Add(id, note: "Imported from Discard Helper"));
-                importResult = $"Added {added} item{(added == 1 ? "" : "s")} to Always junk.";
+                var junk = lists.Discard.Count(id => config.AlwaysDiscardList.Add(id, note: "From Discard Helper"));
+                var kept = lists.Keep.Count(id => config.ProtectList.Add(id, note: "From Discard Helper"));
+                importResult = $"Added {junk} to Always junk and {kept} to Keep these.";
                 dirty = true;
             }
-            catch (Exception ex)
-            {
-                importResult = $"Could not import: {ex.Message}";
-            }
+            Ui.Tooltip("What it threw away joins your Always junk list. What it protected joins Keep these.");
+            ImGui.SameLine();
         }
+        if (Ui.LinkButton("Use a different file")) BrowseForDiscardHelper();
         if (!string.IsNullOrEmpty(importResult)) Ui.Hint(importResult);
+    }
+
+    private void BrowseForDiscardHelper()
+    {
+        var start = Path.GetDirectoryName(importFound) ?? PluginServices.PluginInterface.GetPluginConfigDirectory();
+        FileDialogs.OpenFileDialog("Find your Discard Helper file", ".json", (ok, paths) =>
+        {
+            if (!ok || paths.Count == 0) return;
+            importFound = paths[0];
+            importLists = ReadDiscardHelper(importFound);
+            importResult = importLists.IsEmpty ? "That file has no Discard Helper lists in it." : string.Empty;
+        }, 1, start, true);
+    }
+
+    private Core.Integrations.DiscardHelperLists ReadDiscardHelper(string path)
+    {
+        try
+        {
+            return Core.Integrations.DiscardHelperImport.Parse(File.ReadAllText(path));
+        }
+        catch (Exception ex)
+        {
+            importResult = $"Could not read it: {ex.Message}";
+            return Core.Integrations.DiscardHelperLists.Empty;
+        }
+    }
+
+    /// <summary>Discard Helper keeps its settings beside every other plugin's, so look there first.</summary>
+    private static string? FindDiscardHelperFile()
+    {
+        var mine = PluginServices.PluginInterface.GetPluginConfigDirectory();
+        var configs = Directory.GetParent(mine)?.FullName;
+        if (configs is null) return string.Empty;
+        foreach (var name in new[] { "ARDiscard.json", "DiscardHelper.json" })
+        {
+            var path = Path.Combine(configs, name);
+            if (File.Exists(path)) return path;
+        }
+        return string.Empty;
     }
 }
