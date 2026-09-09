@@ -5,7 +5,7 @@
     <Author>Raiden Shinryu</Author>
     <!-- The player sees "Gleam"; the assembly, namespaces and config file keep the original TidyUp name so existing settings carry over. -->
     <Name>Gleam</Name>
-    <Punchline>Cleans and organizes your inventory, and walks there itself. Needs vnavmesh and Lifestream.</Punchline>
+    <Punchline>Cleans and organizes your inventory, and walks there itself. Needs vnavmesh, plus Lifestream to travel.</Punchline>
     <Description>Gleam cleans and organizes your inventory, and does the walking itself.
 
 Clean: it finds junk in your bags, armoury chest, saddlebag, retainers and glamour dresser and shows it in one list. You choose whether to sell on the market board, sell to vendors or discard, then press one button.
@@ -16,9 +16,9 @@ Nothing is changed until you press the button. Items that will be cleaned or mov
 
 Commands: /gleam or /gl. Sub-commands: organize, history, settings, stop.
 
-Required plugins:
-vnavmesh, which walks your character from place to place.
-Lifestream, which teleports between aetherytes and into inns.
+Plugins Gleam needs:
+vnavmesh walks your character from place to place. Gleam needs it.
+Lifestream teleports between aetherytes and into inns. Without it, start a run while you are already in an inn.
 
 Optional:
 AutoRetainer lets Gleam discard junk after each retainer's ventures.

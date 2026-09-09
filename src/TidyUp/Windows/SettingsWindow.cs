@@ -196,18 +196,25 @@ public sealed partial class SettingsWindow
         {
             Ui.TextColored(Ui.Muted, "PLUGINS GLEAM NEEDS");
             ImGui.Spacing();
-            Ui.HintWrapped("Gleam does the walking itself. It opens the saddlebag, travels to an inn for your retainers and the glamour dresser, visits your Grand Company for anything to be turned in, and finds a merchant for anything your retainers would not buy. Both of these free plugins have to be installed for that.");
+            Ui.HintWrapped("Gleam does the walking itself. It opens the saddlebag, goes to your retainers and the glamour dresser, visits your Grand Company for anything to be turned in, and finds a merchant for anything your retainers would not buy. Two free plugins make that possible.");
             Ui.Gap(0.4f);
 
-            Requirement("vnavmesh", haveNav, "Walks your character from place to place, to the bell, the dresser and the merchant.");
-            Requirement("Lifestream", haveTravel, "Teleports between aetherytes and into inns, to reach a retainer bell.");
+            Requirement("vnavmesh", haveNav, "Needed. Walks your character to the bell, the dresser and the merchant.");
+            Requirement("Lifestream", haveTravel, "Needed to travel. Without it, start a run in an inn and Gleam manages there.");
 
             if (!haveNav || !haveTravel)
             {
                 Ui.Gap(0.4f);
-                var which = !haveNav && !haveTravel ? "vnavmesh and Lifestream" : !haveNav ? "vnavmesh" : "Lifestream";
-                Ui.TextColored(Ui.Danger, $"Install {which} to let Gleam finish a run.");
-                Ui.HintWrapped("Until then Gleam still works on whatever you have open yourself, and anything further away waits.");
+                if (!haveNav)
+                {
+                    Ui.TextColored(Ui.Danger, "Install vnavmesh to let Gleam finish a run.");
+                    Ui.HintWrapped("Without it Gleam still cleans and moves whatever you open yourself. Anything further away waits until you go there.");
+                }
+                else
+                {
+                    Ui.TextColored(Ui.Warn, "Install Lifestream to let Gleam travel between places.");
+                    Ui.HintWrapped("Without it a run cannot teleport. Start one while you are already in an inn and Gleam reaches the bell and the dresser by itself.");
+                }
             }
 
             if (config.AdvancedMode)
