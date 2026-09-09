@@ -379,17 +379,109 @@ internal static class Ui
     }
 
     /// <summary>Slim accent progress bar with the label drawn to its right.</summary>
-    public static void Progress(float fraction, float width, string label)
+    private static readonly Dictionary<string, (float Shown, double At)> progressAnim = new();
+
+    /// <summary>
+    /// The run bar. With a fraction it fills smoothly towards the target with a soft glow at the leading edge
+    /// and a sheen drifting across; without one (nothing to count yet, travelling) a light pill sweeps the track.
+    /// The label sits under the bar.
+    /// </summary>
+    public static void ProgressBar(string id, float? fraction, float width, string? label = null, string? caption = null)
     {
+        var now = ImGui.GetTime();
+        var h = 10f * Scale;
+        if (caption is not null)
+        {
+            // Caption on the left, count on the right, bar underneath.
+            var lineStart = ImGui.GetCursorPos();
+            Hint(caption);
+            if (!string.IsNullOrEmpty(label))
+            {
+                var lw = ImGui.CalcTextSize(label, false, 0).X;
+                ImGui.SetCursorPos(new Vector2(lineStart.X + width - lw, lineStart.Y));
+                Hint(label);
+            }
+            ImGui.SetCursorPosX(lineStart.X);
+            ImGui.SetCursorPosY(ImGui.GetCursorPosY() + 2f * Scale);
+            label = null;
+        }
         var pos = ImGui.GetCursorScreenPos();
-        var h = 8f * Scale;
         var dl = ImGui.GetWindowDrawList();
-        var f = Math.Clamp(fraction, 0f, 1f);
-        dl.AddRectFilled(pos, pos + new Vector2(width, h), ImGui.GetColorU32(new Vector4(1, 1, 1, 0.08f)), h / 2);
-        if (f > 0)
-            dl.AddRectFilled(pos, pos + new Vector2(Math.Max(h, width * f), h), ImGui.GetColorU32(Accent), h / 2);
+        var r = h / 2;
+
+        // Track: a shallow groove.
+        dl.AddRectFilled(pos, pos + new Vector2(width, h), ImGui.GetColorU32(new Vector4(1, 1, 1, 0.07f)), r);
+        dl.AddRect(pos, pos + new Vector2(width, h), ImGui.GetColorU32(new Vector4(0, 0, 0, 0.35f)), r);
+
+        if (fraction is { } target)
+        {
+            target = Math.Clamp(target, 0f, 1f);
+            var (shown, at) = progressAnim.TryGetValue(id, out var st) ? st : (target, now);
+            var dt = (float)Math.Clamp(now - at, 0, 0.1);
+            shown += (target - shown) * (1f - MathF.Exp(-dt * 9f));
+            if (Math.Abs(target - shown) < 0.0015f) shown = target;
+            progressAnim[id] = (shown, now);
+
+            if (shown > 0f)
+            {
+                var fillW = Math.Max(h, width * shown);
+                var end = pos + new Vector2(fillW, h);
+                // Glow behind the leading edge, then the fill, then a top sheen and a drifting highlight.
+                dl.AddCircleFilled(new Vector2(end.X - r, pos.Y + r), h * 1.6f, ImGui.GetColorU32(Accent * new Vector4(1, 1, 1, 0.16f)));
+                dl.AddRectFilled(pos, end, ImGui.GetColorU32(Accent), r);
+                dl.AddRectFilled(pos, new Vector2(end.X, pos.Y + h * 0.5f), ImGui.GetColorU32(new Vector4(1, 1, 1, 0.16f)), r, ImDrawFlags.RoundCornersTop);
+                var sweep = (float)((now * 0.55) % 1.6) / 1.6f;            // one drift every 1.6 s, then a pause
+                var bandW = Math.Min(fillW, 70f * Scale);
+                var bandX = pos.X - bandW + (fillW + bandW) * Math.Min(1f, sweep * 1.25f);
+                dl.PushClipRect(pos, end, true);
+                dl.AddRectFilled(new Vector2(bandX, pos.Y), new Vector2(bandX + bandW, end.Y), ImGui.GetColorU32(new Vector4(1, 1, 1, 0.22f)), r);
+                dl.PopClipRect();
+            }
+        }
+        else
+        {
+            // Indeterminate: a pill eases back and forth along the track.
+            var t = (float)((now * 0.9) % 2.0);
+            var phase = t < 1f ? t : 2f - t;
+            var eased = phase < 0.5f ? 2f * phase * phase : 1f - MathF.Pow(-2f * phase + 2f, 2f) / 2f;
+            var pillW = width * 0.28f;
+            var x = pos.X + (width - pillW) * eased;
+            dl.AddCircleFilled(new Vector2(x + pillW / 2, pos.Y + r), h * 1.4f, ImGui.GetColorU32(Accent * new Vector4(1, 1, 1, 0.10f)));
+            dl.AddRectFilled(new Vector2(x, pos.Y), new Vector2(x + pillW, pos.Y + h), ImGui.GetColorU32(Accent * new Vector4(1, 1, 1, 0.75f)), r);
+            dl.AddRectFilled(new Vector2(x, pos.Y), new Vector2(x + pillW, pos.Y + h * 0.5f), ImGui.GetColorU32(new Vector4(1, 1, 1, 0.14f)), r, ImDrawFlags.RoundCornersTop);
+        }
+
         ImGui.Dummy(new Vector2(width, h));
-        Centered(label, muted: true);
+        if (!string.IsNullOrEmpty(label))
+        {
+            Gap(0.3f);
+            Centered(label, muted: true);
+        }
+    }
+
+    /// <summary>A quiet "n of m · 42%" for the bar; empty while there is nothing to count.</summary>
+    public static string ProgressLabel(int done, int total) =>
+        total <= 0 ? string.Empty : $"{done} of {total} · {(int)Math.Round(100.0 * done / total)}%";
+
+    /// <summary>The top of a running screen: the logo breathing softly, the title, and the step under way.</summary>
+    public static void RunningHeader(ImTextureID logo, string title, string? status)
+    {
+        var size = 72f * Scale;
+        var avail = ImGui.GetContentRegionAvail();
+        ImGui.SetCursorPosY(ImGui.GetCursorPosY() + Math.Max(0, avail.Y * 0.14f));
+        if (!logo.IsNull)
+        {
+            var pulse = 0.55f + 0.20f * (0.5f + 0.5f * MathF.Sin((float)ImGui.GetTime() * 2.2f));
+            ImGui.SetCursorPosX(Math.Max(0, (ImGui.GetWindowWidth() - size) / 2));
+            var pos = ImGui.GetCursorScreenPos();
+            ImGui.Dummy(new Vector2(size, size));
+            var dl = ImGui.GetWindowDrawList();
+            dl.AddCircleFilled(pos + new Vector2(size / 2, size / 2), size * 0.72f, ImGui.GetColorU32(Accent * new Vector4(1, 1, 1, 0.06f + 0.05f * (pulse - 0.55f) / 0.20f)));
+            dl.AddImageRounded(logo, pos, pos + new Vector2(size, size), Vector2.Zero, Vector2.One, ImGui.GetColorU32(new Vector4(1, 1, 1, pulse)), 14f * Scale);
+            Gap(0.6f);
+        }
+        Centered(title);
+        if (!string.IsNullOrEmpty(status)) Centered(status, muted: true);
     }
 
     // ---------- cards & banners ----------

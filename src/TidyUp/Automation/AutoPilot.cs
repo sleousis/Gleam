@@ -43,6 +43,10 @@ public sealed partial class AutoPilot : IDisposable
     public string Status { get; private set; } = string.Empty;
     public string? LastError { get; private set; }
 
+    /// <summary>Whole-run progress for the bar: items planned for this run and how many are finished so far.</summary>
+    public int PlannedTotal { get; private set; }
+    public int PlannedDone => Mode == PilotMode.Clean ? tally.Done + tally.Skipped + tally.Failed : movesDone + movesSkipped;
+
     public AutoPilot(IFramework framework, IClientState clientState, ICondition condition, IObjectTable objects, IDataManager data,
         IChatGui chat, IPluginLog log, Configuration config, RunCoordinator coordinator, VnavmeshIpc nav, LifestreamIpc travel, ItemDatabase db)
     {
@@ -95,6 +99,7 @@ public sealed partial class AutoPilot : IDisposable
         if (queue.Count == 0) { Nothing("Nothing is ticked"); return; }
 
         Mode = PilotMode.Clean;
+        PlannedTotal = queue.Count;
         IsRunning = true;
         LastError = null;
         cts?.Dispose();

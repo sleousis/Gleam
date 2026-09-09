@@ -854,31 +854,42 @@ public sealed class ConfirmationWindow : StyledWindow
 
     private void DrawPilotRunning()
     {
-        Ui.EmptyState(icons.Logo, "Hands-free run", Pilot!.Status);
-        Ui.Gap(0.5f);
-        if (coordinator.IsRunning)
-        {
-            var frac = coordinator.RunTotal == 0 ? 0f : (float)coordinator.RunDone / coordinator.RunTotal;
-            ImGui.SetCursorPosX(ImGui.GetWindowWidth() * 0.2f);
-            Ui.Progress(frac, ImGui.GetWindowWidth() * 0.6f, $"{coordinator.RunDone} / {coordinator.RunTotal}");
-        }
-        Ui.Gap();
+        // The whole trip is the bar; the step under way is the line beneath the title.
+        var pilot = Pilot!;
+        var current = coordinator.LastProgress is { } p && coordinator.IsRunning ? $"{p.Action.ItemName}{(p.Action.Quantity > 1 ? $" × {p.Action.Quantity}" : "")}" : null;
+        Ui.RunningHeader(icons.Logo, "Cleaning hands-free", pilot.Status);
+        Ui.Gap(0.8f);
+        var width = ImGui.GetWindowWidth() * 0.6f;
+        var left = (ImGui.GetWindowWidth() - width) / 2;
+        var total = pilot.PlannedTotal;
+        ImGui.SetCursorPosX(left);
+        Ui.ProgressBar("pilot", total > 0 ? (float)pilot.PlannedDone / total : null, width, Ui.ProgressLabel(pilot.PlannedDone, total), "Whole run");
+        Ui.Gap(0.6f);
+        ImGui.SetCursorPosX(left);
+        var stopTotal = coordinator.IsRunning ? coordinator.RunTotal : 0;
+        Ui.ProgressBar("pilot-stop", stopTotal > 0 ? (float)coordinator.RunDone / stopTotal : null, width,
+            stopTotal > 0 ? Ui.ProgressLabel(coordinator.RunDone, stopTotal) : null, coordinator.IsRunning ? "At this stop" : "On the way");
+        if (current is not null) { Ui.Gap(0.3f); ImGui.SetCursorPosX(left); Ui.Hint(current); }
+        Ui.Gap(1.2f);
         ImGui.SetCursorPosX((ImGui.GetWindowWidth() - 120 * Ui.Scale) / 2);
-        if (Ui.PrimaryButton("Stop", 120 * Ui.Scale, danger: true)) Pilot.Stop();
+        if (Ui.PrimaryButton("Stop", 120 * Ui.Scale, danger: true)) pilot.Stop();
+        Ui.Gap(0.3f);
         DrawCentered(StopHint, muted: true);
     }
 
     private void DrawRunning()
     {
-        Ui.EmptyState(icons.Logo, "Cleaning…");
-        Ui.Gap(0.5f);
-        var frac = coordinator.RunTotal == 0 ? 0f : (float)coordinator.RunDone / coordinator.RunTotal;
-        ImGui.SetCursorPosX(ImGui.GetWindowWidth() * 0.2f);
-        Ui.Progress(frac, ImGui.GetWindowWidth() * 0.6f, $"{coordinator.RunDone} / {coordinator.RunTotal}");
-        if (coordinator.LastProgress is { } p) DrawCentered($"{p.Action.ItemName} × {p.Action.Quantity} · {p.Message}", muted: true);
-        Ui.Gap();
+        var p = coordinator.LastProgress;
+        Ui.RunningHeader(icons.Logo, "Cleaning", p is null ? null : $"{p.Action.ItemName}{(p.Action.Quantity > 1 ? $" × {p.Action.Quantity}" : "")} · {p.Message}");
+        Ui.Gap(0.8f);
+        var width = ImGui.GetWindowWidth() * 0.6f;
+        ImGui.SetCursorPosX((ImGui.GetWindowWidth() - width) / 2);
+        var total = coordinator.RunTotal;
+        Ui.ProgressBar("clean", total > 0 ? (float)coordinator.RunDone / total : null, width, Ui.ProgressLabel(coordinator.RunDone, total));
+        Ui.Gap(1.2f);
         ImGui.SetCursorPosX((ImGui.GetWindowWidth() - 120 * Ui.Scale) / 2);
         if (Ui.PrimaryButton("Stop", 120 * Ui.Scale, danger: true)) coordinator.CancelRun();
+        Ui.Gap(0.3f);
         DrawCentered(StopHint, muted: true);
     }
 
