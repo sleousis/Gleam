@@ -28,7 +28,9 @@ internal static class PluginServices
 
 public sealed class Plugin : IDalamudPlugin
 {
-    private const string Command = "/tidyup";
+    private const string Command = "/satchel";
+    private const string ShortCommand = "/sat";
+    private const string LegacyCommand = "/tidyup";
 
     private readonly IDalamudPluginInterface pi;
     private readonly ICommandManager commands;
@@ -158,7 +160,7 @@ public sealed class Plugin : IDalamudPlugin
             CleanableCount = () => coordinator.LastCleanableCount,
         };
         dutyNudge = new DutyNudge(dutyState, framework, coordinator.CountCleanableAsync,
-            count => toast.ShowNormal($"Tidy Up: {count} item{(count == 1 ? "" : "s")} could be cleaned. /tidyup to review."));
+            count => toast.ShowNormal($"Satchel: {count} item{(count == 1 ? "" : "s")} could be cleaned. /satchel to review."));
 
         config.Saved += ApplyProfileToServices;
         ApplyProfileToServices();
@@ -170,14 +172,16 @@ public sealed class Plugin : IDalamudPlugin
 
         commands.AddHandler(Command, new CommandInfo(OnCommand)
         {
-            HelpMessage = "Open Tidy Up. /tidyup organize · settings · history · scan · merge · stop",
+            HelpMessage = "Open Satchel. /satchel organize · settings · history · merge · stop",
         });
+        commands.AddHandler(ShortCommand, new CommandInfo(OnCommand) { HelpMessage = "Short for /satchel." });
+        commands.AddHandler(LegacyCommand, new CommandInfo(OnCommand) { ShowInHelp = false });
 
         pi.UiBuilder.Draw += windows.Draw;
         pi.UiBuilder.OpenMainUi += OpenMain;
         pi.UiBuilder.OpenConfigUi += OpenConfig;
 
-        log.Information("Tidy Up loaded");
+        log.Information("Satchel loaded");
     }
 
     private void ApplyProfileToServices()
@@ -232,7 +236,7 @@ public sealed class Plugin : IDalamudPlugin
                 _ = coordinator.StackMergeAsync().ContinueWith(t =>
                 {
                     if (t.IsFaulted) { log.Error(t.Exception, "Merge failed"); return; }
-                    chat.Print(t.Result > 0 ? $"Merged {t.Result} split stack{(t.Result == 1 ? "" : "s")}." : "Nothing to merge.", "Tidy Up");
+                    chat.Print(t.Result > 0 ? $"Merged {t.Result} split stack{(t.Result == 1 ? "" : "s")}." : "Nothing to merge.", "Satchel");
                 });
                 break;
             case "stop":
@@ -240,7 +244,7 @@ public sealed class Plugin : IDalamudPlugin
                 confirmWindow.Pilot?.Stop();
                 coordinator.CancelRun();
                 organizer.CancelRun();
-                if (!wasRunning) chat.Print("Nothing is running.", "Tidy Up");
+                if (!wasRunning) chat.Print("Nothing is running.", "Satchel");
                 break;
             default:
                 if (confirmWindow.IsOpen) confirmWindow.IsOpen = false;
@@ -260,7 +264,7 @@ public sealed class Plugin : IDalamudPlugin
         if (config.Greeted) return;
         config.Greeted = true;
         config.Save(pi);
-        chat.Print("Tidy Up is ready. Type /tidyup to see what it thinks is junk. Nothing is discarded or sold until you press Clean.", "Tidy Up");
+        chat.Print("Satchel is ready. Type /satchel (or just /sat) to see what it thinks is junk. Nothing is discarded or sold until you press Clean.", "Satchel");
     }
     private void OpenMain() => confirmWindow.Show(Ui.AppMode.Clean);
     private void OpenConfig() => settingsWindow.IsOpen = true;
@@ -274,6 +278,8 @@ public sealed class Plugin : IDalamudPlugin
         clientState.Login -= OnLogin;
         config.Saved -= ApplyProfileToServices;
         commands.RemoveHandler(Command);
+        commands.RemoveHandler(ShortCommand);
+        commands.RemoveHandler(LegacyCommand);
         windows.RemoveAllWindows();
         highlighter.Dispose();
         ventures.Dispose();

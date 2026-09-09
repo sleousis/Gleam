@@ -162,18 +162,18 @@ public sealed class OrganizerCoordinator : IDisposable
             log.Information("Organize finished: {Summary}", report.Summary());
             if (config.ChatSummaryAfterRun && !IsPilotRunning())
             {
-                chat.Print($"{report.Summary()}.", "Tidy Up");
+                chat.Print($"{report.Summary()}.", "Satchel");
                 foreach (var (reason, count) in report.PendingByReason())
-                    chat.Print($"{count} waiting: {(string.IsNullOrEmpty(reason) ? "its storage is not open" : reason)}.", "Tidy Up");
+                    chat.Print($"{count} waiting: {(string.IsNullOrEmpty(reason) ? "its storage is not open" : reason)}.", "Satchel");
                 if (report.Aborted && report.Failed > 0)
-                    chat.PrintError($"Stopped: {report.AbortReason}. Nothing after that was moved.", "Tidy Up");
+                    chat.PrintError($"Stopped: {report.AbortReason}. Nothing after that was moved.", "Satchel");
             }
         }
         catch (Exception ex)
         {
             log.Error(ex, "Organizer run failed");
             Status = "The run did not finish";
-            chat.PrintError("Organizing did not finish. Details are in the Dalamud log.", "Tidy Up");
+            chat.PrintError("Organizing did not finish. Details are in the Dalamud log.", "Satchel");
         }
         finally
         {
@@ -191,7 +191,7 @@ public sealed class OrganizerCoordinator : IDisposable
         if (IsRunning || cleaner.IsRunning || cleaner.IsPilotRunning() || !player.IsLoaded) return;
         var ready = PendingMoves.Where(m => m.RequiresOpen is { } s && s.Kind == kind && mover.IsOpen(s)).ToList();
         if (ready.Count == 0) return;
-        toast.ShowNormal($"Tidy Up: putting away {ready.Count} item{(ready.Count == 1 ? "" : "s")} from your earlier preview.");
+        toast.ShowNormal($"Satchel: putting away {ready.Count} item{(ready.Count == 1 ? "" : "s")} from your earlier preview.");
         await RunMovesAsync(ready, refreshAfter: true).ConfigureAwait(false);
     }
 }

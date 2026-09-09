@@ -9,7 +9,7 @@ using TidyUp.Services;
 
 namespace TidyUp.Windows;
 
-/// <summary>Everything Tidy Up ever destroyed, sold, turned in or desynthed, with how to get it back.</summary>
+/// <summary>Everything Satchel ever destroyed, sold, turned in or desynthed, with how to get it back.</summary>
 public sealed class HistoryWindow : StyledWindow
 {
     private readonly IRunLog runLog;
@@ -19,7 +19,7 @@ public sealed class HistoryWindow : StyledWindow
     private string search = string.Empty;
     private bool loading;
 
-    public HistoryWindow(IRunLog runLog, ItemDatabase db, IconCache icons) : base("Tidy Up History###TidyUpHistory")
+    public HistoryWindow(IRunLog runLog, ItemDatabase db, IconCache icons) : base("Satchel History###TidyUpHistory")
     {
         this.runLog = runLog;
         this.db = db;
@@ -68,7 +68,7 @@ public sealed class HistoryWindow : StyledWindow
 
         if (rows.Count == 0)
         {
-            if (entries.Count == 0) Ui.EmptyState(icons.Logo, "Nothing yet.", "Every item Tidy Up discards, sells or turns in is listed here.");
+            if (entries.Count == 0) Ui.EmptyState(icons.Logo, "Nothing yet.", "Every item Satchel discards, sells or turns in is listed here.");
             else Ui.EmptyState(icons.Logo, "Nothing matches your search.");
             return;
         }

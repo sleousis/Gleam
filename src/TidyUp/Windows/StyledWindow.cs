@@ -5,7 +5,7 @@ using Dalamud.Interface.Windowing;
 
 namespace TidyUp.Windows;
 
-/// <summary>A Dalamud window that wears the Tidy Up style: pushed before Begin, popped after End.</summary>
+/// <summary>A Dalamud window that wears the Satchel style: pushed before Begin, popped after End.</summary>
 public abstract class StyledWindow : Window
 {
     private IDisposable? style;
@@ -16,7 +16,7 @@ public abstract class StyledWindow : Window
     {
     }
 
-    /// <summary>A title-bar button that opens another Tidy Up window, so every window can reach every other.</summary>
+    /// <summary>A title-bar button that opens another Satchel window, so every window can reach every other.</summary>
     public void AddNav(FontAwesomeIcon icon, string tooltip, Action open)
     {
         TitleBarButtons.Add(new TitleBarButton

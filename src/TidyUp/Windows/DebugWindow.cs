@@ -34,7 +34,7 @@ public sealed class DebugWindow : StyledWindow
 
     public DebugWindow(IFramework framework, GameActions actions, MoveActions mover, GameInventoryScanner scanner, InventoryContextDriver context,
         ItemDatabase db, AllaganToolsSource allagan, IMarketPriceSource market, IPlayerState player, Configuration config)
-        : base("Tidy Up Troubleshooting###TidyUpDebug")
+        : base("Satchel Troubleshooting###TidyUpDebug")
     {
         this.framework = framework;
         this.actions = actions;

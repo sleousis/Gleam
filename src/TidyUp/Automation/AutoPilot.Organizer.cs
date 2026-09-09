@@ -64,13 +64,13 @@ public sealed partial class AutoPilot
             var summary = $"{movesDone} moved" + (movesPending > 0 ? $", {movesPending} still waiting" : string.Empty)
                           + (tally.LegFailures.Count > 0 ? $", {tally.LegFailures.Count} step{(tally.LegFailures.Count == 1 ? "" : "s")} could not finish" : string.Empty);
             log.Information("Hands-free organize finished: {Summary}", summary);
-            chat.Print($"Hands-free organize finished: {summary}.", "Tidy Up");
-            foreach (var line in tally.LegFailures) chat.PrintError(line, "Tidy Up");
+            chat.Print($"Hands-free organize finished: {summary}.", "Satchel");
+            foreach (var line in tally.LegFailures) chat.PrintError(line, "Satchel");
         }
         catch (OperationCanceledException)
         {
             Status = "Stopped";
-            chat.Print("Stopped. Nothing else was moved.", "Tidy Up");
+            chat.Print("Stopped. Nothing else was moved.", "Satchel");
         }
         catch (AutoPilotException ex)
         {
