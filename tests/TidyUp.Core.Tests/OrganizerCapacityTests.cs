@@ -38,14 +38,17 @@ public class OrganizerCapacityTests
     [Fact]
     public void Occupied_slots_and_stack_headroom_are_counted()
     {
-        // item 15: stackable widget, stack 99. Two partial stacks of 60 and 50 leave 39 + 49 = 88 headroom.
+        // item 15: stackable widget, stack 99. Two partial stacks of 60 and 50 have 39 and 49 room; a move
+        // merges into one stack only, so the headroom that matters is the roomiest single stack.
         var items = new[] { ScannedItem.Simple(Inv(0), 15, 60), ScannedItem.Simple(Inv(5), 15, 50), ScannedItem.Simple(Inv(7), 4, 1) };
         var bags = CapacityModel.Build(items, [Bags], Lookup)[Bags];
 
         Assert.Equal(3, bags.Used);
         Assert.Equal(137, bags.Free);
-        Assert.Equal(88, bags.Headroom(15, false));
+        Assert.Equal(49, bags.Headroom(15, false));
         Assert.Equal(0, bags.Headroom(15, true));
+        Assert.Equal(0, bags.SlotsNeeded(15, false, 49, 99));    // fits the roomier stack
+        Assert.Equal(1, bags.SlotsNeeded(15, false, 60, 99));    // 88 in total, but no single stack takes 60
     }
 
     [Fact]
@@ -55,15 +58,18 @@ public class OrganizerCapacityTests
         var bags = CapacityModel.Build(items, [Bags], Lookup)[Bags];
 
         Assert.Equal(0, bags.SlotsNeeded(15, false, 30, 99));    // fits entirely in the partial stack
-        Assert.Equal(1, bags.SlotsNeeded(15, false, 40, 99));    // 1 spills over into a new stack
-        Assert.Equal(3, bags.SlotsNeeded(15, false, 39 + 250, 99)); // 250 left after headroom → 3 stacks
+        Assert.Equal(1, bags.SlotsNeeded(15, false, 40, 99));    // too big for it: lands in a slot of its own
         Assert.Equal(1, bags.SlotsNeeded(4, false, 1, 1));       // gear never merges
 
         var used = bags.Accept(15, false, 40, 99);
         Assert.Equal(1, used);
         Assert.Equal(2, bags.Used);
-        // 39 merged, 1 started a new stack of 1 → 98 headroom left in that new stack.
-        Assert.Equal(98, bags.Headroom(15, false));
+        // The 40 sit in a new stack with 59 room; the old stack still has 39. Roomiest single stack: 59.
+        Assert.Equal(59, bags.Headroom(15, false));
+
+        Assert.Equal(0, bags.Accept(15, false, 30, 99));          // merges into the 39-room stack, the tighter fit
+        Assert.Equal(59, bags.Headroom(15, false));
+        Assert.Equal(2, bags.Used);
     }
 
     [Fact]

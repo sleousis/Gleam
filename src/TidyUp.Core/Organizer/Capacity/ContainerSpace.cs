@@ -18,7 +18,8 @@ public sealed class ContainerSpace
 {
     private readonly Dictionary<uint, int> pageSize = new();
     private readonly Dictionary<uint, int> pageUsed = new();
-    private readonly Dictionary<(uint ItemId, bool Hq), int> headroom = new();
+    /// <summary>Room left in each partial stack of an item, one entry per stack. A whole-stack move can merge into one of them, never across several.</summary>
+    private readonly Dictionary<(uint ItemId, bool Hq), List<int>> headroom = new();
 
     public StorageId Id { get; }
 
@@ -50,23 +51,29 @@ public sealed class ContainerSpace
         pageSize.TryAdd(item.Slot.ContainerId, 0);
         if (info is not null && info.StackSize > 1 && !item.IsCollectable && !item.HasMateria)
         {
-            var key = (item.ItemId, item.IsHq);
-            headroom[key] = headroom.GetValueOrDefault(key) + Math.Max(0, (int)info.StackSize - item.Quantity);
+            var room = (int)info.StackSize - item.Quantity;
+            if (room > 0) Rooms((item.ItemId, item.IsHq)).Add(room);
         }
     }
 
-    /// <summary>Space left in partial stacks of this item.</summary>
-    public int Headroom(uint itemId, bool hq) => headroom.GetValueOrDefault((itemId, hq));
+    private List<int> Rooms((uint, bool) key)
+    {
+        if (!headroom.TryGetValue(key, out var list)) headroom[key] = list = new List<int>();
+        return list;
+    }
+
+    /// <summary>The most room any one partial stack of this item still has; 0 when there is no partial stack.</summary>
+    public int Headroom(uint itemId, bool hq) => headroom.TryGetValue((itemId, hq), out var rooms) && rooms.Count > 0 ? rooms.Max() : 0;
 
     /// <summary>
-    /// New slots an incoming stack would need after filling partial stacks. Zero when it merges away entirely.
+    /// New slots an incoming stack needs: none when one partial stack can take the whole of it (the game merges a
+    /// move into a single slot), otherwise a slot of its own. Stacks are never split across several targets.
     /// </summary>
     public int SlotsNeeded(uint itemId, bool hq, int quantity, uint stackSize, bool canMerge = true)
     {
         if (stackSize <= 1 || !canMerge) return 1;
-        var room = Headroom(itemId, hq);
-        var left = Math.Max(0, quantity - room);
-        return left == 0 ? 0 : (int)Math.Ceiling(left / (double)stackSize);
+        if (Headroom(itemId, hq) >= quantity) return 0;
+        return Math.Max(1, (int)Math.Ceiling(quantity / (double)stackSize));
     }
 
     /// <summary>Whether the stack fits right now, on any page, given the current headroom.</summary>
@@ -79,16 +86,18 @@ public sealed class ContainerSpace
         var needed = SlotsNeeded(itemId, hq, quantity, stackSize, canMerge);
         if (stackSize > 1 && canMerge)
         {
-            var key = (itemId, hq);
-            var room = headroom.GetValueOrDefault(key);
-            var merged = Math.Min(room, quantity);
-            headroom[key] = room - merged;
-            var left = quantity - merged;
-            if (left > 0)
+            var rooms = Rooms((itemId, hq));
+            if (needed == 0)
             {
-                // The last new stack may be partial and becomes headroom for later arrivals.
-                var partial = left % (int)stackSize;
-                if (partial != 0) headroom[key] = headroom.GetValueOrDefault(key) + ((int)stackSize - partial);
+                // Merge into the tightest stack that still takes the whole of it, keeping roomier ones for later.
+                var i = rooms.IndexOf(rooms.Where(r => r >= quantity).Min());
+                rooms[i] -= quantity;
+                if (rooms[i] == 0) rooms.RemoveAt(i);
+            }
+            else
+            {
+                var partial = quantity % (int)stackSize;
+                if (partial != 0) rooms.Add((int)stackSize - partial);
             }
         }
         var remaining = needed;
@@ -111,8 +120,8 @@ public sealed class ContainerSpace
         if (pageUsed.GetValueOrDefault(page) > 0) pageUsed[page]--;
         if (info is not null && info.StackSize > 1 && !item.IsCollectable && !item.HasMateria)
         {
-            var key = (item.ItemId, item.IsHq);
-            headroom[key] = Math.Max(0, headroom.GetValueOrDefault(key) - Math.Max(0, (int)info.StackSize - item.Quantity));
+            var room = (int)info.StackSize - item.Quantity;
+            if (room > 0 && headroom.TryGetValue((item.ItemId, item.IsHq), out var rooms)) rooms.Remove(room);
         }
     }
 
@@ -121,7 +130,7 @@ public sealed class ContainerSpace
         var c = new ContainerSpace(Id) { SizesAreLive = SizesAreLive };
         foreach (var (k, v) in pageSize) c.pageSize[k] = v;
         foreach (var (k, v) in pageUsed) c.pageUsed[k] = v;
-        foreach (var (k, v) in headroom) c.headroom[k] = v;
+        foreach (var (k, v) in headroom) c.headroom[k] = new List<int>(v);
         return c;
     }
 }

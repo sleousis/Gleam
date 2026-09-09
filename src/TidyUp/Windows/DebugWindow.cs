@@ -114,7 +114,7 @@ public sealed class DebugWindow : StyledWindow
             if (item is null) return "slot is empty";
             var saddle = new Core.Organizer.Capacity.StorageId(ContainerKind.Saddlebag);
             if (!mover.IsOpen(saddle)) return "open the saddlebag first";
-            var landing = mover.FindLanding(saddle, item.ItemId, item.IsHq, 0, new HashSet<SlotRef>());
+            var landing = mover.FindLanding(saddle, item.ItemId, item.IsHq, item.Quantity, 0, new HashSet<SlotRef>());
             if (landing is null) return "no room in the saddlebag";
             var there = await mover.MoveAsync(target, landing.Value, item.ItemId, item.Quantity, ct);
             if (there.Status != Core.Organizer.Execution.MoveStatus.Done) return $"to saddlebag: {there.Status} · {there.Message}";

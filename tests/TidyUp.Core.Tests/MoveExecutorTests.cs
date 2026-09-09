@@ -26,10 +26,11 @@ internal sealed class FakeMoveActions : IMoveActions
         return preferred is { } p && hits.Contains(p) ? p : hits[0];
     }
 
-    public SlotRef? FindLanding(StorageId storage, uint itemId, bool isHq, uint preferredPage, IReadOnlySet<SlotRef> reserved)
+    public SlotRef? FindLanding(StorageId storage, uint itemId, bool isHq, int quantity, uint preferredPage, IReadOnlySet<SlotRef> reserved)
     {
         var page = preferredPage != 0 ? preferredPage : CapacityModel.PagesOf(storage.Kind).First();
-        var partial = Slots.Values.FirstOrDefault(i => StorageId.Of(i.Slot) == storage && i.ItemId == itemId && i.IsHq == isHq && !reserved.Contains(i.Slot));
+        var stackSize = Lookup(itemId)?.StackSize ?? 1;
+        var partial = Slots.Values.FirstOrDefault(i => StorageId.Of(i.Slot) == storage && i.ItemId == itemId && i.IsHq == isHq && !reserved.Contains(i.Slot) && i.Quantity + quantity <= stackSize);
         if (partial is not null) return partial.Slot;
         var size = CapacityModel.DefaultPageSize(page);
         for (var i = 0; i < size; i++)

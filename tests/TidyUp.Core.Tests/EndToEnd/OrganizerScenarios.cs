@@ -160,6 +160,52 @@ public class OrganizerScenarios
     }
 
     [Fact]
+    public async Task A_saddlebag_that_fills_up_along_the_way_parks_the_rest_without_hammering_the_game()
+    {
+        var world = new FakeWorld { SaddlebagOpen = true };
+        world.PageSizes[(Saddle, GameContainerIds.SaddleBag1)] = 3;
+        world.PageSizes[(Saddle, GameContainerIds.SaddleBag2)] = 0;
+        world.Add(Bag(0), 15, 99);
+        world.Add(Bag(1), 15, 99);
+        world.Add(Bag(2), 15, 99);
+        var layout = Layout(Rule("widgets", new OrganizerPredicate { ItemIds = [15] }, Destination.Saddlebag));
+        var preview = Preview(world, layout);
+        Assert.True(preview.Report.Feasible);
+        Assert.Equal(3, preview.Moves.Count);
+
+        // Between the preview and the run something else lands in the saddlebag.
+        world.Add(Saddlebag(1), 12, 1);
+        world.Add(Saddlebag(2), 12, 1);
+
+        var report = await Organize(world, preview.Moves);
+        Assert.Equal(1, report.Done);
+        Assert.Equal(2, report.Pending.Count);
+        Assert.All(report.PendingReasons.Values, r => Assert.Contains("no room", r));
+        Assert.Equal(1, world.Calls.Count(c => c.StartsWith("move:")));         // the two that cannot land never reach the game
+        Assert.False(report.Aborted);
+    }
+
+    [Fact]
+    public async Task A_stack_only_merges_into_one_that_can_take_all_of_it()
+    {
+        var world = new FakeWorld { SaddlebagOpen = true };
+        world.Add(Bag(0), 15, 30);
+        world.Add(Saddlebag(0), 15, 90);          // only 9 room: not a merge target for 30
+        world.PageSizes[(Saddle, GameContainerIds.SaddleBag1)] = 1;
+        world.PageSizes[(Saddle, GameContainerIds.SaddleBag2)] = 0;
+        var layout = Layout(Rule("widgets", new OrganizerPredicate { ItemIds = [15] }, Destination.Saddlebag));
+
+        var preview = Preview(world, layout);
+        Assert.False(preview.Report.Feasible);                                  // the model knows a merge cannot take it
+        Assert.Equal(1, Assert.Single(preview.Report.Shortfalls).Short);
+
+        var report = await Organize(world, preview.Moves);                       // and the executor agrees
+        Assert.Equal(0, report.Done);
+        Assert.Empty(world.Calls.Where(c => c.StartsWith("move:")));
+        Assert.Equal(90, world.Slots[Saddlebag(0)].Quantity);
+    }
+
+    [Fact]
     public async Task Gear_set_pieces_are_pinned_away_from_retainers_and_the_saddlebag()
     {
         var world = new FakeWorld { SaddlebagOpen = true };

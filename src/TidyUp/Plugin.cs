@@ -81,7 +81,7 @@ public sealed class Plugin : IDalamudPlugin
         dialogs = new AddonDriver(addonLifecycle, framework, log);
         var contextDriver = new InventoryContextDriver(framework, db, log);
         var actions = new GameActions(framework, inventory, scanner, dialogs, contextDriver, db, config, log, condition);
-        var mover = new MoveActions(framework, scanner, log, config);
+        var mover = new MoveActions(framework, scanner, log, config, id => db.Get(id)?.StackSize ?? 1);
         var merger = new StackMerger(mover, log);
         var runLog = new JsonLinesRunLog(new ReliableTextStorage(storage, pi.GetPluginConfigDirectory()), "tidyup-history.jsonl");
         allagan = new AllaganToolsSource(pi, log) { Enabled = config.UseAllaganTools, RetainerNames = GameInventoryScanner.KnownRetainers, CanHoldMateria = id => db.Get(id)?.IsEquipment == true };

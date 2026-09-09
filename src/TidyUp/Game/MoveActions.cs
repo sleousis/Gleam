@@ -17,8 +17,11 @@ public sealed class MoveActions : IMoveActions
     private readonly IPluginLog log;
     private readonly Configuration config;
 
-    public MoveActions(IFramework framework, GameInventoryScanner scanner, IPluginLog log, Configuration config)
+    private readonly Func<uint, uint> stackSizeOf;
+
+    public MoveActions(IFramework framework, GameInventoryScanner scanner, IPluginLog log, Configuration config, Func<uint, uint> stackSizeOf)
     {
+        this.stackSizeOf = stackSizeOf;
         this.framework = framework;
         this.scanner = scanner;
         this.log = log;
@@ -50,8 +53,8 @@ public sealed class MoveActions : IMoveActions
         return preferred is { } p && hits.Contains(p) ? p : hits[0];
     }
 
-    public SlotRef? FindLanding(StorageId storage, uint itemId, bool isHq, uint preferredPage, IReadOnlySet<SlotRef> reserved) =>
-        Native.FindLanding(storage, itemId, isHq, preferredPage, reserved);
+    public SlotRef? FindLanding(StorageId storage, uint itemId, bool isHq, int quantity, uint preferredPage, IReadOnlySet<SlotRef> reserved) =>
+        Native.FindLanding(storage, itemId, isHq, quantity, stackSizeOf(itemId), preferredPage, reserved);
 
     public IReadOnlyDictionary<(StorageId Storage, uint Page), int> LiveSizes() => GameInventoryScanner.LiveSizes();
 
@@ -63,6 +66,8 @@ public sealed class MoveActions : IMoveActions
         var destBefore = scanner.ReadSlot(to);
         var expectAtDest = destBefore is null ? quantity : destBefore.ItemId == itemId ? destBefore.Quantity + quantity : -1;
         if (expectAtDest < 0) return new MoveOutcome(MoveStatus.Refused, "the destination slot holds a different item");
+        // A merge must take the whole stack; the game would otherwise leave a remainder behind or swap the two.
+        if (destBefore is not null && expectAtDest > stackSizeOf(itemId)) return new MoveOutcome(MoveStatus.Refused, "the stack there has no room for all of it");
 
         var sent = await framework.RunOnFrameworkThread(() => Native.Move(from, to, itemId)).ConfigureAwait(false);
         if (sent is null) return new MoveOutcome(MoveStatus.Refused, "the item or its destination could not be read");
@@ -98,7 +103,7 @@ public sealed class MoveActions : IMoveActions
             return im->MoveItemSlot((InventoryType)from.ContainerId, (ushort)from.Slot, (InventoryType)to.ContainerId, (ushort)to.Slot, true);
         }
 
-        public static SlotRef? FindLanding(StorageId storage, uint itemId, bool isHq, uint preferredPage, IReadOnlySet<SlotRef> reserved)
+        public static SlotRef? FindLanding(StorageId storage, uint itemId, bool isHq, int quantity, uint stackSize, uint preferredPage, IReadOnlySet<SlotRef> reserved)
         {
             var im = InventoryManager.Instance();
             if (im == null) return null;
@@ -122,8 +127,9 @@ public sealed class MoveActions : IMoveActions
                         firstEmpty ??= slot;
                         continue;
                     }
-                    if (ScannedItem.BaseItemId(item->ItemId) == itemId && item->IsHighQuality() == isHq && !item->IsCollectable())
-                        return slot; // partial stack of the same thing: the game will merge into it
+                    if (ScannedItem.BaseItemId(item->ItemId) == itemId && item->IsHighQuality() == isHq && !item->IsCollectable()
+                        && item->GetQuantity() + quantity <= stackSize)
+                        return slot; // a stack of the same thing with room for all of it: the game merges into it
                 }
                 // For the armoury, only the item's own page is valid; stop after the preferred page.
                 if (storage.Kind == ContainerKind.Armoury && preferredPage != 0) break;
