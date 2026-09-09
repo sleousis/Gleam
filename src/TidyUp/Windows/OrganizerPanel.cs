@@ -943,11 +943,11 @@ public sealed class OrganizerPanel
             ImGui.SameLine();
             Ui.TextColored(Ui.Danger, $"Gleam cannot travel: {blocked}.");
         }
-        var buttonWidth = 220 * Ui.Scale;
         var style = ImGui.GetStyle();
+        // The button narrows before the window does, so a small window never pushes it off the edge.
+        var buttonWidth = Math.Clamp((ImGui.GetWindowWidth() - style.WindowPadding.X * 2) * 0.42f, 150 * Ui.Scale, 220 * Ui.Scale);
         var hereW = handsFree && !Simple ? ImGui.CalcTextSize("Organize here only", false, 0).X + style.FramePadding.X * 2 + style.ItemSpacing.X : 0;
-        ImGui.SameLine();
-        Ui.RightAlign(hereW + buttonWidth);
+        Ui.RightAlignOrWrap(hereW + buttonWidth, 160 * Ui.Scale);
         if (handsFree && !Simple)
         {
             using (ImRaii.Disabled(!canRun))
@@ -982,7 +982,7 @@ public sealed class OrganizerPanel
         Ui.RunningHeader(icons.LogoMedium, pilot is null ? "Organizing" : "Organizing hands-free", pilot?.Status ?? current);
         Ui.Gap(0.8f);
 
-        var width = ImGui.GetWindowWidth() * 0.6f;
+        var width = Math.Clamp(ImGui.GetWindowWidth() * 0.6f, 260 * Ui.Scale, 720 * Ui.Scale);
         var left = (ImGui.GetWindowWidth() - width) / 2;
         if (pilot is null)
         {

@@ -633,14 +633,17 @@ public sealed class ConfirmationWindow : StyledWindow
             ImGui.SameLine();
             Ui.Text($"{rows.Count} item{(rows.Count == 1 ? "" : "s")}");
             var shown = Ui.Count($"grpval:{action}", value);
-            if (shown > 0)
+            // The worth is the first thing to go when the card is narrow; the link and the count are not.
+            var linkLabel = open ? "Hide the list" : "See the list";
+            var linkW = ImGui.CalcTextSize(linkLabel, false, 0).X + ImGui.GetStyle().FramePadding.X * 2 + 8 * Ui.Scale;
+            if (shown > 0 && ImGui.GetContentRegionAvail().X > linkW + 120 * Ui.Scale)
             {
                 ImGui.SameLine();
                 Ui.TextColored(Ui.Market, $"about {Ui.Gil(shown)}");
             }
             ImGui.SameLine();
-            Ui.RightAlign(110 * Ui.Scale);
-            if (Ui.LinkButton(open ? "Hide the list" : "See the list")) sectionOpen[key] = !open;
+            Ui.RightAlign(linkW);
+            if (Ui.LinkButton(linkLabel)) sectionOpen[key] = !open;
 
             if (!open) return;
             Ui.Gap(0.3f);
@@ -1096,12 +1099,12 @@ public sealed class ConfirmationWindow : StyledWindow
             Ui.Gap(0.2f);
             Ui.TextColored(Ui.Warn, $"That is a lot at once. {cap.Items} items, worth about {Ui.Gil(cap.GilAtRisk)}. Press again if you are sure.");
         }
-        var buttonWidth = 240 * Ui.Scale;
         var style = ImGui.GetStyle();
+        // The button narrows before the window does, so a small window never pushes it off the edge.
+        var buttonWidth = Math.Clamp((ImGui.GetWindowWidth() - style.WindowPadding.X * 2) * 0.42f, 150 * Ui.Scale, 240 * Ui.Scale);
         var sortW = Simple ? 0f : ImGui.CalcTextSize(SortAfterLabel, false, 0).X + ImGui.GetFrameHeight() + style.ItemInnerSpacing.X + style.ItemSpacing.X * 2;
         var hereW = handsFree && needsTravel && !Simple ? ImGui.CalcTextSize("Clean here only", false, 0).X + style.FramePadding.X * 2 + style.ItemSpacing.X : 0;
-        ImGui.SameLine();
-        Ui.RightAlign(sortW + hereW + buttonWidth);
+        Ui.RightAlignOrWrap(sortW + hereW + buttonWidth, 160 * Ui.Scale);
         if (!Simple)
         {
             var sortAfter = config.SortAfterRun;
@@ -1274,7 +1277,7 @@ public sealed class ConfirmationWindow : StyledWindow
         var current = coordinator.LastProgress is { } p && coordinator.IsRunning ? $"{p.Action.ItemName}{(p.Action.Quantity > 1 ? $" × {p.Action.Quantity}" : "")}" : null;
         Ui.RunningHeader(icons.LogoMedium, "Cleaning hands-free", pilot.Status);
         Ui.Gap(0.8f);
-        var width = ImGui.GetWindowWidth() * 0.6f;
+        var width = Math.Clamp(ImGui.GetWindowWidth() * 0.6f, 260 * Ui.Scale, 720 * Ui.Scale);
         var left = (ImGui.GetWindowWidth() - width) / 2;
         var total = pilot.PlannedTotal;
         ImGui.SetCursorPosX(left);
@@ -1297,7 +1300,7 @@ public sealed class ConfirmationWindow : StyledWindow
         var p = coordinator.LastProgress;
         Ui.RunningHeader(icons.LogoMedium, "Cleaning", p is null ? null : $"{p.Action.ItemName}{(p.Action.Quantity > 1 ? $" × {p.Action.Quantity}" : "")} · {p.Message}");
         Ui.Gap(0.8f);
-        var width = ImGui.GetWindowWidth() * 0.6f;
+        var width = Math.Clamp(ImGui.GetWindowWidth() * 0.6f, 260 * Ui.Scale, 720 * Ui.Scale);
         ImGui.SetCursorPosX((ImGui.GetWindowWidth() - width) / 2);
         var total = coordinator.RunTotal;
         Ui.ProgressBar("clean", total > 0 ? (float)coordinator.RunDone / total : null, width, Ui.ProgressLabel(coordinator.RunDone, total));
