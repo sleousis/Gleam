@@ -285,6 +285,7 @@ public sealed class RunCoordinator : IDisposable
             var identity = new RunIdentity(player.ContentId, player.CharacterName);
             var report = await engine.ExecuteAsync(queue, identity, runCts.Token, progress).ConfigureAwait(false);
             LastReport = report;
+            if (report.Done > 0 && !config.HasCleanedOnce) { config.HasCleanedOnce = true; save(); }
             PendingActions.AddRange(report.Pending);
             PendingActions.AddRange(report.Moved);
             if (config.SortAfterRun) await SortTouchedAsync(report).ConfigureAwait(false);

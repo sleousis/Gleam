@@ -193,8 +193,14 @@ public sealed class Configuration : IPluginConfiguration
     public bool SeenCleanIntro { get; set; }
     public bool SeenOrganizeIntro { get; set; }
 
-    /// <summary>The three-screen first run: what happens to junk, what to keep, how it works. Shown once.</summary>
+    /// <summary>The one first-run screen. Shown once.</summary>
     public bool SeenFirstRun { get; set; }
+
+    /// <summary>A clean has finished at least once, so the offer to organize is worth making.</summary>
+    public bool HasCleanedOnce { get; set; }
+
+    /// <summary>The offer to start organizing has been answered, either way.</summary>
+    public bool AnsweredOrganizeOffer { get; set; }
 
     /// <summary>
     /// Off: the simple layer only. One list with what will happen, quick setup for where things go, four settings.
