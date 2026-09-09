@@ -69,7 +69,7 @@ public sealed class OrganizerPanel
         var plan = Plan;
         var enabled = plan?.Rules.Count(r => r.Enabled) ?? 0;
         var subtitle = plan is null ? "No layout yet" : $"{plan.Name} · {enabled} rule{(enabled == 1 ? "" : "s")}";
-        Ui.Header(icons.Logo, "Gleam", subtitle, Ui.SegmentedWidth(Views), () =>
+        Ui.Header(icons.LogoSmall, "Gleam", subtitle, Ui.SegmentedWidth(Views), () =>
         {
             if (Ui.Segmented("##view", ref view, Views) && view == View.Preview && organizer.Current is null) _ = organizer.PreviewAsync();
         }, null, () => { if (Ui.ModeSwitch(Ui.AppMode.Organize)) SwitchToClean?.Invoke(); });
@@ -96,7 +96,7 @@ public sealed class OrganizerPanel
             {
                 if (plan is null)
                 {
-                    Ui.EmptyState(icons.Logo, "No layout yet.", "A layout says what goes where. The starter one is a sensible beginning.");
+                    Ui.EmptyState(icons.LogoMedium, "No layout yet.", "A layout says what goes where. The starter one is a sensible beginning.");
                     Ui.Gap(0.6f);
                     var w = 240 * Ui.Scale;
                     ImGui.SetCursorPosX((ImGui.GetWindowWidth() - w) / 2);
@@ -593,7 +593,7 @@ public sealed class OrganizerPanel
         var result = organizer.Current;
         if (organizer.IsPreviewing || result is null)
         {
-            Ui.EmptyState(icons.Logo, organizer.IsPreviewing ? "Looking through your storage…" : "Nothing to show yet.", organizer.Status);
+            Ui.EmptyState(icons.LogoMedium, organizer.IsPreviewing ? "Looking through your storage…" : "Nothing to show yet.", organizer.Status);
             if (!organizer.IsPreviewing && Ui.IconButton(FontAwesomeIcon.Sync, "Refresh")) _ = organizer.PreviewAsync();
             return;
         }
@@ -624,7 +624,7 @@ public sealed class OrganizerPanel
 
         if (result.Moves.Count == 0)
         {
-            Ui.EmptyState(icons.Logo, "Everything is already where this layout wants it.", result.Pinned.Count + result.NoRoom.Count > 0 ? "Some items were left alone. See below." : null);
+            Ui.EmptyState(icons.LogoMedium, "Everything is already where this layout wants it.", result.Pinned.Count + result.NoRoom.Count > 0 ? "Some items were left alone. See below." : null);
         }
         else
         {
@@ -770,7 +770,7 @@ public sealed class OrganizerPanel
         var pilot = Pilot is { IsRunning: true } ? Pilot : null;
         var p = organizer.LastProgress;
         var current = p is null || !organizer.IsRunning ? null : $"{p.Op.Info.Name}{(p.Op.Item.Quantity > 1 ? $" × {p.Op.Item.Quantity}" : "")} · {p.Message}";
-        Ui.RunningHeader(icons.Logo, pilot is null ? "Organizing" : "Organizing hands-free", pilot?.Status ?? current);
+        Ui.RunningHeader(icons.LogoMedium, pilot is null ? "Organizing" : "Organizing hands-free", pilot?.Status ?? current);
         Ui.Gap(0.8f);
 
         var width = ImGui.GetWindowWidth() * 0.6f;

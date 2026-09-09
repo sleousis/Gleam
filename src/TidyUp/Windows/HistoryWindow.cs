@@ -48,7 +48,7 @@ public sealed class HistoryWindow : StyledWindow
 
     public override void Draw()
     {
-        Ui.Header(icons.Logo, "History", $"{entries.Count} action{(entries.Count == 1 ? "" : "s")} on record");
+        Ui.Header(icons.LogoSmall, "History", $"{entries.Count} action{(entries.Count == 1 ? "" : "s")} on record");
         Ui.Gap(0.4f);
         Ui.SearchBox("##hs", ref search, 260 * Ui.Scale);
         ImGui.SameLine();
@@ -68,8 +68,8 @@ public sealed class HistoryWindow : StyledWindow
 
         if (rows.Count == 0)
         {
-            if (entries.Count == 0) Ui.EmptyState(icons.Logo, "Nothing yet.", "Every item Gleam discards, sells or turns in is listed here.");
-            else Ui.EmptyState(icons.Logo, "Nothing matches your search.");
+            if (entries.Count == 0) Ui.EmptyState(icons.LogoMedium, "Nothing yet.", "Every item Gleam discards, sells or turns in is listed here.");
+            else Ui.EmptyState(icons.LogoMedium, "Nothing matches your search.");
             return;
         }
 

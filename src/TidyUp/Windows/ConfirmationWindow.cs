@@ -147,10 +147,10 @@ public sealed class ConfirmationWindow : StyledWindow
                 if (coordinator.FocusContainer is null && plan.Alts.Count > 0) DrawAlts(plan);
                 if (!drewAny)
                 {
-                    if (plan.AllRows.Any()) Ui.EmptyState(icons.Logo, "Nothing matches your filters.", "Clear a chip or the search box to see more.");
+                    if (plan.AllRows.Any()) Ui.EmptyState(icons.LogoMedium, "Nothing matches your filters.", "Clear a chip or the search box to see more.");
                     else
                     {
-                        Ui.EmptyState(icons.Logo, "Nothing to clean.", "Everything looks tidy.");
+                        Ui.EmptyState(icons.LogoMedium, "Nothing to clean.", "Everything looks tidy.");
                         if (Organizer is not null)
                         {
                             Ui.Gap(0.5f);
@@ -223,7 +223,7 @@ public sealed class ConfirmationWindow : StyledWindow
         var subtitle = coordinator.FocusContainer is { } fc
             ? $"Only the {FocusName(plan, fc)} · {checkedCount} of {total} selected"
             : $"{total} item{(total == 1 ? "" : "s")} in {containers} container{(containers == 1 ? "" : "s")} · {checkedCount} selected";
-        Ui.Header(icons.Logo, "Gleam", subtitle, Ui.SegmentedWidth(PresetOptions), () =>
+        Ui.Header(icons.LogoSmall, "Gleam", subtitle, Ui.SegmentedWidth(PresetOptions), () =>
         {
             if (Ui.Segmented("##preset", ref preset, PresetOptions))
             {
@@ -910,7 +910,7 @@ public sealed class ConfirmationWindow : StyledWindow
         // The whole trip is the bar; the step under way is the line beneath the title.
         var pilot = Pilot!;
         var current = coordinator.LastProgress is { } p && coordinator.IsRunning ? $"{p.Action.ItemName}{(p.Action.Quantity > 1 ? $" × {p.Action.Quantity}" : "")}" : null;
-        Ui.RunningHeader(icons.Logo, "Cleaning hands-free", pilot.Status);
+        Ui.RunningHeader(icons.LogoMedium, "Cleaning hands-free", pilot.Status);
         Ui.Gap(0.8f);
         var width = ImGui.GetWindowWidth() * 0.6f;
         var left = (ImGui.GetWindowWidth() - width) / 2;
@@ -933,7 +933,7 @@ public sealed class ConfirmationWindow : StyledWindow
     private void DrawRunning()
     {
         var p = coordinator.LastProgress;
-        Ui.RunningHeader(icons.Logo, "Cleaning", p is null ? null : $"{p.Action.ItemName}{(p.Action.Quantity > 1 ? $" × {p.Action.Quantity}" : "")} · {p.Message}");
+        Ui.RunningHeader(icons.LogoMedium, "Cleaning", p is null ? null : $"{p.Action.ItemName}{(p.Action.Quantity > 1 ? $" × {p.Action.Quantity}" : "")} · {p.Message}");
         Ui.Gap(0.8f);
         var width = ImGui.GetWindowWidth() * 0.6f;
         ImGui.SetCursorPosX((ImGui.GetWindowWidth() - width) / 2);
