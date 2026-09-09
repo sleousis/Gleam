@@ -16,6 +16,13 @@ public sealed class DtrEntry : IDisposable
     private bool nudgedThisCrossing;
     private DateTime lastRefresh = DateTime.MinValue;
 
+    // Counting the bags is the expensive half, so it stays on a two-second poll. What the player reads
+    // catches up every frame, which is the difference between a figure that counts and one that steps.
+    private int targetFree, targetCleanable, targetPct;
+    private double shownFree, shownCleanable;
+    private bool haveShown;
+    private string lastText = string.Empty;
+
     public Func<int>? CleanableCount { get; set; }
     public bool Enabled { get; set; } = true;
     public int NudgePercent { get; set; } = 90;
@@ -46,7 +53,13 @@ public sealed class DtrEntry : IDisposable
             if (entry is not null) { entry.Shown = false; }
             return;
         }
-        if ((DateTime.UtcNow - lastRefresh).TotalSeconds < 2) return;
+        if ((DateTime.UtcNow - lastRefresh).TotalSeconds >= 2) Measure();
+        DrawEntry(f);
+    }
+
+    /// <summary>Reads the bags and updates what the entry is counting towards.</summary>
+    private void Measure()
+    {
         lastRefresh = DateTime.UtcNow;
 
         var total = GameInventoryScanner.TotalInventorySlots();
@@ -65,13 +78,10 @@ public sealed class DtrEntry : IDisposable
         entry.Shown = total > 0;
         if (total == 0) return;
 
-        // Free space is what a player actually wants to know, junk second, and a warning glyph only once
-        // the bags are genuinely tight.
-        var text = new SeStringBuilder();
-        if (pct >= NudgePercent) text.AddIcon(BitmapFontIcon.Warning);
-        text.AddText($"{free} free");
-        if (cleanable > 0) text.AddText($" · {cleanable} junk");
-        entry.Text = text.Build();
+        targetFree = free;
+        targetCleanable = cleanable;
+        targetPct = pct;
+        if (!haveShown) { shownFree = free; shownCleanable = cleanable; haveShown = true; }
 
         var tip = new SeStringBuilder()
             .AddText($"Bags: {used} of {total} used, {free} free ({pct}%).\n")
@@ -95,6 +105,44 @@ public sealed class DtrEntry : IDisposable
         {
             nudgedThisCrossing = false;
         }
+    }
+
+    /// <summary>
+    /// Eases the two figures towards what the last count found and rewrites the entry only when a whole
+    /// number actually changes, so the info bar is not rebuilt sixty times a second for nothing.
+    /// </summary>
+    private void DrawEntry(IFramework f)
+    {
+        if (entry is null || !haveShown) return;
+
+        if (Windows.Ui.Reduced)
+        {
+            shownFree = targetFree;
+            shownCleanable = targetCleanable;
+        }
+        else
+        {
+            var dt = Math.Clamp(f.UpdateDelta.TotalSeconds, 0, 0.1);
+            var k = 1 - Math.Exp(-6 * dt);
+            shownFree += (targetFree - shownFree) * k;
+            shownCleanable += (targetCleanable - shownCleanable) * k;
+            if (Math.Abs(targetFree - shownFree) < 0.5) shownFree = targetFree;
+            if (Math.Abs(targetCleanable - shownCleanable) < 0.5) shownCleanable = targetCleanable;
+        }
+
+        var free = (int)Math.Round(shownFree);
+        var junk = (int)Math.Round(shownCleanable);
+        // Free space is what a player actually wants to know, junk second, and a warning glyph only once
+        // the bags are genuinely tight.
+        var plain = $"{(targetPct >= NudgePercent ? "!" : "")}{free} free{(junk > 0 ? $" · {junk} junk" : "")}";
+        if (plain == lastText) return;
+        lastText = plain;
+
+        var text = new SeStringBuilder();
+        if (targetPct >= NudgePercent) text.AddIcon(BitmapFontIcon.Warning);
+        text.AddText($"{free} free");
+        if (junk > 0) text.AddText($" · {junk} junk");
+        entry.Text = text.Build();
     }
 }
 

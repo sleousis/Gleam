@@ -46,11 +46,14 @@ internal sealed class ListEditor
 
         if (results.Count > 0)
         {
-            using var child = ImRaii.Child($"##r{title}", new Vector2(0, Math.Min(results.Count, 6) * 28 * Ui.Scale), true, ImGuiWindowFlags.None);
+            // The panel eases to the height the matches need, rather than snapping taller on every keystroke.
+            var want = Math.Min(results.Count, 6) * 28 * Ui.Scale;
+            using var appear = Ui.FoldFade($"results:{title}");
+            using var child = ImRaii.Child($"##r{title}", new Vector2(0, Ui.Smooth($"resh:{title}", want, 20f)), true, ImGuiWindowFlags.None);
             foreach (var r in results)
             {
                 var tex = icons.Get(r.IconId, false);
-                if (!tex.IsNull) { ImGui.Image(tex, new Vector2(20 * Ui.Scale, 20 * Ui.Scale)); ImGui.SameLine(); }
+                if (!tex.IsNull) { Ui.ImageRounded(tex, new Vector2(20 * Ui.Scale, 20 * Ui.Scale), 3 * Ui.Scale, $"icon:{r.IconId}"); ImGui.SameLine(); }
                 if (ImGui.Selectable($"{r.Name}##add{r.ItemId}", false, ImGuiSelectableFlags.None, Vector2.Zero))
                 {
                     list().Add(r.ItemId, addForThisCharacter ? characterId() : null);
@@ -76,9 +79,15 @@ internal sealed class ListEditor
         {
             var info = db.Get(e.ItemId);
             using var id = ImRaii.PushId($"{title}{e.ItemId}{e.CharacterId}");
-            ImGui.TableNextRow(ImGuiTableRowFlags.None, 28 * Ui.Scale);
+
+            // A removed row shrinks out of its place first; the real removal happens once it has gone.
+            var left = Ui.Leaving(Key(e));
+            if (left <= 0f) { entries.Remove(e); markDirty(); continue; }
+            using var leaving = left < 1f ? Ui.LeavingScope(left) : null;
+
+            ImGui.TableNextRow(ImGuiTableRowFlags.None, 28 * Ui.Scale * left);
             ImGui.TableNextColumn();
-            if (info is not null) { var tex = icons.Get(info.IconId, false); if (!tex.IsNull) ImGui.Image(tex, new Vector2(22 * Ui.Scale, 22 * Ui.Scale)); }
+            if (info is not null) { var tex = icons.Get(info.IconId, false); if (!tex.IsNull) Ui.ImageRounded(tex, new Vector2(22 * Ui.Scale, 22 * Ui.Scale), 4 * Ui.Scale, $"icon:{info.IconId}"); }
             ImGui.TableNextColumn();
             ImGui.AlignTextToFramePadding();
             Ui.Text(info?.Name ?? $"item {e.ItemId}");
@@ -89,7 +98,10 @@ internal sealed class ListEditor
             var hq = e.IncludeHq;
             if (Ui.Check("HQ too", ref hq)) { e.IncludeHq = hq; markDirty(); }
             ImGui.TableNextColumn();
-            if (Ui.LinkButton("Remove")) { entries.Remove(e); markDirty(); }
+            if (Ui.LinkButton("Remove")) Ui.Leave(Key(e));
         }
     }
+
+    /// <summary>Identifies one row across frames, so a row on its way out is still the same row.</summary>
+    private string Key(ItemListEntry e) => $"le:{title}:{e.ItemId}:{e.CharacterId}";
 }

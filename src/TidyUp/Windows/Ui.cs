@@ -227,6 +227,9 @@ internal static class Ui
         return EaseOut((float)Math.Clamp((now - t.First) / seconds, 0, 1));
     }
 
+    /// <summary>Seeds an eased value, so the next <see cref="Smooth"/> starts there and settles from it.</summary>
+    public static void SetMotion(string id, float value) { if (!Reduced) motion[id] = value; }
+
     public static float EaseOut(float t) => 1f - (1f - t) * (1f - t);
 
     /// <summary>Hover state of the last frame, eased. Call <see cref="RecordHover"/> right after the item.</summary>
@@ -703,6 +706,30 @@ internal static class Ui
     }
 
     // ---------- images ----------
+
+    /// <summary>
+    /// An icon that grows a touch under the cursor without moving anything. The layout box stays the size it
+    /// always was and only the picture is drawn larger, centred on it: growing the box instead would make
+    /// every row below the cursor shift down, which reads as the list wobbling as the mouse crosses it.
+    /// </summary>
+    public static void ImageLifted(ImTextureID tex, float box, float lift, float rounding, string? key = null)
+    {
+        var pos = ImGui.GetCursorScreenPos();
+        ImGui.Dummy(new Vector2(box, box));
+        if (tex.IsNull) return;
+
+        var a = 1f;
+        if (key is not null && !Reduced)
+        {
+            if (!iconArrived.TryGetValue(key, out var at)) iconArrived[key] = at = ImGui.GetTime();
+            a = EaseOut((float)Math.Clamp((ImGui.GetTime() - at) / 0.22, 0, 1));
+        }
+        var grow = box * 0.11f * Math.Clamp(lift, 0f, 1f);
+        var min = pos - new Vector2(grow / 2, grow / 2);
+        var max = min + new Vector2(box + grow, box + grow);
+        var tint = ImGui.GetColorU32(new Vector4(1, 1, 1, ImGui.GetStyle().Alpha * a));
+        ImGui.GetWindowDrawList().AddImageRounded(tex, min, max, Vector2.Zero, Vector2.One, tint, rounding);
+    }
 
     private static readonly Dictionary<string, double> iconArrived = new();
 

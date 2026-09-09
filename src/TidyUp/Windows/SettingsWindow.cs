@@ -82,7 +82,11 @@ public sealed partial class SettingsWindow
                 if (config.AdvancedMode)
                 {
                     Ui.Gap(0.3f);
-                    if (ImGui.CollapsingHeader("Fine detail", ImGuiTreeNodeFlags.None)) DrawAdvancedFold();
+                    if (ImGui.CollapsingHeader("Fine detail", ImGuiTreeNodeFlags.None))
+                    {
+                        using var fade = Ui.FoldFade("fine-detail");
+                        DrawAdvancedFold();
+                    }
                 }
                 Ui.Gap(0.6f);
                 DrawPageFooter();
@@ -166,7 +170,7 @@ public sealed partial class SettingsWindow
             var after = a.CleanAfterVentures;
             if (Ui.Check("Throw away junk a finished venture leaves in my bags", ref after)) { a.CleanAfterVentures = after; dirty = true; }
             ImGui.SameLine();
-            if (AutoRetainer is null || !AutoRetainer.IsInstalled) Ui.Pill("not installed", Ui.Warn); else Ui.Pill("AutoRetainer", Ui.Ok, Dalamud.Interface.FontAwesomeIcon.Check);
+            if (AutoRetainer is null || !AutoRetainer.IsInstalled) Ui.Pill("not installed", Ui.Warn, null, "req:AutoRetainer"); else Ui.Pill("AutoRetainer", Ui.Ok, Dalamud.Interface.FontAwesomeIcon.Check, "req:AutoRetainer");
         }
 
         using (Ui.Card("finish"))
@@ -267,8 +271,8 @@ public sealed partial class SettingsWindow
     {
         var left = ImGui.GetCursorScreenPos().X;
         var room = ImGui.GetContentRegionAvail().X;
-        if (installed) Ui.Pill("installed", Ui.Ok, Dalamud.Interface.FontAwesomeIcon.Check);
-        else Ui.Pill("missing", Ui.Danger, Dalamud.Interface.FontAwesomeIcon.ExclamationTriangle);
+        if (installed) Ui.Pill("installed", Ui.Ok, Dalamud.Interface.FontAwesomeIcon.Check, $"req:{name}");
+        else Ui.Pill("missing", Ui.Danger, Dalamud.Interface.FontAwesomeIcon.ExclamationTriangle, $"req:{name}");
         ImGui.SameLine();
         ImGui.AlignTextToFramePadding();
         Ui.Text(name);
@@ -290,13 +294,5 @@ public sealed partial class SettingsWindow
         Fold("Other plugins", DrawIntegrations);
     }
 
-    private static void Fold(string title, Action body)
-    {
-        using var id = ImRaii.PushId(title);
-        if (!ImGui.CollapsingHeader(title, ImGuiTreeNodeFlags.None)) return;
-        using var indent = ImRaii.PushIndent(12f, true, true);
-        Ui.Gap(0.3f);
-        body();
-        Ui.Gap(0.5f);
-    }
+    private static void Fold(string title, Action body) => Ui.Fold(title, body);
 }

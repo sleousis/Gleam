@@ -39,28 +39,42 @@ public sealed class HistoryWindow
         {
             if (t.IsCompletedSuccessfully) entries = t.Result.OrderByDescending(e => e.At).ToList();
             loading = false;
+            // A reload replaces every row, so let the new list read down the page instead of appearing whole.
+            staggerAt = 0;
         });
+    }
+
+    private double staggerAt;
+    private string lastSearch = string.Empty;
+
+    /// <summary>Rows fade in one after another after a reload or a new search; only the first screenful.</summary>
+    private float RowAlpha(int index)
+    {
+        var elapsed = ImGui.GetTime() - staggerAt - Math.Min(index, 12) * 0.011;
+        return Ui.EaseOut((float)Math.Clamp(elapsed / 0.16, 0, 1));
     }
 
     public void Draw()
     {
-        Ui.Header(icons.LogoSmall, "What Gleam did", $"{entries.Count} item{(entries.Count == 1 ? "" : "s")} on record");
+        var onRecord = (int)Ui.Count("histCount", entries.Count);
+        Ui.Header(icons.LogoSmall, "What Gleam did", $"{onRecord} item{(onRecord == 1 ? "" : "s")} on record");
         if (Back is not null) { if (Ui.BackLink()) Back(); }
         Ui.Gap(0.4f);
         Ui.SearchBox("##hs", ref search, 260 * Ui.Scale);
         ImGui.SameLine();
-        if (Ui.IconButton(Dalamud.Interface.FontAwesomeIcon.Sync, "Look again")) Reload();
+        if (Ui.IconButton(Dalamud.Interface.FontAwesomeIcon.Sync, "Look again", busy: loading)) Reload();
 
         var rows = entries.Where(e => string.IsNullOrWhiteSpace(search)
             || e.ItemName.Contains(search, StringComparison.OrdinalIgnoreCase)
             || e.CharacterName.Contains(search, StringComparison.OrdinalIgnoreCase)).ToList();
 
-        var destroyed = rows.Where(e => e.Action == ActionKind.Discard).Sum(e => e.ValueGil);
-        var recovered = rows.Where(e => e.Action == ActionKind.VendorSell).Sum(e => e.ValueGil);
-        var summary = $"Recovered {Ui.Gil(recovered)} · destroyed {Ui.Gil(destroyed)} of vendor value";
+        var destroyed = Ui.Count("histLost", rows.Where(e => e.Action == ActionKind.Discard).Sum(e => e.ValueGil));
+        var recovered = Ui.Count("histGot", rows.Where(e => e.Action == ActionKind.VendorSell).Sum(e => e.ValueGil));
+        var summary = loading ? "Loading…" : $"Recovered {Ui.Gil(recovered)} · destroyed {Ui.Gil(destroyed)} of vendor value";
         ImGui.SameLine();
-        Ui.RightAlign(ImGui.CalcTextSize(summary, false, 0).X);
-        Ui.Hint(loading ? "Loading…" : summary);
+        // Reserve the width of the settled sentence, so a counting total does not drag the line sideways.
+        Ui.RightAlign(ImGui.CalcTextSize($"Recovered {Ui.Gil(rows.Sum(e => e.ValueGil))} · destroyed {Ui.Gil(destroyed)} of vendor value", false, 0).X);
+        Ui.TextSwap("histSummary", summary, Ui.Muted * new Vector4(1, 1, 1, 0.8f));
         Ui.Gap(0.5f);
 
         if (rows.Count == 0)
@@ -87,16 +101,19 @@ public sealed class HistoryWindow
             Ui.Hint(title);
         }
 
+        if (staggerAt <= 0 || lastSearch != search) { staggerAt = ImGui.GetTime(); lastSearch = search; }
+
+        var index = 0;
         foreach (var e in rows)
         {
             var info = db.Get(e.ItemId);
+            using var fade = ImRaii.PushStyle(ImGuiStyleVar.Alpha, ImGui.GetStyle().Alpha * RowAlpha(index++));
             ImGui.TableNextRow(ImGuiTableRowFlags.None, 28 * Ui.Scale);
             ImGui.TableNextColumn(); ImGui.AlignTextToFramePadding(); Ui.Hint(e.At.ToLocalTime().ToString("MMM d, HH:mm"));
             ImGui.TableNextColumn();
             if (info is not null)
             {
-                var tex = icons.Get(info.IconId, e.IsHq);
-                if (!tex.IsNull) ImGui.Image(tex, new Vector2(24 * Ui.Scale, 24 * Ui.Scale));
+                Ui.ImageRounded(icons.Get(info.IconId, e.IsHq), new Vector2(24 * Ui.Scale, 24 * Ui.Scale), 4 * Ui.Scale, $"icon:{info.IconId}");
             }
             ImGui.TableNextColumn(); ImGui.AlignTextToFramePadding();
             Ui.Text(e.ItemName + (e.IsHq ? " " : ""));

@@ -18,8 +18,17 @@ public sealed unsafe class BagHighlighter : IDisposable
     private readonly IFramework framework;
     private readonly IGameGui gui;
     private readonly IPluginLog log;
-    private bool painted;
     private int failures;
+
+    // Each grid cell keeps its own strength so a tint grows in and shrinks out instead of snapping. Keyed on
+    // the node, not the item, because it is the cell on screen that fades. Cells the game stops showing are
+    // dropped at the end of a paint, so this never outgrows the open windows.
+    private readonly Dictionary<nint, (float Strength, Vector4 Color)> strength = new();
+    private readonly HashSet<nint> seen = new();
+    private readonly List<nint> stale = new();
+    private float phase;
+    private float dt;
+    private bool clearing;
 
     /// <summary>Gleam violet over items the review will clean.</summary>
     public static readonly Vector4 CleanTint = new(0.30f, 0.18f, 0.72f, 1f);
@@ -40,22 +49,26 @@ public sealed unsafe class BagHighlighter : IDisposable
     public void Dispose()
     {
         framework.Update -= OnUpdate;
+        // No fading on the way out: the plugin is going, so every cell goes back to the game's own colours now.
+        clearing = true;
         try { Paint(null); } catch { /* the UI may already be gone */ }
+        strength.Clear();
     }
 
-    private void OnUpdate(IFramework _)
+    private void OnUpdate(IFramework fw)
     {
         if (failures > 5) return;
         try
         {
             var wanted = Source?.Invoke();
-            if (wanted is null || wanted.Count == 0)
-            {
-                if (painted) { Paint(null); painted = false; }
-                return;
-            }
-            Paint(wanted);
-            painted = true;
+            var live = wanted is { Count: > 0 };
+            // Nothing wanted and nothing still fading: leave the game's own colours alone entirely.
+            if (!live && strength.Count == 0) return;
+
+            dt = Math.Clamp((float)fw.UpdateDelta.TotalSeconds, 0f, 0.1f);
+            // One shared breath across every tinted cell, so a bag reads as one highlighted set.
+            phase = (phase + dt * 0.55f) % 1f;
+            Paint(live ? wanted : null);
         }
         catch (Exception ex)
         {
@@ -68,6 +81,7 @@ public sealed unsafe class BagHighlighter : IDisposable
     {
         var order = ItemOrderModule.Instance();
         if (order == null) return;
+        seen.Clear();
 
         // Bags: three window layouts, each showing one or more 35-slot pages of the same four containers.
         var inventory = gui.GetAddonByName<AddonInventory>("Inventory");
@@ -112,6 +126,11 @@ public sealed unsafe class BagHighlighter : IDisposable
                 Tint(slots[i].Value, color);
             }
         }
+
+        // A cell the game has stopped drawing cannot be faded out, so forget it rather than leak the entry.
+        stale.Clear();
+        foreach (var key in strength.Keys) if (!seen.Contains(key)) stale.Add(key);
+        foreach (var key in stale) strength.Remove(key);
     }
 
     /// <summary>Colours one grid addon that shows the given display page of a sorted container.</summary>
@@ -139,25 +158,49 @@ public sealed unsafe class BagHighlighter : IDisposable
         return (entry->Page, entry->Slot);
     }
 
-    private static void Tint(AtkComponentDragDrop* slot, Vector4? color)
+    /// <summary>
+    /// Colours one cell at its current strength. The strength eases towards 1 while the cell is wanted and
+    /// towards 0 once it is not, and a slow shared breath rides on top, so ticking a row lights the bag up
+    /// rather than stamping it. At zero the game's own values are written back and the cell is forgotten.
+    /// </summary>
+    private void Tint(AtkComponentDragDrop* slot, Vector4? color)
     {
         if (slot == null) return;
         var node = slot->AtkComponentBase.OwnerNode;
         if (node == null) return;
+        var key = (nint)node;
+        var target = color is null ? 0f : 1f;
+
         var res = &node->AtkResNode;
-        if (color is { } c)
+        strength.TryGetValue(key, out var was);
+        // A cell on its way out keeps the colour it had, or there would be nothing left to fade.
+        var tint = color ?? was.Color;
+        var s = clearing || Windows.Ui.Reduced
+            ? target
+            : was.Strength + (target - was.Strength) * (1f - MathF.Exp(-11f * dt));
+
+        if (s < 0.02f && target == 0f)
         {
-            res->Color.A = (byte)Math.Clamp(c.W * 255f, 0, 255);
-            res->AddRed = (short)(c.X * 255f);
-            res->AddGreen = (short)(c.Y * 255f);
-            res->AddBlue = (short)(c.Z * 255f);
+            if (strength.Remove(key) || color is null) Clear(res);
+            return;
         }
-        else
-        {
-            res->Color.A = 255;
-            res->AddRed = 0;
-            res->AddGreen = 0;
-            res->AddBlue = 0;
-        }
+
+        strength[key] = (s, tint);
+        seen.Add(key);
+
+        var breath = Windows.Ui.Reduced ? 1f : 0.88f + 0.12f * MathF.Sin(phase * MathF.Tau);
+        var lit = s * breath;
+        res->Color.A = (byte)Math.Clamp(255f - (255f - tint.W * 255f) * lit, 0, 255);
+        res->AddRed = (short)(tint.X * 255f * lit);
+        res->AddGreen = (short)(tint.Y * 255f * lit);
+        res->AddBlue = (short)(tint.Z * 255f * lit);
+    }
+
+    private static void Clear(AtkResNode* res)
+    {
+        res->Color.A = 255;
+        res->AddRed = 0;
+        res->AddGreen = 0;
+        res->AddBlue = 0;
     }
 }

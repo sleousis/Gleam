@@ -92,8 +92,8 @@ public sealed partial class SettingsWindow
             if (Ui.Check("Show other characters in the review", ref alts)) { config.ShowAltSections = alts; dirty = true; }
         }
         ImGui.SameLine();
-        if (!allagan.IsInstalled) Ui.Pill("not installed", Ui.Warn);
-        else Ui.Pill("Allagan Tools", Ui.Ok, Dalamud.Interface.FontAwesomeIcon.Check);
+        if (!allagan.IsInstalled) Ui.Pill("not installed", Ui.Warn, null, "req:Allagan");
+        else Ui.Pill("Allagan Tools", Ui.Ok, Dalamud.Interface.FontAwesomeIcon.Check, "req:Allagan");
 
         Ui.Gap(0.4f);
         DrawDiscardHelperImport();

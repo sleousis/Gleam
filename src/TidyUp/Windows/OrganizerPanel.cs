@@ -310,7 +310,14 @@ public sealed class OrganizerPanel
             }
         }
         Ui.Tooltip("Adds a layout from text on your clipboard.");
-        if (noteUntil > DateTime.UtcNow) { ImGui.SameLine(); Ui.Hint(note); }
+        // The note has five seconds, and spends the last half-second fading rather than blinking out.
+        var noteLeft = (noteUntil - DateTime.UtcNow).TotalSeconds;
+        if (noteLeft > 0)
+        {
+            ImGui.SameLine();
+            using var fade = ImRaii.PushStyle(ImGuiStyleVar.Alpha, ImGui.GetStyle().Alpha * (float)Math.Clamp(noteLeft / 0.5, 0, 1));
+            Ui.TextSwap("plannote", note, Ui.Muted * new Vector4(1, 1, 1, 0.8f));
+        }
         if (view == View.Preview && active is not null)
         {
             ImGui.SameLine();
@@ -327,7 +334,7 @@ public sealed class OrganizerPanel
 
     private void DrawSimple(OrganizerPlan plan)
     {
-        var moves = organizer.Current?.Moves.Count ?? 0;
+        var moves = (int)Ui.Count("orgMoves", organizer.Current?.Moves.Count ?? 0);
         var subtitle = Rethinking ? "Working out what will move…"
             : organizer.Current is null ? "Where things go"
             : moves == 0 ? "Everything is where you want it."
@@ -514,11 +521,21 @@ public sealed class OrganizerPanel
             using var id = ImRaii.PushId(i);
             var selected = selectedRule == rule.Id;
 
+            // Moving a rule up or down swaps two cards. Without this they exchange places between frames and
+            // you cannot see which one went where, so each card starts from where it was and slides home.
+            var slideKey = $"ruleslide:{rule.Id}";
+            var yStart = ImGui.GetCursorPosY();
+            if (ruleY.TryGetValue(rule.Id, out var prevY) && Math.Abs(prevY - yStart) > 1f)
+                Ui.SetMotion(slideKey, prevY - yStart);
+            ruleY[rule.Id] = yStart;
+            var slide = Ui.Smooth(slideKey, 0f, 16f);
+            if (slide != 0f) ImGui.SetCursorPosY(yStart + slide);
+
             using (Ui.Card("rule"))
             {
                 // Order badge, on/off, name, arrow, destination; the arrows and the bin sit at the right edge.
                 ImGui.AlignTextToFramePadding();
-                Ui.Pill($"{i + 1}", selected ? Ui.AccentSoft : Ui.Muted);
+                Ui.Pill($"{i + 1}", selected ? Ui.AccentSoft : Ui.Muted, null, $"rulen:{rule.Id}");
                 ImGui.SameLine();
                 var on = rule.Enabled;
                 if (Ui.Check("##on", ref on)) { rule.Enabled = on; dirty = true; }
@@ -566,7 +583,7 @@ public sealed class OrganizerPanel
                 }
                 ImGui.SameLine();
                 var armed = confirmRemove == rule.Id;
-                if (Ui.GlyphButton(FontAwesomeIcon.Trash, "rm", armed ? "Click again to remove this rule." : "Remove this rule. Asks once more first.", armed ? Ui.Danger : null))
+                if (Ui.GlyphButton(FontAwesomeIcon.Trash, "rm", armed ? "Click again to remove this rule." : "Remove this rule. Asks once more first.", armed ? Ui.Armed() : null))
                 {
                     if (armed) { toRemove = i; confirmRemove = null; }
                     else confirmRemove = rule.Id;
@@ -599,6 +616,9 @@ public sealed class OrganizerPanel
                     DrawPredicateEditor(rule.When);
                 }
             }
+
+            // Take the shift back off, so a sliding card never pushes the ones under it around.
+            if (slide != 0f) ImGui.SetCursorPosY(ImGui.GetCursorPosY() - slide);
         }
 
         if (toRemove >= 0) { plan.Rules.RemoveAt(toRemove); dirty = true; }
@@ -613,6 +633,7 @@ public sealed class OrganizerPanel
 
         Ui.Gap(0.6f);
         if (!ImGui.CollapsingHeader("More", ImGuiTreeNodeFlags.None)) return;
+        using var moreFade = Ui.FoldFade("org-more");
         using (Ui.Card("options"))
         {
             var merge = plan.MergeStacksAtDestination;
@@ -689,10 +710,13 @@ public sealed class OrganizerPanel
             itemResults = itemSearch.Length >= 2 ? db.Search(itemSearch, 20).ToList() : new List<ItemInfo>();
         if (itemResults.Count > 0)
         {
-            using var child = ImRaii.Child("##results", new Vector2(0, Math.Min(itemResults.Count, 6) * 26 * Ui.Scale), true, ImGuiWindowFlags.None);
+            // The panel eases to the height the matches need rather than jumping as you type.
+            var want = Math.Min(itemResults.Count, 6) * 26 * Ui.Scale;
+            using var fade = Ui.FoldFade("rule-results");
+            using var child = ImRaii.Child("##results", new Vector2(0, Ui.Smooth("results-h", want, 20f)), true, ImGuiWindowFlags.None);
             foreach (var r in itemResults)
             {
-                Ui.ImageRounded(icons.Get(r.IconId, false), new Vector2(20 * Ui.Scale, 20 * Ui.Scale), 3 * Ui.Scale);
+                Ui.ImageRounded(icons.Get(r.IconId, false), new Vector2(20 * Ui.Scale, 20 * Ui.Scale), 3 * Ui.Scale, $"icon:{r.IconId}");
                 ImGui.SameLine();
                 if (ImGui.Selectable($"{r.Name}##add{r.ItemId}", false, ImGuiSelectableFlags.None, Vector2.Zero))
                 {
@@ -784,6 +808,8 @@ public sealed class OrganizerPanel
     private void DrawPreview(OrganizerPlan plan)
     {
         var result = organizer.Current;
+        // A fresh preview replaces the whole table, so restart the stagger and let it read down the page again.
+        if (!ReferenceEquals(moveStaggerFor, result)) { moveStaggerFor = result; moveStaggerAt = ImGui.GetTime(); }
         if (organizer.IsPreviewing || result is null)
         {
             Ui.EmptyState(icons.LogoMedium, organizer.IsPreviewing ? "Looking through your storage…" : "Nothing to show yet.", organizer.Status);
@@ -831,8 +857,10 @@ public sealed class OrganizerPanel
                 ImGui.SameLine();
                 ImGui.SetCursorPosX(ImGui.GetCursorPosX() + 8 * Ui.Scale);
                 ImGui.SetCursorPosY(ImGui.GetCursorPosY() + 5 * Ui.Scale);
-                Ui.Pill($"{group.Count()}", Ui.Muted);
+                var groupKey = $"g{group.Key}";
+                Ui.Pill($"{(int)Ui.Count($"mv:{groupKey}", group.Count())}", Ui.Muted, null, groupKey);
                 if (!open) continue;
+                using var groupFade = Ui.FoldFade(groupKey);
                 DrawMoveTable(group.Key?.ToString() ?? "bags", group.ToList());
             }
         }
@@ -878,6 +906,23 @@ public sealed class OrganizerPanel
         ImGui.Dummy(new Vector2(0, h));
     }
 
+    private string? hoveredMove;
+
+    /// <summary>Where each rule card sat last frame, so a reordered one can slide from its old place.</summary>
+    private readonly Dictionary<Guid, float> ruleY = new();
+    private object? moveStaggerFor;
+    private double moveStaggerAt;
+
+    /// <summary>
+    /// Rows of a fresh preview fade in one after another. Only the first dozen are staggered, so a plan of
+    /// three hundred moves still appears at once.
+    /// </summary>
+    private float MoveRowAlpha(int index)
+    {
+        var elapsed = ImGui.GetTime() - moveStaggerAt - Math.Min(index, 12) * 0.011;
+        return Ui.EaseOut((float)Math.Clamp(elapsed / 0.16, 0, 1));
+    }
+
     private void DrawMoveTable(string key, List<MoveOp> moves)
     {
         using var table = ImRaii.Table($"##mv{key}", 4, ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingFixedFit | ImGuiTableFlags.NoSavedSettings | ImGuiTableFlags.PadOuterX);
@@ -889,14 +934,20 @@ public sealed class OrganizerPanel
         var legW = ImGui.CalcTextSize("To bags first", false, 0).X + ImGui.CalcTextSize("Round 10", false, 0).X + 56 * Ui.Scale;
         ImGui.TableSetupColumn("##leg", ImGuiTableColumnFlags.WidthFixed, legW, 0);
 
+        var index = 0;
         foreach (var m in moves)
         {
+            var rowKey = $"{key}:{m.Item.Slot}:{m.Info.ItemId}";
+            // Same staggered entry the clean list uses, so a fresh preview reads down the page.
+            using var fade = ImRaii.PushStyle(ImGuiStyleVar.Alpha, ImGui.GetStyle().Alpha * MoveRowAlpha(index++));
             ImGui.TableNextRow(ImGuiTableRowFlags.None, 28 * Ui.Scale);
             ImGui.TableNextColumn();
-            Ui.ImageRounded(icons.Get(m.Info.IconId, m.Item.IsHq), new Vector2(24 * Ui.Scale, 24 * Ui.Scale), 4 * Ui.Scale);
+            var lift = Ui.Smooth($"mvicon:{rowKey}", hoveredMove == rowKey ? 1f : 0f, 16f);
+            Ui.ImageLifted(icons.Get(m.Info.IconId, m.Item.IsHq), 24 * Ui.Scale, lift, 4 * Ui.Scale, $"icon:{m.Info.IconId}");
             ImGui.TableNextColumn();
             ImGui.AlignTextToFramePadding();
             Ui.Text(m.Info.Name);
+            if (ImGui.IsItemHovered()) hoveredMove = rowKey;
             if (m.Item.Quantity > 1) { ImGui.SameLine(); Ui.Hint($"× {m.Item.Quantity}"); }
             ImGui.TableNextColumn();
             ImGui.AlignTextToFramePadding();
@@ -914,19 +965,23 @@ public sealed class OrganizerPanel
         Ui.Rule();
         Ui.Gap(0.3f);
         var r = organizer.Current;
+        var nMoves = (int)Ui.Count("ftMoves", r?.Moves.Count ?? 0);
+        var nRelay = (int)Ui.Count("ftRelay", r?.RelayedMoves ?? 0);
+        var nOpens = (int)Ui.Count("ftOpens", r?.StoragesToOpen.Count() ?? 0);
+        var nWaiting = (int)Ui.Count("ftOrgWait", organizer.PendingMoves.Count);
+
         var parts = new List<string>();
         if (r is not null)
         {
-            if (r.Moves.Count > 0) parts.Add($"{r.Moves.Count} move{(r.Moves.Count == 1 ? "" : "s")}");
-            if (r.RelayedMoves > 0) parts.Add($"{r.RelayedMoves} via the bags");
-            var opens = r.StoragesToOpen.Count();
-            if (opens > 0) parts.Add($"{opens} storage{(opens == 1 ? "" : "s")} to open");
+            if (nMoves > 0) parts.Add($"{nMoves} move{(nMoves == 1 ? "" : "s")}");
+            if (nRelay > 0) parts.Add($"{nRelay} via the bags");
+            if (nOpens > 0) parts.Add($"{nOpens} storage{(nOpens == 1 ? "" : "s")} to open");
             if (r.Passes > 1) parts.Add($"{r.Passes} passes");
-            if (organizer.PendingMoves.Count > 0) parts.Add($"{organizer.PendingMoves.Count} from earlier still waiting");
+            if (nWaiting > 0) parts.Add($"{nWaiting} from earlier still waiting");
         }
         ImGui.AlignTextToFramePadding();
-        if (Simple) Ui.Hint(Rethinking ? "Working out what will move…" : r is null ? "" : r.Moves.Count == 0 ? "Nothing needs moving right now." : $"{r.Moves.Count} item{(r.Moves.Count == 1 ? "" : "s")} will move.");
-        else Ui.Hint(parts.Count == 0 ? (string.IsNullOrEmpty(organizer.Status) ? "Refresh to see what would move." : organizer.Status) : string.Join("  ·  ", parts));
+        if (Simple) Ui.TextSwap("orgFoot", Rethinking ? "Working out what will move…" : r is null ? "" : nMoves == 0 ? "Nothing needs moving right now." : $"{nMoves} item{(nMoves == 1 ? "" : "s")} will move.", Ui.Muted * new Vector4(1, 1, 1, 0.8f));
+        else Ui.TextSwap("orgFoot", parts.Count == 0 ? (string.IsNullOrEmpty(organizer.Status) ? "Refresh to see what would move." : organizer.Status) : string.Join("  ·  ", parts), Ui.Muted * new Vector4(1, 1, 1, 0.8f));
 
         var needsTravel = r is not null && r.StoragesToOpen.Any();
         var blocked = needsTravel ? Pilot?.MissingDependency() : null;
@@ -953,7 +1008,7 @@ public sealed class OrganizerPanel
         ImGui.SameLine();
         using (ImRaii.Disabled(!canRun))
         {
-            var n = r?.Moves.Count ?? 0;
+            var n = (int)Ui.Count("orgBtn", r?.Moves.Count ?? 0);
             var items = $"{n} item{(n == 1 ? "" : "s")}";
             var label = r is { Report.Feasible: false } ? "Make room first"
                 : n == 0 ? "Nothing to do"
