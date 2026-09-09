@@ -699,10 +699,14 @@ public sealed class ConfirmationWindow : StyledWindow
         var total = away.Sum(s => s.Rows.Count);
         var where = string.Join(" and ", away.Select(s => s.Kind.DisplayName().ToLowerInvariant()).Distinct());
         Ui.Gap(0.6f);
-        Ui.Hint($"{total} more item{(total == 1 ? "" : "s")} in your {where}. Gleam cleans them when you open it, or it can go there for you.");
-        ImGui.SameLine();
-        if (Ui.LinkButton("Let Gleam go")) Show(Ui.AppMode.Settings);
-        Ui.Tooltip("Opens Settings, where you can let Gleam walk and travel for you.");
+        var missing = Pilot?.MissingDependency();
+        if (missing is null) Ui.Hint($"{total} more item{(total == 1 ? "" : "s")} in your {where}. Gleam goes there for you when you press Clean.");
+        else
+        {
+            Ui.Hint($"{total} more item{(total == 1 ? "" : "s")} in your {where}. Gleam cannot travel there: {missing}.");
+            ImGui.SameLine();
+            if (Ui.LinkButton("What it needs")) Show(Ui.AppMode.Settings);
+        }
     }
 
     private void DrawSection(PlanSection section, List<PlanRow> rows)
@@ -1076,6 +1080,12 @@ public sealed class ConfirmationWindow : StyledWindow
         Ui.Hint(parts.Count == 0 ? "Tick rows to see what this run would do." : string.Join("  ·  ", parts));
 
         var (handsFree, needsTravel) = RunShape(plan);
+        var blocked = needsTravel ? Pilot?.MissingDependency() : null;
+        if (blocked is not null)
+        {
+            Ui.Gap(0.2f);
+            Ui.TextColored(Ui.Danger, $"Gleam cannot travel: {blocked}. Open Settings to see what it needs.");
+        }
         var items = $"{cap.Items} item{(cap.Items == 1 ? "" : "s")}";
         var verb = cap.Exceeded && !capArmed
             ? $"Yes, clean all {items}"
@@ -1095,7 +1105,7 @@ public sealed class ConfirmationWindow : StyledWindow
         if (!Simple)
         {
             var sortAfter = config.SortAfterRun;
-            if (ImGui.Checkbox(SortAfterLabel, ref sortAfter)) { config.SortAfterRun = sortAfter; config.Save(PluginServices.PluginInterface); }
+            if (Ui.Check(SortAfterLabel, ref sortAfter)) { config.SortAfterRun = sortAfter; config.Save(PluginServices.PluginInterface); }
             Ui.Tooltip(SortAfterHint);
         }
         if (handsFree && needsTravel && !Simple)
@@ -1108,7 +1118,7 @@ public sealed class ConfirmationWindow : StyledWindow
             Ui.Tooltip("Cleans what is reachable right now. The rest waits until you open its container.");
         }
         ImGui.SameLine();
-        using (ImRaii.Disabled(cap.Items == 0))
+        using (ImRaii.Disabled(cap.Items == 0 || blocked is not null))
         {
             if (Ui.PrimaryButton(verb, buttonWidth, danger: cap.Exceeded && !capArmed)) Accept(plan);
         }

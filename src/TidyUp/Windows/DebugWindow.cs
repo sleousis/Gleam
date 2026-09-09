@@ -198,7 +198,7 @@ public sealed class DebugWindow : StyledWindow
         if (item is null) Ui.Tooltip("Slot is empty.");
         else if (dangerous) Ui.Tooltip($"{info!.Name} is protected by a hard rule. Tick Force to override.");
         ImGui.SameLine();
-        ImGui.Checkbox("Force", ref forceDangerous);
+        Ui.Check("Force", ref forceDangerous);
         Ui.Tooltip("Let the spike discard items the planner would never propose. Off by default for a reason.");
     }
 

@@ -397,8 +397,12 @@ public sealed class OrganizerPanel
             if (unseen.Count > 0)
             {
                 Ui.Gap(0.4f);
-                Ui.HintWrapped($"Gleam has not seen inside {string.Join(", ", unseen)} yet. Open one and it will look, or let it go there for you.");
-                if (Pilot is not null && !config.Automation.Enabled && Ui.LinkButton("Let Gleam go")) OpenSettings?.Invoke();
+                Ui.HintWrapped($"Gleam has not seen inside {string.Join(", ", unseen)} yet. It looks when it goes there, or when you open one yourself.");
+                if (Pilot?.MissingDependency() is { } missing)
+                {
+                    Ui.TextColored(Ui.Danger, $"Gleam cannot travel there: {missing}.");
+                    if (Ui.LinkButton("What it needs")) OpenSettings?.Invoke();
+                }
             }
         }
     }
@@ -506,7 +510,7 @@ public sealed class OrganizerPanel
                 Ui.Pill($"{i + 1}", selected ? Ui.AccentSoft : Ui.Muted);
                 ImGui.SameLine();
                 var on = rule.Enabled;
-                if (ImGui.Checkbox("##on", ref on)) { rule.Enabled = on; dirty = true; }
+                if (Ui.Check("##on", ref on)) { rule.Enabled = on; dirty = true; }
                 Ui.Tooltip(on ? "This rule is on." : "This rule is off and skipped.");
                 ImGui.SameLine();
                 using (ImRaii.Disabled(!on))
@@ -601,7 +605,7 @@ public sealed class OrganizerPanel
         using (Ui.Card("options"))
         {
             var merge = plan.MergeStacksAtDestination;
-            if (ImGui.Checkbox("Top up stacks already at the destination", ref merge)) { plan.MergeStacksAtDestination = merge; dirty = true; }
+            if (Ui.Check("Top up stacks already at the destination", ref merge)) { plan.MergeStacksAtDestination = merge; dirty = true; }
             Ui.Tooltip("Off: incoming stacks take fresh slots instead.");
             var reserve = plan.BagStagingReserve;
             ImGui.SetNextItemWidth(100 * Ui.Scale);
@@ -614,13 +618,13 @@ public sealed class OrganizerPanel
                 Ui.Gap(0.3f);
                 Ui.Hint("Retainers this layout may use");
                 var all = plan.RetainersInScope.Count == 0;
-                if (ImGui.Checkbox("All of them", ref all)) { if (all) plan.RetainersInScope.Clear(); else plan.RetainersInScope.UnionWith(retainers.Keys); dirty = true; }
+                if (Ui.Check("All of them", ref all)) { if (all) plan.RetainersInScope.Clear(); else plan.RetainersInScope.UnionWith(retainers.Keys); dirty = true; }
                 if (!all)
                 {
                     foreach (var (rid, rname) in retainers.OrderBy(kv => kv.Value))
                     {
                         var inScope = plan.RetainersInScope.Contains(rid);
-                        if (ImGui.Checkbox($"{rname}##scope{rid}", ref inScope)) { if (inScope) plan.RetainersInScope.Add(rid); else plan.RetainersInScope.Remove(rid); dirty = true; }
+                        if (Ui.Check($"{rname}##scope{rid}", ref inScope)) { if (inScope) plan.RetainersInScope.Add(rid); else plan.RetainersInScope.Remove(rid); dirty = true; }
                     }
                 }
             }
@@ -913,8 +917,15 @@ public sealed class OrganizerPanel
         if (Simple) Ui.Hint(organizer.IsPreviewing ? "Looking through your storage…" : r is null ? "" : r.Moves.Count == 0 ? "Nothing needs moving right now." : $"{r.Moves.Count} item{(r.Moves.Count == 1 ? "" : "s")} will move.");
         else Ui.Hint(parts.Count == 0 ? (string.IsNullOrEmpty(organizer.Status) ? "Refresh to see what would move." : organizer.Status) : string.Join("  ·  ", parts));
 
-        var canRun = r is not null && r.Report.Feasible && r.Moves.Count > 0 && !organizer.IsPreviewing;
-        var handsFree = Pilot is not null && config.Automation.Enabled && r is not null && r.StoragesToOpen.Any();
+        var needsTravel = r is not null && r.StoragesToOpen.Any();
+        var blocked = needsTravel ? Pilot?.MissingDependency() : null;
+        var canRun = r is not null && r.Report.Feasible && r.Moves.Count > 0 && !organizer.IsPreviewing && blocked is null;
+        var handsFree = Pilot is not null && config.Automation.Enabled && needsTravel;
+        if (blocked is not null)
+        {
+            ImGui.SameLine();
+            Ui.TextColored(Ui.Danger, $"Gleam cannot travel: {blocked}.");
+        }
         var buttonWidth = 220 * Ui.Scale;
         var style = ImGui.GetStyle();
         var hereW = handsFree && !Simple ? ImGui.CalcTextSize("Organize here only", false, 0).X + style.FramePadding.X * 2 + style.ItemSpacing.X : 0;

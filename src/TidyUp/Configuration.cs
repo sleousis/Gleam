@@ -72,7 +72,11 @@ public sealed class AutomationSettings
     /// </summary>
     public bool VisitContainersWithoutRows { get; set; } = false;
 
-    public bool Enabled { get; set; } = false;
+    /// <summary>
+    /// Gleam always does the walking and travelling. This is kept only so older configs load; it is forced
+    /// on and never shown, and the two travel plugins are stated as requirements instead.
+    /// </summary>
+    public bool Enabled { get; set; } = true;
 
     /// <summary>After AutoRetainer collects a retainer's ventures, discard the junk that landed in the bags.</summary>
     public bool CleanAfterVentures { get; set; } = false;
@@ -174,7 +178,7 @@ public sealed class OrganizerSettings
 public sealed class Configuration : IPluginConfiguration
 {
     /// <summary>Bump when <see cref="Migrate"/> gains a step. New configs start here and skip the chain.</summary>
-    public const int CurrentVersion = 14;
+    public const int CurrentVersion = 15;
 
     public int Version { get; set; } = CurrentVersion;
 
@@ -277,7 +281,8 @@ public sealed class Configuration : IPluginConfiguration
         }
         if (Version < 7)
         {
-            if (Organizer.Plans.Count == 0)
+            if (!Automation.Enabled) { Automation.Enabled = true; changed = true; }
+        if (Organizer.Plans.Count == 0)
             {
                 var starter = Core.Organizer.Model.OrganizerPlan.Starter();
                 Organizer.Plans.Add(starter);
@@ -361,6 +366,13 @@ public sealed class Configuration : IPluginConfiguration
                 plan.Rules.RemoveAll(r => itsOwn.Contains(r.Name));
             }
             Version = 14;
+            changed = true;
+        }
+        if (Version < 15)
+        {
+            // Travelling is how Gleam works now, not a mode you switch on.
+            Automation.Enabled = true;
+            Version = 15;
             changed = true;
         }
         changed |= EnsureDefaults();
