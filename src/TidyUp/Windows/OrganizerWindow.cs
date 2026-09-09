@@ -243,7 +243,9 @@ public sealed class OrganizerWindow : StyledWindow
         for (var i = 0; i < plan.Rules.Count; i++)
         {
             var rule = plan.Rules[i];
-            using var id = ImRaii.PushId(rule.Id.ToString());
+            // Keyed by position: two rules that somehow share an id must never share ImGui state, or their
+            // dropdowns draw into one popup.
+            using var id = ImRaii.PushId(i);
             var selected = selectedRule == rule.Id;
 
             using (Ui.Card("rule"))

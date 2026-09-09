@@ -283,11 +283,25 @@ public sealed class Configuration : IPluginConfiguration
     /// <summary>What every config needs regardless of age: a first layout to organize with.</summary>
     private bool EnsureDefaults()
     {
-        if (Organizer.Plans.Count > 0) return false;
-        var starter = Core.Organizer.Model.OrganizerPlan.Starter();
-        Organizer.Plans.Add(starter);
-        Organizer.ActivePlanId = starter.Id;
-        return true;
+        var changed = false;
+        if (Organizer.Plans.Count == 0)
+        {
+            var starter = Core.Organizer.Model.OrganizerPlan.Starter();
+            Organizer.Plans.Add(starter);
+            Organizer.ActivePlanId = starter.Id;
+            changed = true;
+        }
+
+        // Ids are what the UI and the solver key on; an older save can carry empty or repeated ones.
+        var planIds = new HashSet<Guid>();
+        foreach (var plan in Organizer.Plans)
+        {
+            if (plan.Id == Guid.Empty || !planIds.Add(plan.Id)) { plan.Id = Guid.NewGuid(); planIds.Add(plan.Id); changed = true; }
+            var ruleIds = new HashSet<Guid>();
+            foreach (var rule in plan.Rules)
+                if (rule.Id == Guid.Empty || !ruleIds.Add(rule.Id)) { rule.Id = Guid.NewGuid(); ruleIds.Add(rule.Id); changed = true; }
+        }
+        return changed;
     }
 
     public void Save(Dalamud.Plugin.IDalamudPluginInterface pi)
