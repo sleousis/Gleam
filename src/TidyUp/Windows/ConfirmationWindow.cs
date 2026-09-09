@@ -45,6 +45,16 @@ public sealed class ConfirmationWindow : StyledWindow
     private readonly Dictionary<string, (SortKey Key, int Dir)> sectionSort = new();
 
     private readonly record struct HeaderColumn(float X, float Width, string Label, SortKey? Key, bool Numeric);
+    private readonly Dictionary<string, double> rowFlash = new();
+
+    /// <summary>The one way a row gets ticked or unticked: keeps the session skip in step and gives the row a brief glow.</summary>
+    private void SetChecked(PlanRow row, bool on)
+    {
+        if (row.Checked == on) return;
+        row.Checked = on;
+        if (on) coordinator.SessionSkips.Remove(row.Key); else coordinator.SessionSkips.Add(row.Key);
+        rowFlash[row.Key] = ImGui.GetTime();
+    }
     private bool capArmed;
     private int cursor = -1;
     private readonly List<PlanRow> visibleRows = new();
@@ -68,6 +78,7 @@ public sealed class ConfirmationWindow : StyledWindow
 
     public override void OnOpen()
     {
+        base.OnOpen();
         capArmed = false;
         cursor = -1;
         if (coordinator.CurrentPlan is null && !coordinator.IsRunning)
@@ -216,11 +227,7 @@ public sealed class ConfirmationWindow : StyledWindow
         var allChecked = executable.Count > 0 && executable.All(r => r.Checked);
         if (Ui.LinkButton(allChecked ? "Clear" : narrowed ? "Select shown" : "Select all"))
         {
-            foreach (var r in executable)
-            {
-                r.Checked = !allChecked;
-                if (allChecked) coordinator.SessionSkips.Add(r.Key); else coordinator.SessionSkips.Remove(r.Key);
-            }
+            foreach (var r in executable) SetChecked(r, !allChecked);
         }
         var warned = executable.Count(r => r.Proposal.Warnings.Count > 0);
         var scope = narrowed ? "every row that matches the current filters" : "every row";
@@ -397,13 +404,15 @@ public sealed class ConfirmationWindow : StyledWindow
         var top = ImGui.GetWindowPos().Y;
         if (tableMin.Y >= top || tableMax.Y <= top + headerH * 2) return;
 
+        var a = Ui.Appear($"sticky:{sectionKey}", 0.16f);
         var left = ImGui.GetWindowPos().X;
         var right = left + ImGui.GetWindowWidth();
         var dl = ImGui.GetWindowDrawList();
-        dl.AddRectFilled(new Vector2(left, top), new Vector2(right, top + headerH), ImGui.GetColorU32(Ui.Ink with { W = 1f }));
-        dl.AddLine(new Vector2(left, top + headerH), new Vector2(right, top + headerH), ImGui.GetColorU32(Ui.InkLine), 1f);
+        dl.AddRectFilled(new Vector2(left, top), new Vector2(right, top + headerH), ImGui.GetColorU32(Ui.Ink with { W = a }));
+        dl.AddLine(new Vector2(left, top + headerH), new Vector2(right, top + headerH), ImGui.GetColorU32(Ui.InkLine * new Vector4(1, 1, 1, a)), 1f);
 
         var saved = ImGui.GetCursorScreenPos();
+        using (ImRaii.PushStyle(ImGuiStyleVar.Alpha, a))
         using (ImRaii.PushId($"sticky{sectionKey}"))
         {
             foreach (var col in cols)
@@ -496,18 +505,17 @@ public sealed class ConfirmationWindow : StyledWindow
     {
         using var id = ImRaii.PushId(row.Key);
         ImGui.TableNextRow(ImGuiTableRowFlags.None, 30 * Ui.Scale);
-        if (index == cursor) ImGui.TableSetBgColor(ImGuiTableBgTarget.RowBg0, ImGui.GetColorU32(ImGuiCol.HeaderHovered));
+        // A just-toggled row glows gold for a moment; the keyboard cursor row is lifted.
+        var glow = rowFlash.TryGetValue(row.Key, out var at) ? (float)Math.Clamp(1 - (ImGui.GetTime() - at) / 0.7, 0, 1) : 0f;
+        if (glow > 0f) ImGui.TableSetBgColor(ImGuiTableBgTarget.RowBg0, ImGui.GetColorU32(Ui.Accent * new Vector4(1, 1, 1, 0.22f * glow * glow)));
+        else if (index == cursor) ImGui.TableSetBgColor(ImGuiTableBgTarget.RowBg0, ImGui.GetColorU32(ImGuiCol.HeaderHovered));
 
         ImGui.TableNextColumn();
         ImGui.AlignTextToFramePadding();
         var chk = row.Checked;
         using (ImRaii.Disabled(!row.IsExecutable))
         {
-            if (ImGui.Checkbox("##c", ref chk))
-            {
-                row.Checked = chk;
-                if (!chk) coordinator.SessionSkips.Add(row.Key); else coordinator.SessionSkips.Remove(row.Key);
-            }
+            if (ImGui.Checkbox("##c", ref chk)) SetChecked(row, chk);
         }
 
         ImGui.TableNextColumn();
@@ -519,8 +527,7 @@ public sealed class ConfirmationWindow : StyledWindow
         // Clicking the name ticks the row, so the whole line is a target, not just the small box.
         if (ImGui.Selectable(name, index == cursor, ImGuiSelectableFlags.AllowItemOverlap, Vector2.Zero) && row.IsExecutable)
         {
-            row.Checked = !row.Checked;
-            if (row.Checked) coordinator.SessionSkips.Remove(row.Key); else coordinator.SessionSkips.Add(row.Key);
+            SetChecked(row, !row.Checked);
             cursor = index;
         }
         if (ImGui.IsItemHovered()) DrawRowTooltip(row);
@@ -920,11 +927,7 @@ public sealed class ConfirmationWindow : StyledWindow
         if (toggle && cursor >= 0 && cursor < count)
         {
             var row = visibleRows[cursor];
-            if (row.IsExecutable)
-            {
-                row.Checked = !row.Checked;
-                if (row.Checked) coordinator.SessionSkips.Remove(row.Key); else coordinator.SessionSkips.Add(row.Key);
-            }
+            if (row.IsExecutable) SetChecked(row, !row.Checked);
         }
         if (accept) Accept(plan);
         if (cancel) IsOpen = false;

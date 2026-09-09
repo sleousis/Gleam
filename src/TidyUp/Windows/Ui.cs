@@ -159,11 +159,49 @@ internal static class Ui
     }
 
     /// <summary>A tooltip with the plugin's padding and a fixed comfortable width. Dispose to close.</summary>
+    // ---------- motion ----------
+    // Small, frame-rate independent eases keyed by a string. Everything that moves in the plugin goes through
+    // these three, so the feel is the same everywhere: quick to react, soft to settle.
+
+    private static readonly Dictionary<string, float> motion = new();
+    private static readonly Dictionary<string, (double First, double Last)> appear = new();
+    private static readonly Dictionary<string, bool> hoverLast = new();
+
+    /// <summary>A value that follows <paramref name="target"/> with an exponential ease; higher speed settles sooner.</summary>
+    public static float Smooth(string id, float target, float speed = 12f)
+    {
+        var dt = Math.Clamp(ImGui.GetIO().DeltaTime, 0f, 0.1f);
+        if (!motion.TryGetValue(id, out var v)) v = target;
+        v += (target - v) * (1f - MathF.Exp(-speed * dt));
+        if (MathF.Abs(v - target) < 0.001f) v = target;
+        motion[id] = v;
+        return v;
+    }
+
+    /// <summary>0 → 1 over the first moments something is on screen; starts over once it has been away for a bit.</summary>
+    public static float Appear(string id, float seconds = 0.22f)
+    {
+        var now = ImGui.GetTime();
+        if (!appear.TryGetValue(id, out var t) || now - t.Last > 0.3) t = (now, now);
+        appear[id] = (t.First, now);
+        return EaseOut((float)Math.Clamp((now - t.First) / seconds, 0, 1));
+    }
+
+    public static float EaseOut(float t) => 1f - (1f - t) * (1f - t);
+
+    /// <summary>Hover state of the last frame, eased. Call <see cref="RecordHover"/> right after the item.</summary>
+    public static float Hover(string id) => Smooth("hover:" + id, hoverLast.GetValueOrDefault(id) ? 1f : 0f, 16f);
+    public static void RecordHover(string id) => hoverLast[id] = ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled);
+
+    public static Vector4 Mix(Vector4 a, Vector4 b, float t) => a + (b - a) * Math.Clamp(t, 0f, 1f);
+
     public static IDisposable RichTooltip(float width = 340f)
     {
+        var min = ImGui.GetItemRectMin();
         var style = ImRaii.PushStyle(ImGuiStyleVar.WindowPadding, new Vector2(14f * Scale, 12f * Scale))
             .Push(ImGuiStyleVar.ItemSpacing, new Vector2(8f * Scale, 5f * Scale))
-            .Push(ImGuiStyleVar.WindowRounding, 8f * Scale);
+            .Push(ImGuiStyleVar.WindowRounding, 8f * Scale)
+            .Push(ImGuiStyleVar.Alpha, Appear($"rtip:{min.X:F0},{min.Y:F0}", 0.14f));
         ImGui.SetNextWindowSize(new Vector2(width * Scale, 0));
         ImGui.BeginTooltip();
         return new TooltipScope(style);
@@ -243,13 +281,18 @@ internal static class Ui
         var iconW = IconWidth(icon);
         var w = width > 0 ? width : textW + iconW + pad.X * 2 + 6f * Scale;
         var pos = ImGui.GetCursorScreenPos();
-        var clicked = ImGui.Button($"##{id}", new Vector2(w, 0));
+        var key = $"icon:{ImGui.GetID(id)}";
+        var hv = Hover(key);
+        bool clicked;
+        using (ImRaii.PushColor(ImGuiCol.Button, Mix(ImGui.GetStyle().Colors[(int)ImGuiCol.Button], ImGui.GetStyle().Colors[(int)ImGuiCol.ButtonHovered], hv)))
+            clicked = ImGui.Button($"##{id}", new Vector2(w, 0));
+        RecordHover(key);
         var dl = ImGui.GetWindowDrawList();
         var h = ImGui.GetFrameHeight();
         var x = pos.X + (w - (textW + iconW + 6f * Scale)) / 2;
         var y = pos.Y + (h - ImGui.GetTextLineHeight()) / 2;
         using (ImRaii.PushFont(UiBuilder.IconFont))
-            dl.AddText(new Vector2(x, y), ImGui.GetColorU32(Muted), icon.ToIconString());
+            dl.AddText(new Vector2(x, y), ImGui.GetColorU32(Mix(Muted, AccentSoft, hv)), icon.ToIconString());
         dl.AddText(new Vector2(x + iconW + 6f * Scale, y), ImGui.GetColorU32(ImGuiCol.Text), label);
         return clicked;
     }
@@ -279,13 +322,23 @@ internal static class Ui
         var h = ImGui.GetFrameHeight() + 2f * Scale;
         var pos = ImGui.GetCursorScreenPos();
         var clicked = ImGui.InvisibleButton($"##primary{label}", new Vector2(w, h));
-        var hovered = ImGui.IsItemHovered();
+        var key = $"primary:{ImGui.GetID($"##primary{label}")}";
+        RecordHover(key);
+        var hv = Hover(key);
         var held = ImGui.IsItemActive();
         var disabled = ImGui.GetStyle().Alpha < 0.99f;
         var dl = ImGui.GetWindowDrawList();
-        var alpha = disabled ? 0.45f : held ? 1f : hovered ? 0.95f : 0.85f;
+        var alpha = disabled ? 0.45f : held ? 1f : 0.85f + 0.10f * hv;
         var fill = color * new Vector4(1, 1, 1, alpha);
         var r = Rounding;
+        if (!disabled)
+        {
+            // A halo that swells on hover; danger buttons breathe a little so "Stop" is easy to find.
+            var breathe = danger ? 0.5f + 0.5f * MathF.Sin((float)ImGui.GetTime() * 2.4f) : 0f;
+            var halo = 0.10f * hv + 0.07f * breathe;
+            var grow = 3f * Scale + 3f * Scale * hv;
+            if (halo > 0.005f) dl.AddRectFilled(pos - new Vector2(grow, grow), pos + new Vector2(w + grow, h + grow), ImGui.GetColorU32(color * new Vector4(1, 1, 1, halo)), r + grow);
+        }
         dl.AddRectFilled(pos, pos + new Vector2(w, h), ImGui.GetColorU32(fill), r);
         // sheen on the upper half, a shade line on the bottom edge
         dl.AddRectFilled(pos, pos + new Vector2(w, h * 0.5f), ImGui.GetColorU32(new Vector4(1, 1, 1, disabled ? 0.04f : 0.10f)), r, ImDrawFlags.RoundCornersTop);
@@ -298,11 +351,15 @@ internal static class Ui
     /// <summary>A text-only button for secondary actions.</summary>
     public static bool LinkButton(string label)
     {
-        using var b = ImRaii.PushColor(ImGuiCol.Button, Vector4.Zero);
+        var key = $"link:{ImGui.GetID(label)}";
+        var hv = Hover(key);
+        using var b = ImRaii.PushColor(ImGuiCol.Button, new Vector4(1, 1, 1, 0.08f * hv));
         using var h = ImRaii.PushColor(ImGuiCol.ButtonHovered, new Vector4(1, 1, 1, 0.08f));
         using var a = ImRaii.PushColor(ImGuiCol.ButtonActive, new Vector4(1, 1, 1, 0.12f));
-        using var t = ImRaii.PushColor(ImGuiCol.Text, Muted);
-        return ImGui.Button(label, new Vector2(0, 0));
+        using var t = ImRaii.PushColor(ImGuiCol.Text, Mix(Muted, Cream, hv));
+        var clicked = ImGui.Button(label, new Vector2(0, 0));
+        RecordHover(key);
+        return clicked;
     }
 
     /// <summary>Small coloured status chip, e.g. "ready" or "needs saddlebag".</summary>
@@ -334,13 +391,24 @@ internal static class Ui
     /// <summary>A toggle chip for filters. Active chips fill with the accent.</summary>
     public static bool Chip(string label, bool active)
     {
-        using var r = ImRaii.PushStyle(ImGuiStyleVar.FrameRounding, 10f * Scale);
-        using var p = ImRaii.PushStyle(ImGuiStyleVar.FramePadding, new Vector2(9f * Scale, 2f * Scale));
-        using var bg = ImRaii.PushColor(ImGuiCol.Button, active ? Accent * new Vector4(1, 1, 1, 0.85f) : new Vector4(1, 1, 1, 0.06f));
-        using var bh = ImRaii.PushColor(ImGuiCol.ButtonHovered, active ? Accent : new Vector4(1, 1, 1, 0.11f));
-        using var ba = ImRaii.PushColor(ImGuiCol.ButtonActive, active ? Accent : new Vector4(1, 1, 1, 0.15f));
-        using var fg = ImRaii.PushColor(ImGuiCol.Text, active ? OnAccent : ImGui.GetStyle().Colors[(int)ImGuiCol.Text]);
-        return ImGui.Button(label, new Vector2(0, 0));
+        var textW = ImGui.CalcTextSize(label, false, 0).X;
+        var h = ImGui.GetTextLineHeight() + 5f * Scale;
+        var w = textW + 18f * Scale;
+        var pos = ImGui.GetCursorScreenPos();
+        var clicked = ImGui.InvisibleButton(label, new Vector2(w, h));
+        var key = $"chip:{ImGui.GetID(label)}";
+        RecordHover(key);
+        var hv = Hover(key);
+        var on = Smooth(key + ":on", active ? 1f : 0f, 14f);
+
+        var idle = new Vector4(1, 1, 1, 0.06f + 0.06f * hv);
+        var lit = Accent * new Vector4(1, 1, 1, 0.85f + 0.15f * hv);
+        var text = Mix(ImGui.GetStyle().Colors[(int)ImGuiCol.Text], OnAccent, on);
+        var dl = ImGui.GetWindowDrawList();
+        dl.AddRectFilled(pos, pos + new Vector2(w, h), ImGui.GetColorU32(Mix(idle, lit, on)), h / 2);
+        if (on > 0.01f) dl.AddRect(pos, pos + new Vector2(w, h), ImGui.GetColorU32(AccentSoft * new Vector4(1, 1, 1, 0.35f * on)), h / 2);
+        dl.AddText(pos + new Vector2(9f * Scale, (h - ImGui.GetTextLineHeight()) / 2), ImGui.GetColorU32(text), label);
+        return clicked;
     }
 
     // ---------- images ----------
@@ -359,12 +427,18 @@ internal static class Ui
         var size = 72f * Scale;
         var avail = ImGui.GetContentRegionAvail();
         ImGui.SetCursorPosY(ImGui.GetCursorPosY() + Math.Max(0, avail.Y * 0.18f));
+        var a = Appear("empty:" + text, 0.3f);
+        using var alpha = ImRaii.PushStyle(ImGuiStyleVar.Alpha, a);
         if (!logo.IsNull)
         {
+            var t = (float)ImGui.GetTime();
+            var bob = MathF.Sin(t * 1.5f) * 3f * Scale;
             ImGui.SetCursorPosX(Math.Max(0, (ImGui.GetWindowWidth() - size) / 2));
-            var pos = ImGui.GetCursorScreenPos();
+            var pos = ImGui.GetCursorScreenPos() + new Vector2(0, bob + 8f * Scale * (1f - a));
             ImGui.Dummy(new Vector2(size, size));
-            ImGui.GetWindowDrawList().AddImageRounded(logo, pos, pos + new Vector2(size, size), Vector2.Zero, Vector2.One, ImGui.GetColorU32(new Vector4(1, 1, 1, 0.55f)), 14f * Scale);
+            var dl = ImGui.GetWindowDrawList();
+            dl.AddCircleFilled(pos + new Vector2(size / 2, size / 2 + 6f * Scale), size * 0.62f, ImGui.GetColorU32(new Vector4(0, 0, 0, 0.18f * a)));
+            dl.AddImageRounded(logo, pos, pos + new Vector2(size, size), Vector2.Zero, Vector2.One, ImGui.GetColorU32(new Vector4(1, 1, 1, (0.52f + 0.06f * MathF.Sin(t * 1.5f + 1f)) * a)), 14f * Scale);
             Gap(0.6f);
         }
         Centered(text);
@@ -532,10 +606,14 @@ internal static class Ui
     /// <summary>A tinted one-line notice with a colour bar on its left edge. Returns true when its dismiss link is clicked.</summary>
     public static bool Banner(Vector4 color, string lead, string text, bool dismissible = true)
     {
+        var a = Appear($"banner:{lead}:{text}", 0.28f);
+        using var alpha = ImRaii.PushStyle(ImGuiStyleVar.Alpha, a);
         var h = ImGui.GetFrameHeight() + 8f * Scale;
-        var pos = ImGui.GetCursorScreenPos();
+        var slot = ImGui.GetCursorScreenPos();
+        var pos = slot + new Vector2(0, -6f * Scale * (1f - a));
         var w = ImGui.GetContentRegionAvail().X;
         var dl = ImGui.GetWindowDrawList();
+        color *= new Vector4(1, 1, 1, a);
         dl.AddRectFilled(pos, pos + new Vector2(w, h), ImGui.GetColorU32(color * new Vector4(1, 1, 1, 0.09f)), Rounding);
         dl.AddRectFilled(pos, pos + new Vector2(3f * Scale, h), ImGui.GetColorU32(color), Rounding, ImDrawFlags.RoundCornersLeft);
         ImGui.SetCursorScreenPos(pos + new Vector2(12f * Scale, 4f * Scale));
@@ -552,7 +630,7 @@ internal static class Ui
             ImGui.SetCursorScreenPos(new Vector2(pos.X + w - dismissW, pos.Y + 4f * Scale));
             clicked = LinkButton("Dismiss");
         }
-        ImGui.SetCursorScreenPos(new Vector2(pos.X, Math.Max(ImGui.GetCursorScreenPos().Y, pos.Y + h)));
+        ImGui.SetCursorScreenPos(new Vector2(slot.X, Math.Max(ImGui.GetCursorScreenPos().Y, slot.Y + h)));
         ImGui.Dummy(new Vector2(w, 0));
         return clicked;
     }
@@ -648,24 +726,45 @@ internal static class Ui
         dl.AddRectFilled(pos, pos + new Vector2(total, h), ImGui.GetColorU32(new Vector4(1, 1, 1, 0.05f)), h / 2);
         dl.AddRect(pos, pos + new Vector2(total, h), ImGui.GetColorU32(InkLine), h / 2);
 
+        // Where the highlight should be, then where it is: it glides rather than jumps.
+        var selectedIndex = -1;
+        var offsets = new List<float>();
+        var run = 4f * Scale;
+        for (var i = 0; i < options.Count; i++)
+        {
+            offsets.Add(run);
+            if (EqualityComparer<T>.Default.Equals(options[i].Value, value)) selectedIndex = i;
+            run += widths[i];
+        }
+        var segKey = $"seg:{ImGui.GetID(id)}";
+        if (selectedIndex >= 0)
+        {
+            var hx = Smooth(segKey + ":x", offsets[selectedIndex], 18f);
+            var hw = Smooth(segKey + ":w", widths[selectedIndex], 18f);
+            var hmin = new Vector2(pos.X + hx, pos.Y + 2f * Scale);
+            var hmax = new Vector2(pos.X + hx + hw, pos.Y + h - 2f * Scale);
+            dl.AddRectFilled(hmin, hmax, ImGui.GetColorU32(Accent * new Vector4(1, 1, 1, 0.9f)), (h - 4f * Scale) / 2);
+        }
+
         var x = pos.X + 4f * Scale;
         for (var i = 0; i < options.Count; i++)
         {
             var (v, label) = options[i];
-            var selected = EqualityComparer<T>.Default.Equals(v, value);
+            var selected = i == selectedIndex;
             var w = widths[i];
             ImGui.SetCursorScreenPos(new Vector2(x, pos.Y + 2f * Scale));
             if (ImGui.InvisibleButton($"##seg{i}", new Vector2(w, h - 4f * Scale)) && !selected) { value = v; changed = true; }
-            var hovered = ImGui.IsItemHovered();
+            var optKey = $"{segKey}:{i}";
+            RecordHover(optKey);
+            var hv = Hover(optKey);
             var min = new Vector2(x, pos.Y + 2f * Scale);
             var max = new Vector2(x + w, pos.Y + h - 2f * Scale);
-            if (selected)
-                dl.AddRectFilled(min, max, ImGui.GetColorU32(Accent * new Vector4(1, 1, 1, 0.9f)), (h - 4f * Scale) / 2);
-            else if (hovered)
-                dl.AddRectFilled(min, max, ImGui.GetColorU32(new Vector4(1, 1, 1, 0.07f)), (h - 4f * Scale) / 2);
+            if (!selected && hv > 0.01f)
+                dl.AddRectFilled(min, max, ImGui.GetColorU32(new Vector4(1, 1, 1, 0.07f * hv)), (h - 4f * Scale) / 2);
+            var onText = Smooth(optKey + ":t", selected ? 1f : 0f, 18f);
             var tw = ImGui.CalcTextSize(label, false, 0).X;
             var tp = new Vector2(x + (w - tw) / 2, pos.Y + (h - ImGui.GetTextLineHeight()) / 2);
-            dl.AddText(tp, ImGui.GetColorU32(selected ? OnAccent : ImGui.GetStyle().Colors[(int)ImGuiCol.Text]), label);
+            dl.AddText(tp, ImGui.GetColorU32(Mix(ImGui.GetStyle().Colors[(int)ImGuiCol.Text], OnAccent, onText)), label);
             x += w;
         }
         ImGui.SetCursorScreenPos(pos);
@@ -682,6 +781,7 @@ internal static class Ui
     public static void Tooltip(string text)
     {
         if (string.IsNullOrEmpty(text) || !ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled)) return;
+        using var a = ImRaii.PushStyle(ImGuiStyleVar.Alpha, Appear("tip:" + text, 0.14f));
         using var t = ImRaii.Tooltip();
         using var w = ImRaii.TextWrapPos(380f * Scale);
         ImGui.TextUnformatted(text);

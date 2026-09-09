@@ -58,6 +58,7 @@ public sealed class OrganizerWindow : StyledWindow
 
     public override void OnOpen()
     {
+        base.OnOpen();
         if (organizer.Current is null && !organizer.IsPreviewing) _ = organizer.PreviewAsync();
     }
 
@@ -319,11 +320,19 @@ public sealed class OrganizerWindow : StyledWindow
                     Ui.Tooltip(selected ? "Hide the conditions." : "Show and edit the conditions.");
                     var dl = ImGui.GetWindowDrawList();
                     var y = pos.Y + (ImGui.GetFrameHeight() - ImGui.GetTextLineHeight()) / 2;
+                    var turn = Ui.Smooth($"chev:{i}", selected ? 1f : 0f, 14f);
                     using (ImRaii.PushFont(UiBuilder.IconFont))
-                        dl.AddText(new Vector2(pos.X + 2 * Ui.Scale, y), ImGui.GetColorU32(Ui.Muted), (selected ? FontAwesomeIcon.ChevronDown : FontAwesomeIcon.ChevronRight).ToIconString());
+                    {
+                        dl.AddText(new Vector2(pos.X + 2 * Ui.Scale, y), ImGui.GetColorU32(Ui.Muted * new Vector4(1, 1, 1, 1f - turn)), FontAwesomeIcon.ChevronRight.ToIconString());
+                        dl.AddText(new Vector2(pos.X + 2 * Ui.Scale, y), ImGui.GetColorU32(Ui.AccentSoft * new Vector4(1, 1, 1, turn)), FontAwesomeIcon.ChevronDown.ToIconString());
+                    }
                     dl.AddText(new Vector2(pos.X + chevronW + 6 * Ui.Scale, y), ImGui.GetColorU32(on ? Ui.Muted : Ui.Muted * new Vector4(1, 1, 1, 0.6f)), $"{(when(rule).IsEmpty ? "Everything" : when(rule).Describe())} → {DestinationLabel(rule.Then)}{(rule.KeepInBags > 0 ? $", keep {rule.KeepInBags} in the bags" : "")}");
                 }
-                if (selected) DrawPredicateEditor(rule.When);
+                if (selected)
+                {
+                    using var fade = ImRaii.PushStyle(ImGuiStyleVar.Alpha, Ui.Appear($"pred:{rule.Id}", 0.2f));
+                    DrawPredicateEditor(rule.When);
+                }
             }
         }
 
@@ -594,7 +603,7 @@ public sealed class OrganizerWindow : StyledWindow
             var deltaText = delta == 0 ? "no change" : delta > 0 ? $"+{delta}" : $"{delta}";
             Ui.Hint($"{e.UsedBefore} → {e.UsedAfter} of {e.Size} · {deltaText}{(e.SizesAreLive ? "" : " · size assumed")}");
             if (!e.SizesAreLive) Ui.Tooltip("This storage has not been opened yet, so its size is assumed. Open it once for exact numbers.");
-            var frac = e.Size == 0 ? 0f : Math.Clamp(e.UsedAfter / (float)e.Size, 0f, 1f);
+            var frac = Ui.Smooth($"state:{e.Storage}", e.Size == 0 ? 0f : Math.Clamp(e.UsedAfter / (float)e.Size, 0f, 1f), 8f);
             var barW = width - pad * 2;
             var bp = ImGui.GetCursorScreenPos();
             dl.AddRectFilled(bp, bp + new Vector2(barW, 6 * Ui.Scale), ImGui.GetColorU32(new Vector4(1, 1, 1, 0.08f)), 3 * Ui.Scale);
