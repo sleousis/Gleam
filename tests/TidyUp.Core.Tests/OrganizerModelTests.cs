@@ -88,6 +88,22 @@ public class OrganizerModelTests
     }
 
     [Fact]
+    public void Named_destinations_are_fresh_instances_so_filling_one_in_place_touches_no_other_rule()
+    {
+        Assert.NotSame(Destination.Stay, Destination.Stay);
+        var a = new OrganizerRule();
+        var b = new OrganizerRule();
+        Assert.NotSame(a.Then, b.Then);
+
+        // What a populate-style serializer does: write into the object the property already holds.
+        typeof(Destination).GetProperty(nameof(Destination.Kind))!.SetValue(a.Then, DestinationKind.Saddlebag);
+        Assert.Equal(DestinationKind.Saddlebag, a.Then.Kind);
+        Assert.Equal(DestinationKind.Stay, b.Then.Kind);
+        Assert.Equal(DestinationKind.Stay, new OrganizerPlan().Fallback.Kind);
+        Assert.Equal(DestinationKind.Stay, Destination.Stay.Kind);
+    }
+
+    [Fact]
     public void Plans_round_trip_through_json_and_clone_deeply()
     {
         var plan = OrganizerPlan.Starter();
