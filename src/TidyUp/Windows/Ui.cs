@@ -705,6 +705,26 @@ internal static class Ui
         return clicked;
     }
 
+    /// <summary>
+    /// A text link the height of a <see cref="Chip"/>. A framed button among chips is several pixels taller
+    /// than they are, so putting one at the end of a chip row makes the whole row grow the moment it appears
+    /// -- which reads as a gap opening up under the filters when you tick one.
+    /// </summary>
+    public static bool ChipLink(string label)
+    {
+        var h = ImGui.GetTextLineHeight() + 5f * Scale;
+        var w = ImGui.CalcTextSize(label, false, 0).X + 12f * Scale;
+        var pos = ImGui.GetCursorScreenPos();
+        var clicked = ImGui.InvisibleButton(label, new Vector2(w, h));
+        var key = $"chiplink:{ImGui.GetID(label)}";
+        RecordHover(key);
+        var hv = Hover(key);
+        var dl = ImGui.GetWindowDrawList();
+        if (hv > 0.01f) dl.AddRectFilled(pos, pos + new Vector2(w, h), ImGui.GetColorU32(new Vector4(1, 1, 1, 0.07f * hv)), h / 2);
+        dl.AddText(pos + new Vector2(6f * Scale, (h - ImGui.GetTextLineHeight()) / 2), ImGui.GetColorU32(Mix(Muted, Cream, hv)), label);
+        return clicked;
+    }
+
     // ---------- images ----------
 
     /// <summary>
@@ -1205,6 +1225,34 @@ internal static class Ui
         var pulse = 0.5f + 0.5f * MathF.Sin((float)ImGui.GetTime() * 5f);
         return Mix(Danger, Cream, 0.28f * pulse);
     }
+
+    /// <summary>
+    /// One glyph per outcome, used everywhere an action is named: the review list, the outcome headers and
+    /// the history. Colour alone separates them for most people; a shape as well means the list can be read
+    /// at a glance, and read at all by anyone who does not see the colours apart.
+    /// </summary>
+    public static FontAwesomeIcon ActionIcon(ActionKind action) => action switch
+    {
+        ActionKind.Discard => FontAwesomeIcon.TrashAlt,
+        ActionKind.VendorSell => FontAwesomeIcon.Coins,
+        ActionKind.ExpertDelivery => FontAwesomeIcon.Shield,
+        ActionKind.Desynth => FontAwesomeIcon.Hammer,
+        ActionKind.MarketList => FontAwesomeIcon.Store,
+        _ => FontAwesomeIcon.Lock,
+    };
+
+    /// <summary>The action's glyph and its name, on one line, in the action's own colour.</summary>
+    public static void ActionLabel(ActionKind action, string? label = null)
+    {
+        var color = ActionColor(action);
+        Icon(ActionIcon(action), color);
+        ImGui.SameLine(0, 6f * Scale);
+        TextColored(color, label ?? action.Label());
+    }
+
+    /// <summary>Width <see cref="ActionLabel"/> needs, for a column that has to reserve room for it.</summary>
+    public static float ActionLabelWidth(ActionKind action, string? label = null) =>
+        IconWidth(ActionIcon(action)) + 6f * Scale + ImGui.CalcTextSize(label ?? action.Label(), false, 0).X;
 
     public static Vector4 ActionColor(ActionKind action) => action switch
     {
