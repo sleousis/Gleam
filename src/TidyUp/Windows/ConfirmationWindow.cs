@@ -73,6 +73,15 @@ public sealed class ConfirmationWindow : StyledWindow
 
     private readonly record struct HeaderColumn(float X, float Width, string Label, SortKey? Key, bool Numeric);
     private readonly Dictionary<string, double> rowFlash = new();
+    private object? staggerPlan;
+    private double staggerAt;
+
+    /// <summary>Rows fade in one after another when a fresh list arrives, so the eye follows it down the page.</summary>
+    private float RowAlpha(int index)
+    {
+        var elapsed = ImGui.GetTime() - staggerAt - index * 0.012;
+        return Ui.EaseOut((float)Math.Clamp(elapsed / 0.18, 0, 1));
+    }
 
     /// <summary>The simple layer: no filters, no per-row choices, plain words. Advanced adds everything back.</summary>
     private bool Simple => !config.AdvancedMode;
@@ -120,6 +129,7 @@ public sealed class ConfirmationWindow : StyledWindow
         // Whatever is running owns the window.
         if (Pilot is { IsRunning: true }) Mode = Pilot.Mode == Automation.PilotMode.Organize ? Ui.AppMode.Organize : Ui.AppMode.Clean;
         else if (coordinator.IsRunning) Mode = Ui.AppMode.Clean;
+        using var page = Ui.PageTransition(Mode);
         if (Mode == Ui.AppMode.Organize && Organizer is not null) { Organizer.Draw(); return; }
         if (Mode == Ui.AppMode.History && History is not null) { History.Draw(); return; }
         if (Mode == Ui.AppMode.Settings && SettingsPage is not null) { SettingsPage.Draw(); return; }
@@ -127,7 +137,15 @@ public sealed class ConfirmationWindow : StyledWindow
         var plan = coordinator.CurrentPlan;
         if (Pilot is { IsRunning: true, Mode: Automation.PilotMode.Clean }) { DrawPilotRunning(); return; }
         if (coordinator.IsRunning) { DrawRunning(); return; }
-        if (plan is null) { DrawCentered(string.IsNullOrEmpty(coordinator.Status) ? "Scanning your containers…" : coordinator.Status); return; }
+        if (plan is null)
+        {
+            Ui.RunningHeader(icons.LogoMedium, "Looking through your things…", string.IsNullOrEmpty(coordinator.Status) ? null : coordinator.Status);
+            Ui.Gap(0.8f);
+            var w = ImGui.GetWindowWidth() * 0.5f;
+            ImGui.SetCursorPosX((ImGui.GetWindowWidth() - w) / 2);
+            Ui.ProgressBar("scan", null, w);
+            return;
+        }
         if (!config.SeenFirstRun) { DrawFirstRun(plan); return; }
 
         DrawTopBar(plan);
@@ -151,6 +169,7 @@ public sealed class ConfirmationWindow : StyledWindow
             if (child)
             {
                 visibleRows.Clear();
+                if (!ReferenceEquals(staggerPlan, plan)) { staggerPlan = plan; staggerAt = ImGui.GetTime(); }
                 var drewAny = Simple ? DrawSimpleGroups(plan) : DrawContainerSections(plan);
                 if (!Simple && coordinator.FocusContainer is null && plan.Alts.Count > 0) DrawAlts(plan);
                 if (!drewAny)
@@ -253,10 +272,12 @@ public sealed class ConfirmationWindow : StyledWindow
         if (Simple)
         {
             var summary = plan.Summarize();
-            var freed = summary.SlotsFreedByContainer.Values.Sum();
+            var freed = (int)Ui.Count("freed", summary.SlotsFreedByContainer.Values.Sum());
+            var worth = Ui.Count("worth", summary.GilRecovered + summary.MarketGil);
+            var found = (int)Ui.Count("found", total);
             var sentence = total == 0 ? "Nothing looks like junk right now."
-                : $"Gleam found {total} item{(total == 1 ? "" : "s")} of junk." + (freed > 0 ? $" Cleaning them frees {freed} slot{(freed == 1 ? "" : "s")}" : string.Empty)
-                  + (summary.GilRecovered + summary.MarketGil > 0 ? $"{(freed > 0 ? " and recovers" : " Cleaning them recovers")} about {Ui.Gil(summary.GilRecovered + summary.MarketGil)}." : freed > 0 ? "." : string.Empty);
+                : $"Gleam found {found} item{(found == 1 ? "" : "s")} of junk." + (freed > 0 ? $" Cleaning them frees {freed} slot{(freed == 1 ? "" : "s")}" : string.Empty)
+                  + (worth > 0 ? $"{(freed > 0 ? " and recovers" : " Cleaning them recovers")} about {Ui.Gil(worth)}." : freed > 0 ? "." : string.Empty);
             var offerOrganize = Organizer is not null && config.UseOrganize;
             Ui.Header(icons.LogoSmall, "Gleam", sentence, 0f, null, null, !offerOrganize ? null : () => { if (Ui.ModeSwitch(Ui.AppMode.Clean)) Show(Ui.AppMode.Organize); });
             ImGui.AlignTextToFramePadding();
@@ -594,9 +615,9 @@ public sealed class ConfirmationWindow : StyledWindow
             var all = checkedHere == rows.Count;
             var some = checkedHere > 0 && !all;
             var box = all;
-            using (ImRaii.PushStyle(ImGuiStyleVar.Alpha, ImGui.GetStyle().Alpha * (some ? 0.65f : 1f)))
+            using (ImRaii.PushStyle(ImGuiStyleVar.Alpha, ImGui.GetStyle().Alpha * (some ? 0.7f : 1f)))
             {
-                if (ImGui.Checkbox($"##all{key}", ref box))
+                if (Ui.Check($"##all{key}", ref box))
                     foreach (var r in rows) SetChecked(r, box);
             }
             ImGui.SameLine();
@@ -604,10 +625,11 @@ public sealed class ConfirmationWindow : StyledWindow
             Ui.TextColored(Ui.ActionColor(action), word);
             ImGui.SameLine();
             Ui.Text($"{rows.Count} item{(rows.Count == 1 ? "" : "s")}");
-            if (value > 0)
+            var shown = Ui.Count($"grpval:{action}", value);
+            if (shown > 0)
             {
                 ImGui.SameLine();
-                Ui.TextColored(Ui.Market, $"about {Ui.Gil(value)}");
+                Ui.TextColored(Ui.Market, $"about {Ui.Gil(shown)}");
             }
             ImGui.SameLine();
             Ui.RightAlign(110 * Ui.Scale);
@@ -615,6 +637,7 @@ public sealed class ConfirmationWindow : StyledWindow
 
             if (!open) return;
             Ui.Gap(0.3f);
+            using var fade = ImRaii.PushStyle(ImGuiStyleVar.Alpha, ImGui.GetStyle().Alpha * Ui.Appear($"open:{key}", 0.18f));
             using var table = ImRaii.Table($"##t{key}", 4, ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingFixedFit | ImGuiTableFlags.NoSavedSettings | ImGuiTableFlags.PadOuterX);
             if (!table) return;
             ImGui.TableSetupColumn("##chk", ImGuiTableColumnFlags.WidthFixed, 24 * Ui.Scale, 0);
@@ -633,6 +656,7 @@ public sealed class ConfirmationWindow : StyledWindow
     private void DrawGroupRow(PlanRow row, int index)
     {
         using var id = ImRaii.PushId(row.Key);
+        using var fade = ImRaii.PushStyle(ImGuiStyleVar.Alpha, ImGui.GetStyle().Alpha * RowAlpha(index));
         ImGui.TableNextRow(ImGuiTableRowFlags.None, 30 * Ui.Scale);
         var glow = rowFlash.TryGetValue(row.Key, out var at) ? (float)Math.Clamp(1 - (ImGui.GetTime() - at) / 0.7, 0, 1) : 0f;
         if (glow > 0f) ImGui.TableSetBgColor(ImGuiTableBgTarget.RowBg0, ImGui.GetColorU32(Ui.Accent * new Vector4(1, 1, 1, 0.22f * glow * glow)));
@@ -640,10 +664,7 @@ public sealed class ConfirmationWindow : StyledWindow
         ImGui.TableNextColumn();
         ImGui.AlignTextToFramePadding();
         var chk = row.Checked;
-        using (ImRaii.Disabled(!row.IsExecutable))
-        {
-            if (ImGui.Checkbox("##c", ref chk)) SetChecked(row, chk);
-        }
+        if (Ui.Check("##c", ref chk, !row.IsExecutable)) SetChecked(row, chk);
 
         ImGui.TableNextColumn();
         Ui.ImageRounded(icons.Get(row.Info.IconId, row.Item.IsHq), new Vector2(26 * Ui.Scale, 26 * Ui.Scale), 4 * Ui.Scale);
@@ -758,6 +779,7 @@ public sealed class ConfirmationWindow : StyledWindow
     private void DrawRow(PlanRow row, int index)
     {
         using var id = ImRaii.PushId(row.Key);
+        using var fade = ImRaii.PushStyle(ImGuiStyleVar.Alpha, ImGui.GetStyle().Alpha * RowAlpha(index));
         ImGui.TableNextRow(ImGuiTableRowFlags.None, 30 * Ui.Scale);
         // A just-toggled row glows gold for a moment; the keyboard cursor row is lifted.
         var glow = rowFlash.TryGetValue(row.Key, out var at) ? (float)Math.Clamp(1 - (ImGui.GetTime() - at) / 0.7, 0, 1) : 0f;
@@ -767,10 +789,7 @@ public sealed class ConfirmationWindow : StyledWindow
         ImGui.TableNextColumn();
         ImGui.AlignTextToFramePadding();
         var chk = row.Checked;
-        using (ImRaii.Disabled(!row.IsExecutable))
-        {
-            if (ImGui.Checkbox("##c", ref chk)) SetChecked(row, chk);
-        }
+        if (Ui.Check("##c", ref chk, !row.IsExecutable)) SetChecked(row, chk);
 
         ImGui.TableNextColumn();
         Ui.ImageRounded(icons.Get(row.Info.IconId, row.Item.IsHq), new Vector2(26 * Ui.Scale, 26 * Ui.Scale), 4 * Ui.Scale);
