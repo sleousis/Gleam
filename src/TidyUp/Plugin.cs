@@ -101,6 +101,7 @@ public sealed class Plugin : IDalamudPlugin
             () => { organizerWindow.IsOpen = true; _ = organizer.PreviewAsync(); });
         void OpenReview() { confirmWindow.IsOpen = true; if (coordinator.CurrentPlan is null) _ = coordinator.RefreshPlanAsync(openWindow: false); }
         void OpenOrganizer() { organizerWindow.IsOpen = true; if (organizer.Current is null) _ = organizer.PreviewAsync(); }
+        organizerWindow.OpenClean = OpenReview;
         organizerWindow.AddNav(FontAwesomeIcon.Broom, "Clean", OpenReview);
         organizerWindow.AddNav(FontAwesomeIcon.Cog, "Settings", () => settingsWindow.IsOpen = true);
         historyWindow.AddNav(FontAwesomeIcon.Broom, "Clean", OpenReview);

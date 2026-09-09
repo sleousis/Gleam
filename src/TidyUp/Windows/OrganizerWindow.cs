@@ -43,6 +43,9 @@ public sealed class OrganizerWindow : StyledWindow
     /// <summary>Set by the plugin when hands-free mode is available.</summary>
     public Automation.AutoPilot? Pilot { get; set; }
 
+    /// <summary>Set by the plugin: opens the cleaning review, the other half of the Clean | Organize switch.</summary>
+    public Action? OpenClean { get; set; }
+
     public OrganizerWindow(OrganizerCoordinator organizer, Configuration config, ItemDatabase db, IconCache icons, Action save)
         : base("Tidy Up Organizer###TidyUpOrganizer")
     {
@@ -69,10 +72,10 @@ public sealed class OrganizerWindow : StyledWindow
         var plan = Plan;
         var enabled = plan?.Rules.Count(r => r.Enabled) ?? 0;
         var subtitle = plan is null ? "No layout yet" : $"{plan.Name} · {enabled} rule{(enabled == 1 ? "" : "s")}";
-        Ui.Header(icons.Logo, "Organize", subtitle, Ui.SegmentedWidth(Views), () =>
+        Ui.Header(icons.Logo, "Tidy Up", subtitle, Ui.SegmentedWidth(Views), () =>
         {
             if (Ui.Segmented("##view", ref view, Views) && view == View.Preview && organizer.Current is null) _ = organizer.PreviewAsync();
-        });
+        }, null, () => { if (Ui.ModeSwitch(Ui.AppMode.Organize)) OpenClean?.Invoke(); });
 
         DrawPlanBar();
         Ui.Gap(0.4f);

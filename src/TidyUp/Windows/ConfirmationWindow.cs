@@ -27,6 +27,7 @@ public sealed class ConfirmationWindow : StyledWindow
 
     /// <summary>Set by the plugin when hands-free mode is available.</summary>
     public Automation.AutoPilot? Pilot { get; set; }
+    private readonly Action? openOrganizer;
 
     private string search = string.Empty;
     private ContainerKind? filterContainer;
@@ -68,6 +69,7 @@ public sealed class ConfirmationWindow : StyledWindow
         this.db = db;
         this.config = config;
         this.gamepad = gamepad;
+        this.openOrganizer = openOrganizer;
         Size = new Vector2(860, 600);
         SizeCondition = ImGuiCond.FirstUseEver;
         SizeConstraints = new WindowSizeConstraints { MinimumSize = new Vector2(560, 320), MaximumSize = new Vector2(4000, 3000) };
@@ -193,7 +195,7 @@ public sealed class ConfirmationWindow : StyledWindow
                 _ = coordinator.RefreshPlanAsync(openWindow: false, coordinator.FocusContainer);
             }
             Ui.Tooltip("Sell on market board: lists marketable items through your retainers at the lowest price on your home world, sells other tradeable items to a retainer, discards untradeable ones.\nSell to vendors: sells tradeable items to a retainer, discards untradeable ones.\nDiscard all: discards everything proposed.");
-        }, profile.Thresholds.Policy.Describe());
+        }, profile.Thresholds.Policy.Describe(), openOrganizer is null ? null : () => { if (Ui.ModeSwitch(Ui.AppMode.Clean)) openOrganizer(); });
 
         if (coordinator.FocusContainer is not null)
         {
