@@ -119,11 +119,12 @@ public sealed class InventoryContextDriver
         if (match is null)
         {
             var offered = string.Join(" | ", entries.Select(e => e.Text.Length > 0 ? e.Text : e.LabelId.ToString()));
-            var hint = entries.Any(e => e.Text.Contains("Retainer", StringComparison.OrdinalIgnoreCase))
-                ? " while a retainer was open. Leave the bell first"
-                : string.Empty;
+            // Naming the missing menu entry helps nobody. Say what to do instead.
+            var atBell = entries.Any(e => e.Text.Contains("Retainer", StringComparison.OrdinalIgnoreCase));
             log.Debug("Menu for {Slot} had no '{Label}'. Offered: {Offered}", slot, englishLabel, offered);
-            LastFailure = $"the item's menu had no '{englishLabel}' option{hint}";
+            LastFailure = atBell
+                ? "the game hides that option while a retainer is open"
+                : $"the game did not offer '{englishLabel}' for it";
             CloseMenu();
             return -1;
         }

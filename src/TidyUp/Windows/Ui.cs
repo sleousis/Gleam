@@ -416,8 +416,19 @@ internal static class Ui
 
     public static bool Button(string label, float width = 0f) => ImGui.Button(label, new Vector2(width, 0f));
 
-    /// <summary>A button with a leading icon.</summary>
-    public static bool IconButton(FontAwesomeIcon icon, string label, float width = 0f)
+    /// <summary>A turning arc. Says "working" without pretending to know how far along it is.</summary>
+    public static void Spinner(Vector2 centre, float radius, float thickness, Vector4 colour, float speed = 2.6f)
+    {
+        var dl = ImGui.GetWindowDrawList();
+        var t = (float)ImGui.GetTime() * speed;
+        // The gap breathes a little, so the arc reads as chasing its own tail rather than turning stiffly.
+        var sweep = 3.6f + 1.4f * MathF.Sin(t * 0.9f);
+        dl.PathArcTo(centre, radius, t, t + sweep, 32);
+        dl.PathStroke(ImGui.GetColorU32(colour), ImDrawFlags.None, thickness);
+    }
+
+    /// <summary>A button with a leading icon. While busy the icon becomes a turning arc.</summary>
+    public static bool IconButton(FontAwesomeIcon icon, string label, float width = 0f, bool busy = false)
     {
         var id = $"{label}##{icon}";
         var pad = ImGui.GetStyle().FramePadding;
@@ -435,8 +446,12 @@ internal static class Ui
         var h = ImGui.GetFrameHeight();
         var x = pos.X + (w - (textW + iconW + 6f * Scale)) / 2;
         var y = pos.Y + (h - ImGui.GetTextLineHeight()) / 2;
-        using (ImRaii.PushFont(UiBuilder.IconFont))
-            dl.AddText(new Vector2(x, y), ImGui.GetColorU32(Mix(Muted, AccentSoft, hv)), icon.ToIconString());
+        var spin = Smooth(key + ":busy", busy ? 1f : 0f, 12f);
+        if (spin < 0.99f)
+            using (ImRaii.PushFont(UiBuilder.IconFont))
+                dl.AddText(new Vector2(x, y), ImGui.GetColorU32(Mix(Muted, AccentSoft, hv) * new Vector4(1, 1, 1, 1f - spin)), icon.ToIconString());
+        if (spin > 0.01f)
+            Spinner(new Vector2(x + iconW / 2, pos.Y + h / 2), iconW * 0.42f, 2f * Scale, AccentSoft * new Vector4(1, 1, 1, spin));
         dl.AddText(new Vector2(x + iconW + 6f * Scale, y), ImGui.GetColorU32(ImGuiCol.Text), label);
         return clicked;
     }
@@ -778,8 +793,11 @@ internal static class Ui
             var bottom = ImGui.GetItemRectMax().Y + pad;
             var max = new Vector2(start.X + width, bottom);
             dl.ChannelsSetCurrent(0);
-            dl.AddRectFilled(start, max, ImGui.GetColorU32(new Vector4(1f, 1f, 1f, 0.035f)), Rounding);
-            dl.AddRect(start, max, ImGui.GetColorU32(InkLine), Rounding);
+            // A card lifts a shade under the cursor: enough to say "this is one thing", not enough to distract.
+            var key = $"card:{id.GetHashCode()}:{start.Y:F0}";
+            var hv = Smooth(key, ImGui.IsMouseHoveringRect(start, max, false) ? 1f : 0f, 14f);
+            dl.AddRectFilled(start, max, ImGui.GetColorU32(new Vector4(1f, 1f, 1f, 0.035f + 0.022f * hv)), Rounding);
+            dl.AddRect(start, max, ImGui.GetColorU32(Mix(InkLine, InkEdge, hv)), Rounding);
             dl.ChannelsMerge();
             ImGui.SetCursorScreenPos(new Vector2(start.X, bottom));
             ImGui.Dummy(new Vector2(width, Space));
@@ -997,6 +1015,13 @@ internal static class Ui
         ImGui.AlignTextToFramePadding();
         Text(label);
         if (hint is not null) Tooltip(hint);
+    }
+
+    /// <summary>The colour of something waiting for a second click: red, breathing, hard to miss.</summary>
+    public static Vector4 Armed()
+    {
+        var pulse = 0.5f + 0.5f * MathF.Sin((float)ImGui.GetTime() * 5f);
+        return Mix(Danger, Cream, 0.28f * pulse);
     }
 
     public static Vector4 ActionColor(ActionKind action) => action switch

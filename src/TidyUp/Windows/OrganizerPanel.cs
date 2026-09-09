@@ -271,7 +271,7 @@ public sealed class OrganizerPanel
             }
             ImGui.SameLine();
             bool deleteClicked;
-            using (ImRaii.PushColor(ImGuiCol.Text, Ui.Danger, confirmDelete))
+            using (ImRaii.PushColor(ImGuiCol.Text, Ui.Armed(), confirmDelete))
                 deleteClicked = Ui.LinkButton(confirmDelete ? "Delete this layout?" : "Delete");
             Ui.Tooltip(confirmDelete ? "Click again to delete it for good." : "Deletes this layout. Asks once more first.");
             if (deleteClicked)
@@ -316,10 +316,7 @@ public sealed class OrganizerPanel
             ImGui.SameLine();
             var w = ImGui.CalcTextSize("Look again", false, 0).X + ImGui.GetFrameHeight() + 20 * Ui.Scale;
             Ui.RightAlign(w);
-            using (ImRaii.Disabled(organizer.IsPreviewing))
-            {
-                if (Ui.IconButton(FontAwesomeIcon.Sync, "Look again", w)) _ = organizer.PreviewAsync();
-            }
+            if (Ui.IconButton(FontAwesomeIcon.Sync, "Look again", w, busy: Rethinking) && !Rethinking) _ = organizer.PreviewAsync();
             Ui.Tooltip("Looks through your storage again.");
         }
     }
@@ -338,10 +335,7 @@ public sealed class OrganizerPanel
         Ui.Header(icons.LogoSmall, "Gleam", subtitle, 0f, null, null,
             !config.UseClean ? null : () => { if (Ui.ModeSwitch(Ui.AppMode.Organize)) SwitchToClean?.Invoke(); });
         Ui.Gap(0.2f);
-        using (ImRaii.Disabled(organizer.IsPreviewing))
-        {
-            if (Ui.IconButton(FontAwesomeIcon.Sync, "Look again")) _ = organizer.PreviewAsync();
-        }
+        if (Ui.IconButton(FontAwesomeIcon.Sync, "Look again", busy: Rethinking) && !Rethinking) _ = organizer.PreviewAsync();
         Ui.Tooltip("Looks through your bags and storage again.");
         Ui.Gap(0.4f);
 
@@ -793,7 +787,7 @@ public sealed class OrganizerPanel
         if (organizer.IsPreviewing || result is null)
         {
             Ui.EmptyState(icons.LogoMedium, organizer.IsPreviewing ? "Looking through your storage…" : "Nothing to show yet.", organizer.Status);
-            if (!organizer.IsPreviewing && Ui.IconButton(FontAwesomeIcon.Sync, "Look again")) _ = organizer.PreviewAsync();
+            if (Ui.IconButton(FontAwesomeIcon.Sync, "Look again", busy: Rethinking) && !Rethinking) _ = organizer.PreviewAsync();
             return;
         }
 

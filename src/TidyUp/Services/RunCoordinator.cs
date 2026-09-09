@@ -39,6 +39,9 @@ public sealed class RunCoordinator : IDisposable
 
     public RunPlan? CurrentPlan { get; private set; }
     public bool IsRunning { get; private set; }
+
+    /// <summary>True while a scan is under way, so the refresh control can say it is working.</summary>
+    public bool IsScanning { get; private set; }
     public string Status { get; private set; } = string.Empty;
     public RunReport? LastReport { get; private set; }
     public ActionResult? LastProgress { get; private set; }
@@ -110,6 +113,7 @@ public sealed class RunCoordinator : IDisposable
         if (IsRunning || !player.IsLoaded) return;
         // Two overlapping scans would both run the stack-merge pass and race each other's moves.
         if (!await scanGate.WaitAsync(0).ConfigureAwait(false)) return;
+        IsScanning = true;
         Status = "Scanning…";
         FocusContainer = focus;
         try
@@ -154,6 +158,7 @@ public sealed class RunCoordinator : IDisposable
         }
         finally
         {
+            IsScanning = false;
             scanGate.Release();
         }
     }
