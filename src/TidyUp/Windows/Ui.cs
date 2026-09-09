@@ -1235,7 +1235,9 @@ internal static class Ui
     {
         ActionKind.Discard => FontAwesomeIcon.TrashAlt,
         ActionKind.VendorSell => FontAwesomeIcon.Coins,
-        ActionKind.ExpertDelivery => FontAwesomeIcon.Shield,
+        // ShieldAlt, not Shield: the enum carries every Font Awesome name including the paid ones, and a
+        // glyph the free font does not ship renders as nothing at all.
+        ActionKind.ExpertDelivery => FontAwesomeIcon.ShieldAlt,
         ActionKind.Desynth => FontAwesomeIcon.Hammer,
         ActionKind.MarketList => FontAwesomeIcon.Store,
         _ => FontAwesomeIcon.Lock,
