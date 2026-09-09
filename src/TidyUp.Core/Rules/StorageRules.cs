@@ -14,7 +14,11 @@ public sealed class VendorOnlyJunkRule : IRule
     public Proposal? Evaluate(ScannedItem item, ItemInfo info, ItemContext ctx, Thresholds t)
     {
         if (info.IsMarketable || info.IsEquipment || info.IsUnique || info.IsNeverProposed) return null;
-        if (info.IsConsumable || info.IsMaterial) return null; // those have their own rules
+        if (info.IsConsumable) return null; // OutleveledConsumablesRule owns meals and medicine
+        // A material belongs to the crafting rule only while some recipe still uses it. Materials no recipe
+        // touches at all -- untradeable dyes, leftover reagents -- fell between the two rules and reached the
+        // player as "Not suggested by any rule", so this rule keeps them.
+        if (info.IsMaterial && ctx.RecipesUsing(info.ItemId).Count > 0) return null;
         if (item.IsCollectable) return null;
         // Anything with a use action is a tool, not junk: aetheryte passes, squadron manuals, tokens you redeem.
         if (info.IsUsable) return null;
@@ -85,7 +89,7 @@ public sealed class UnusableCraftingMatsRule : IRule
     {
         if (!info.IsMaterial || info.IsMarketable || info.IsNeverProposed || item.IsCollectable) return null;
         var uses = ctx.RecipesUsing(info.ItemId);
-        if (uses.Count == 0) return null; // VendorOnlyJunkRule covers "no recipe at all"
+        if (uses.Count == 0) return null; // VendorOnlyJunkRule keeps materials no recipe uses
 
         foreach (var use in uses)
         {

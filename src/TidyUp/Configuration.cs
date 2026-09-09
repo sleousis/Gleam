@@ -228,6 +228,12 @@ public sealed class Configuration : IPluginConfiguration
     /// </summary>
     public bool AdvancedMode { get; set; }
 
+    /// <summary>
+    /// Off: things ease, fade and count. On: they arrive at their end state at once. For players who find
+    /// movement uncomfortable, and for anyone recording where a moving interface is a distraction.
+    /// </summary>
+    public bool ReduceMotion { get; set; }
+
     /// <summary>Largest stack per market listing; 0 lists whole stacks.</summary>
     public int MarketListStackSize { get; set; }
 
@@ -414,6 +420,7 @@ public sealed class Configuration : IPluginConfiguration
 
     public void Save(Dalamud.Plugin.IDalamudPluginInterface pi)
     {
+        Windows.Ui.Reduced = ReduceMotion;
         pi.SavePluginConfig(this);
         Saved?.Invoke();
     }

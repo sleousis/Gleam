@@ -63,7 +63,10 @@ internal static class Ui
                 .Push(ImGuiStyleVar.CellPadding, new Vector2(6f * Scale, 3f * Scale))
                 .Push(ImGuiStyleVar.WindowBorderSize, 1f)
                 .Push(ImGuiStyleVar.PopupBorderSize, 1f)
-                .Push(ImGuiStyleVar.WindowTitleAlign, new Vector2(0.02f, 0.5f));
+                // ImGui reads this as a fraction of the space left over after the title text, not as a
+                // fixed inset, so any value above zero pushes the title further right the wider the window
+                // gets. The title belongs hard against the collapse arrow at every size.
+                .Push(ImGuiStyleVar.WindowTitleAlign, new Vector2(0f, 0.5f));
 
             color = ImRaii.PushColor(ImGuiCol.WindowBg, Ink)
                 .Push(ImGuiCol.ChildBg, Vector4.Zero)
@@ -191,6 +194,13 @@ internal static class Ui
     // Small, frame-rate independent eases keyed by a string. Everything that moves in the plugin goes through
     // these three, so the feel is the same everywhere: quick to react, soft to settle.
 
+    /// <summary>
+    /// When set, everything that would ease instead arrives at its end state on the first frame. Decorative
+    /// motion with no end state -- bobbing, breathing, pulsing -- stops altogether. Spinners and progress
+    /// keep moving, because there they are the information rather than the decoration.
+    /// </summary>
+    public static bool Reduced { get; set; }
+
     private static readonly Dictionary<string, float> motion = new();
     private static readonly Dictionary<string, (double First, double Last)> appear = new();
     private static readonly Dictionary<string, bool> hoverLast = new();
@@ -198,6 +208,7 @@ internal static class Ui
     /// <summary>A value that follows <paramref name="target"/> with an exponential ease; higher speed settles sooner.</summary>
     public static float Smooth(string id, float target, float speed = 12f)
     {
+        if (Reduced) { motion[id] = target; return target; }
         var dt = Math.Clamp(ImGui.GetIO().DeltaTime, 0f, 0.1f);
         if (!motion.TryGetValue(id, out var v)) v = target;
         v += (target - v) * (1f - MathF.Exp(-speed * dt));
@@ -209,6 +220,7 @@ internal static class Ui
     /// <summary>0 → 1 over the first moments something is on screen; starts over once it has been away for a bit.</summary>
     public static float Appear(string id, float seconds = 0.22f)
     {
+        if (Reduced) return 1f;
         var now = ImGui.GetTime();
         if (!appear.TryGetValue(id, out var t) || now - t.Last > 0.3) t = (now, now);
         appear[id] = (t.First, now);
@@ -228,6 +240,7 @@ internal static class Ui
     /// <summary>A number that counts to its target instead of jumping. Doubles, so gil totals stay exact.</summary>
     public static long Count(string id, long target, float speed = 9f)
     {
+        if (Reduced) { counts[id] = target; return target; }
         var dt = Math.Clamp(ImGui.GetIO().DeltaTime, 0f, 0.1f);
         if (!counts.TryGetValue(id, out var v)) v = target;
         v += (target - v) * (1 - Math.Exp(-speed * dt));
@@ -243,10 +256,81 @@ internal static class Ui
     public static IDisposable PageTransition(object key)
     {
         if (!Equals(pageKey, key)) { pageKey = key; pageAt = ImGui.GetTime(); }
+        if (Reduced) return ImRaii.PushStyle(ImGuiStyleVar.Alpha, ImGui.GetStyle().Alpha);
         var t = (float)Math.Clamp((ImGui.GetTime() - pageAt) / 0.20, 0, 1);
         var e = EaseOut(t);
         if (t < 1f) ImGui.SetCursorPosY(ImGui.GetCursorPosY() + (1f - e) * 10f * Scale);
         return ImRaii.PushStyle(ImGuiStyleVar.Alpha, ImGui.GetStyle().Alpha * (0.25f + 0.75f * e));
+    }
+
+    /// <summary>
+    /// The fade a section's contents get when it opens. Every collapsing thing in the plugin uses this, so
+    /// opening a settings fold reads the same as opening a group in the list.
+    /// </summary>
+    public static IDisposable FoldFade(string key)
+    {
+        var a = Appear("fold:" + key, 0.16f);
+        if (a < 1f) ImGui.SetCursorPosY(ImGui.GetCursorPosY() + (1f - a) * 6f * Scale);
+        return ImRaii.PushStyle(ImGuiStyleVar.Alpha, ImGui.GetStyle().Alpha * a);
+    }
+
+    /// <summary>A collapsing section whose contents fade and settle in. The body is indented under its title.</summary>
+    public static void Fold(string title, Action body, float indent = 12f)
+    {
+        using var id = ImRaii.PushId(title);
+        if (!ImGui.CollapsingHeader(title, ImGuiTreeNodeFlags.None)) return;
+        using var fade = FoldFade(title);
+        using var pad = ImRaii.PushIndent(indent, true, true);
+        Gap(0.3f);
+        body();
+        Gap(0.5f);
+    }
+
+    // A row that has been asked to go keeps its place for a moment and shrinks out of it, so the rows below
+    // slide up instead of jumping. The caller defers the real removal until Leaving reports it is finished.
+    private static readonly Dictionary<string, double> leaving = new();
+
+    /// <summary>Starts a row's exit. Nothing is removed yet; keep drawing it until <see cref="Leaving"/> returns 0.</summary>
+    public static void Leave(string key) => leaving[key] = ImGui.GetTime();
+
+    public static bool IsLeaving(string key) => leaving.ContainsKey(key);
+
+    /// <summary>
+    /// How much of a leaving row is left, 1 down to 0. Returns 0 exactly once, on the frame the caller should
+    /// do the real removal; anything not leaving is 1, so this is safe to call on every row.
+    /// </summary>
+    public static float Leaving(string key, float seconds = 0.16f)
+    {
+        if (!leaving.TryGetValue(key, out var at)) return 1f;
+        if (Reduced) { leaving.Remove(key); return 0f; }
+        var left = 1f - (float)Math.Clamp((ImGui.GetTime() - at) / seconds, 0, 1);
+        if (left <= 0f) { leaving.Remove(key); return 0f; }
+        return left;
+    }
+
+    /// <summary>Pushes the alpha and squeezes the row height for something on its way out.</summary>
+    public static IDisposable LeavingScope(float left) =>
+        ImRaii.PushStyle(ImGuiStyleVar.Alpha, ImGui.GetStyle().Alpha * left)
+            .Push(ImGuiStyleVar.ItemSpacing, new Vector2(ImGui.GetStyle().ItemSpacing.X, ImGui.GetStyle().ItemSpacing.Y * left));
+
+    private static readonly Dictionary<string, (string Text, double At)> swaps = new();
+
+    /// <summary>
+    /// A line of text that changes while you are reading it. The new wording fades up from just below the
+    /// old, so a status line that rewrites itself several times a second stays legible instead of flickering.
+    /// </summary>
+    public static void TextSwap(string id, string text, Vector4? color = null)
+    {
+        var now = ImGui.GetTime();
+        if (!swaps.TryGetValue(id, out var last) || last.Text != text) swaps[id] = last = (text, now);
+        var a = Reduced ? 1f : EaseOut((float)Math.Clamp((now - last.At) / 0.18, 0, 1));
+        var y = ImGui.GetCursorPosY();
+        if (a < 1f) ImGui.SetCursorPosY(y + (1f - a) * 4f * Scale);
+        using (ImRaii.PushStyle(ImGuiStyleVar.Alpha, ImGui.GetStyle().Alpha * (0.25f + 0.75f * a)))
+        {
+            if (color is { } c) TextColored(c, text); else Text(text);
+        }
+        if (a < 1f) ImGui.SetCursorPosY(ImGui.GetCursorPosY() - (1f - a) * 4f * Scale);
     }
 
     /// <summary>
@@ -522,7 +606,7 @@ internal static class Ui
         if (!disabled)
         {
             // A halo that swells on hover; danger buttons breathe a little so "Stop" is easy to find.
-            var breathe = danger ? 0.5f + 0.5f * MathF.Sin((float)ImGui.GetTime() * 2.4f) : 0f;
+            var breathe = danger && !Reduced ? 0.5f + 0.5f * MathF.Sin((float)ImGui.GetTime() * 2.4f) : 0f;
             var halo = 0.10f * hv + 0.07f * breathe;
             var grow = 3f * Scale + 3f * Scale * hv;
             if (halo > 0.005f) dl.AddRectFilled(pos - new Vector2(grow, grow), pos + new Vector2(w + grow, h + grow), ImGui.GetColorU32(color * new Vector4(1, 1, 1, halo)), r + grow);
@@ -551,8 +635,14 @@ internal static class Ui
     }
 
     /// <summary>Small coloured status chip, e.g. "ready" or "needs saddlebag".</summary>
-    public static void Pill(string text, Vector4 color, FontAwesomeIcon? icon = null)
+    /// <param name="id">
+    /// Give a pill that changes state -- installed to missing, ready to busy -- a stable id and its colour
+    /// eases between the two instead of flipping, so the change is something you see rather than something
+    /// you notice afterwards.
+    /// </param>
+    public static void Pill(string text, Vector4 color, FontAwesomeIcon? icon = null, string? id = null)
     {
+        if (id is not null) color = PillColor(id, color);
         using var b = ImRaii.PushColor(ImGuiCol.Button, color * new Vector4(1, 1, 1, 0.16f));
         using var h = ImRaii.PushColor(ImGuiCol.ButtonHovered, color * new Vector4(1, 1, 1, 0.16f));
         using var a = ImRaii.PushColor(ImGuiCol.ButtonActive, color * new Vector4(1, 1, 1, 0.16f));
@@ -575,6 +665,19 @@ internal static class Ui
             dl.AddText(new Vector2(pos.X + 8f * Scale, y + 1f * Scale), ImGui.GetColorU32(color), icon.Value.ToIconString());
         dl.AddText(new Vector2(pos.X + 8f * Scale + iconW + 5f * Scale, y + 1f * Scale), ImGui.GetColorU32(color), text);
     }
+
+    private static readonly Dictionary<string, Vector4> pillColors = new();
+
+    private static Vector4 PillColor(string id, Vector4 target)
+    {
+        if (Reduced || !pillColors.TryGetValue(id, out var shown)) return pillColors[id] = target;
+        var dt = Math.Clamp(ImGui.GetIO().DeltaTime, 0f, 0.1f);
+        return pillColors[id] = Mix(shown, target, 1f - MathF.Exp(-9f * dt));
+    }
+
+    /// <summary>Width a pill occupies, for laying out a row that has to reserve room for one.</summary>
+    public static float PillWidth(string text, FontAwesomeIcon? icon = null) =>
+        ImGui.CalcTextSize(text, false, 0).X + 8f * Scale * 2 + (icon is null ? 0f : IconWidth(icon.Value) + 5f * Scale);
 
     /// <summary>A toggle chip for filters. Active chips fill with the accent.</summary>
     public static bool Chip(string label, bool active)
@@ -601,13 +704,26 @@ internal static class Ui
 
     // ---------- images ----------
 
-    public static void ImageRounded(ImTextureID tex, Vector2 size, float rounding)
+    private static readonly Dictionary<string, double> iconArrived = new();
+
+    /// <param name="key">
+    /// Item icons load off the main thread, so without this they snap in one at a time as a list scrolls.
+    /// Pass a stable key and each icon fades up the moment its texture is ready.
+    /// </param>
+    public static void ImageRounded(ImTextureID tex, Vector2 size, float rounding, string? key = null)
     {
         var pos = ImGui.GetCursorScreenPos();
         ImGui.Dummy(size);
         if (tex.IsNull) return;
+
+        var a = 1f;
+        if (key is not null && !Reduced)
+        {
+            if (!iconArrived.TryGetValue(key, out var at)) iconArrived[key] = at = ImGui.GetTime();
+            a = EaseOut((float)Math.Clamp((ImGui.GetTime() - at) / 0.22, 0, 1));
+        }
         // Draw-list calls ignore the style alpha, so a fading row would keep its icons at full strength.
-        var tint = ImGui.GetColorU32(new Vector4(1, 1, 1, ImGui.GetStyle().Alpha));
+        var tint = ImGui.GetColorU32(new Vector4(1, 1, 1, ImGui.GetStyle().Alpha * a));
         ImGui.GetWindowDrawList().AddImageRounded(tex, pos, pos + size, Vector2.Zero, Vector2.One, tint, rounding);
     }
 
@@ -621,8 +737,8 @@ internal static class Ui
         using var alpha = ImRaii.PushStyle(ImGuiStyleVar.Alpha, a);
         if (!logo.IsNull)
         {
-            var t = (float)ImGui.GetTime();
-            var bob = MathF.Sin(t * 1.5f) * 3f * Scale;
+            var t = Reduced ? 0f : (float)ImGui.GetTime();
+            var bob = Reduced ? 0f : MathF.Sin(t * 1.5f) * 3f * Scale;
             ImGui.SetCursorPosX(Math.Max(0, (ImGui.GetWindowWidth() - size) / 2));
             var pos = ImGui.GetCursorScreenPos() + new Vector2(0, bob + 8f * Scale * (1f - a));
             ImGui.Dummy(new Vector2(size, size));
@@ -640,6 +756,14 @@ internal static class Ui
         var w = ImGui.CalcTextSize(text, false, 0).X;
         ImGui.SetCursorPosX(Math.Max(0, (ImGui.GetWindowWidth() - w) / 2));
         if (muted) Hint(text); else Text(text);
+    }
+
+    /// <summary>Centred text that cross-fades when its wording changes. See <see cref="TextSwap"/>.</summary>
+    public static void CenteredSwap(string id, string text, bool muted = false)
+    {
+        var w = ImGui.CalcTextSize(text, false, 0).X;
+        ImGui.SetCursorPosX(Math.Max(0, (ImGui.GetWindowWidth() - w) / 2));
+        TextSwap(id, text, muted ? Muted * new Vector4(1, 1, 1, 0.8f) : null);
     }
 
     /// <summary>Slim accent progress bar with the label drawn to its right.</summary>
@@ -762,8 +886,7 @@ internal static class Ui
         ImGui.SetCursorPosY(ImGui.GetCursorPosY() + Math.Max(0, avail.Y * 0.14f));
         if (!logo.IsNull)
         {
-            var t = (float)ImGui.GetTime();
-            var breathe = 0.5f + 0.5f * MathF.Sin(t * 1.9f);
+            var breathe = Reduced ? 0.5f : 0.5f + 0.5f * MathF.Sin((float)ImGui.GetTime() * 1.9f);
             ImGui.SetCursorPosX(Math.Max(0, (ImGui.GetWindowWidth() - size) / 2));
             var pos = ImGui.GetCursorScreenPos();
             ImGui.Dummy(new Vector2(size, size));
@@ -780,7 +903,8 @@ internal static class Ui
             Gap(0.6f);
         }
         Centered(title);
-        if (!string.IsNullOrEmpty(status)) Centered(status, muted: true);
+        // The step under way rewrites itself several times a second during a run, so it cross-fades.
+        if (!string.IsNullOrEmpty(status)) CenteredSwap($"run:{title}", status, muted: true);
     }
 
     // ---------- cards & banners ----------
@@ -1050,6 +1174,7 @@ internal static class Ui
     /// <summary>The colour of something waiting for a second click: red, breathing, hard to miss.</summary>
     public static Vector4 Armed()
     {
+        if (Reduced) return Danger;
         var pulse = 0.5f + 0.5f * MathF.Sin((float)ImGui.GetTime() * 5f);
         return Mix(Danger, Cream, 0.28f * pulse);
     }

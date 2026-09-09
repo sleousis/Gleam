@@ -37,6 +37,9 @@ internal static class TestData
         [17] = ItemInfo.Test(17, "Priority Aetheryte Pass", vendor: 100, marketable: false, untradable: true, category: "Miscellany", usable: true),
         [18] = ItemInfo.Test(18, "Cordial", vendor: 30, marketable: true, category: "Medicine", levelEquip: 1, ilvl: 1),
         [19] = ItemInfo.Test(19, "Grade 2 Tincture", vendor: 30, marketable: true, category: "Medicine", levelEquip: 70, ilvl: 300),
+        // A material category that no recipe ever uses. This shape fell between the vendor-only rule and
+        // the crafting rule and reached the player as "Not suggested by any rule".
+        [22] = ItemInfo.Test(22, "Corpse Blue Dye", vendor: 1, marketable: false, untradable: true, category: "Dye", stack: 99),
     };
 
     public static ItemInfo? Lookup(uint id) => Items.GetValueOrDefault(id);
