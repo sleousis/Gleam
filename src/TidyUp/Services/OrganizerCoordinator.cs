@@ -61,7 +61,6 @@ public sealed class OrganizerCoordinator : IDisposable
     public List<MoveOp> PendingMoves { get; } = new();
 
     public event Action? Changed;
-    public event Action? RequestOpenWindow;
 
     public IReadOnlyDictionary<ulong, string> RetainerNames => Snapshot?.RetainerNames ?? new Dictionary<ulong, string>();
 

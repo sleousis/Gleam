@@ -382,7 +382,7 @@ public sealed class OrganizerWindow : StyledWindow
             {
                 var info = db.Get(id);
                 Ui.Pill(info?.Name ?? $"item {id}", Ui.Muted);
-                if (ImGui.IsItemClicked()) { when.ItemIds.Remove(id); if (when.ItemIds.Count == 0) when.ItemIds = null; dirty = true; }
+                if (ImGui.IsItemClicked() && when.ItemIds is not null) { when.ItemIds.Remove(id); if (when.ItemIds.Count == 0) when.ItemIds = null; dirty = true; }
                 Ui.Tooltip("Click to remove.");
                 ImGui.SameLine();
             }

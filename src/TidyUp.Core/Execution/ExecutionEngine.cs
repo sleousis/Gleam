@@ -163,7 +163,7 @@ public sealed class ExecutionEngine
         }
 
         // Materia is never destroyed silently: the live item decides, not what the plan remembered.
-        if (live.HasMateria && !game.CanRetrieveMateriaIn(action.Kind) && options.OnMateriaFailure == MateriaFailurePolicy.LeaveItem)
+        if (live!.HasMateria && !game.CanRetrieveMateriaIn(action.Kind) && options.OnMateriaFailure == MateriaFailurePolicy.LeaveItem)
         {
             if (action.Kind != ContainerKind.Retainer)
                 return new ActionResult(action, ActionOutcome.Pending, "materia cannot be removed while a retainer is summoned; it is finished once you leave the bell");

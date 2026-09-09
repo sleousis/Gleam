@@ -98,7 +98,7 @@ public sealed class GameActions : IGameActions
             ct.ThrowIfCancellationRequested();
             var ok = await context.InvokeAsync(slot, config.Callbacks.SortLabel, ct).ConfigureAwait(false);
             if (ok) sorted++;
-            else log.Debug("Sort not offered for {Slot}: {Why}", slot, context.LastFailure);
+            else log.Debug("Sort not offered for {Slot}: {Why}", slot, context.LastFailure ?? "no reason");
             await Task.Delay(250, ct).ConfigureAwait(false);
         }
         return sorted;
