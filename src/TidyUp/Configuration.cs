@@ -166,7 +166,7 @@ public sealed class OrganizerSettings
 public sealed class Configuration : IPluginConfiguration
 {
     /// <summary>Bump when <see cref="Migrate"/> gains a step. New configs start here and skip the chain.</summary>
-    public const int CurrentVersion = 9;
+    public const int CurrentVersion = 10;
 
     public int Version { get; set; } = CurrentVersion;
 
@@ -274,6 +274,20 @@ public sealed class Configuration : IPluginConfiguration
             // The "ask at every container" mode is gone; anyone on it gets the hands-free default.
             if (Automation.UnseenRows is not (UnseenRowsMode.Skip or UnseenRowsMode.Clean)) Automation.UnseenRows = UnseenRowsMode.Clean;
             Version = 9;
+            changed = true;
+        }
+        if (Version < 10)
+        {
+            // Destinations used to share one default object that the serializer filled in place, so every rule
+            // came back as "stays where it is" and players re-made their rules. Drop the exact copies that left.
+            foreach (var plan in Organizer.Plans)
+            {
+                var seen = new HashSet<string>();
+                var before = plan.Rules.Count;
+                plan.Rules.RemoveAll(r => !seen.Add(System.Text.Json.JsonSerializer.Serialize(new { r.Name, r.Enabled, r.Then, r.KeepInBags, When = System.Text.Json.JsonSerializer.Serialize(r.When) })));
+                changed |= plan.Rules.Count != before;
+            }
+            Version = 10;
             changed = true;
         }
         changed |= EnsureDefaults();

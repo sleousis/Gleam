@@ -15,16 +15,21 @@ public enum DestinationKind
     Retainer,
 }
 
-/// <summary>Where a rule sends what it matches. A record with settable members so it round-trips through any config serializer.</summary>
+/// <summary>
+/// Where a rule sends what it matches. A record with settable members so it round-trips through any config
+/// serializer. The named destinations are fresh instances on every access on purpose: the plugin config
+/// serializer fills an existing object in place, so a shared default would be overwritten by whichever
+/// rule loads last and every rule would end up pointing at the same destination.
+/// </summary>
 public sealed record Destination
 {
-    public DestinationKind Kind { get; init; } = DestinationKind.Stay;
-    public ulong RetainerId { get; init; }
+    public DestinationKind Kind { get; set; } = DestinationKind.Stay;
+    public ulong RetainerId { get; set; }
 
-    public static readonly Destination Stay = new() { Kind = DestinationKind.Stay };
-    public static readonly Destination Bags = new() { Kind = DestinationKind.Bags };
-    public static readonly Destination Armoury = new() { Kind = DestinationKind.Armoury };
-    public static readonly Destination Saddlebag = new() { Kind = DestinationKind.Saddlebag };
+    public static Destination Stay => new() { Kind = DestinationKind.Stay };
+    public static Destination Bags => new() { Kind = DestinationKind.Bags };
+    public static Destination Armoury => new() { Kind = DestinationKind.Armoury };
+    public static Destination Saddlebag => new() { Kind = DestinationKind.Saddlebag };
     public static Destination AnyRetainer => new() { Kind = DestinationKind.Retainer };
     public static Destination RetainerNamed(ulong id) => new() { Kind = DestinationKind.Retainer, RetainerId = id };
 
