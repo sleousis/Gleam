@@ -41,21 +41,19 @@ public sealed partial class AutoPilot
             Status = "Closing leftover windows";
             await RecoverUiAsync(ct).ConfigureAwait(false);
 
-            for (var pass = 1; pass <= Math.Max(1, result.Passes) && pass <= 3; pass++)
+            // One round at a time: run the first round, look again, and the fresh plan's first round is the next one.
+            for (var round = 1; round <= 20; round++)
             {
-                var moves = result.Moves.Where(m => m.Pass == pass).ToList();
+                var moves = result.Moves.Where(m => m.Pass == 1).ToList();
                 if (moves.Count == 0) break;
                 await RunSessionsAsync(moves, ct).ConfigureAwait(false);
+                if (result.Passes <= 1) break;
 
-                if (pass < result.Passes)
-                {
-                    // Later passes were planned against a fuller bag; re-solve on what is actually there now.
-                    Status = "Looking again before the next pass";
-                    await RecoverUiAsync(ct).ConfigureAwait(false);
-                    await Organizer.PreviewAsync().ConfigureAwait(false);
-                    result = Organizer.Current ?? result;
-                    if (!result.Report.Feasible || result.Moves.Count == 0) break;
-                }
+                Status = "Looking again before the next round";
+                await RecoverUiAsync(ct).ConfigureAwait(false);
+                await Organizer.PreviewAsync().ConfigureAwait(false);
+                result = Organizer.Current ?? result;
+                if (!result.Report.Feasible || result.Moves.Count == 0) break;
             }
 
             Status = "Done";

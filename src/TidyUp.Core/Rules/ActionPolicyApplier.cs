@@ -49,10 +49,15 @@ public static class ActionPolicyApplier
             ActionKind.MarketList => p.MarketUnitPrice * p.Item.Quantity,
             _ => 0,
         };
+        // "Sellable on the market" is a nudge towards the market board; once the row *is* a listing it would only untick it.
+        var warnings = target == ActionKind.MarketList
+            ? p.Warnings.Where(w => w != "Sellable on the market" && !w.StartsWith("Worth about", StringComparison.Ordinal)).ToList()
+            : p.Warnings;
         return p with
         {
             Action = target,
             Alternatives = previous,
+            Warnings = warnings,
             ValueGil = value,
             ValueLabel = target switch
             {
