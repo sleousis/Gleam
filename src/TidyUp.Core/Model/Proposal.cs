@@ -23,15 +23,27 @@ public enum Confidence
 
 public static class ActionKindExtensions
 {
+    /// <summary>Noun-like label for tables and dropdowns.</summary>
     public static string Label(this ActionKind kind) => kind switch
     {
-        ActionKind.None => "show only",
+        ActionKind.None => "Keep",
+        ActionKind.Discard => "Discard",
+        ActionKind.VendorSell => "Sell",
+        ActionKind.ExpertDelivery => "Expert delivery",
+        ActionKind.Desynth => "Desynth",
+        ActionKind.MarketList => "Market board",
+        _ => kind.ToString(),
+    };
+
+    /// <summary>Verb form for sentences: "could not {verb} it".</summary>
+    public static string Verb(this ActionKind kind) => kind switch
+    {
         ActionKind.Discard => "discard",
         ActionKind.VendorSell => "sell",
-        ActionKind.ExpertDelivery => "seals",
-        ActionKind.Desynth => "desynth",
-        ActionKind.MarketList => "market",
-        _ => kind.ToString(),
+        ActionKind.ExpertDelivery => "turn in",
+        ActionKind.Desynth => "desynthesize",
+        ActionKind.MarketList => "list on the market board",
+        _ => "keep",
     };
 
     public static bool IsDestructive(this ActionKind kind) => kind != ActionKind.None;

@@ -72,9 +72,9 @@ public sealed class GameActions : IGameActions
 
     public string ActionRequirement(ActionKind action) => action switch
     {
-        ActionKind.VendorSell => "talk to a merchant, or open a retainer's inventory",
-        ActionKind.ExpertDelivery => "open Expert Delivery at a Grand Company personnel officer",
-        ActionKind.MarketList => "open a retainer's market sell list (Sell items on the market)",
+        ActionKind.VendorSell => "sell to a merchant or through a retainer",
+        ActionKind.ExpertDelivery => "turn in at your Grand Company",
+        ActionKind.MarketList => "list from a retainer's sell menu",
         _ => string.Empty,
     };
 
@@ -98,7 +98,7 @@ public sealed class GameActions : IGameActions
             ct.ThrowIfCancellationRequested();
             var ok = await context.InvokeAsync(slot, config.Callbacks.SortLabel, ct).ConfigureAwait(false);
             if (ok) sorted++;
-            else log.Information("Sort not offered for {Slot}: {Why}", slot, context.LastFailure);
+            else log.Debug("Sort not offered for {Slot}: {Why}", slot, context.LastFailure);
             await Task.Delay(250, ct).ConfigureAwait(false);
         }
         return sorted;
@@ -160,7 +160,7 @@ public sealed class GameActions : IGameActions
         if (!sent)
         {
             LastFailure = "the dresser would not return it: no bag space, or you already own this unique item";
-            log.Warning("{Failure} (index {Index})", LastFailure, dresserSlot.Slot);
+            log.Debug("{Failure} (index {Index})", LastFailure, dresserSlot.Slot);
             return null;
         }
         var landed = await added.ConfigureAwait(false);
@@ -242,7 +242,7 @@ public sealed class GameActions : IGameActions
             else
             {
                 dialogs.Disarm();
-                if (changed.Result is null) { LastFailure = "Retrieve Materia was chosen but no materia came off"; return false; }
+                if (changed.Result is null) { LastFailure = "'Retrieve Materia' was chosen but no materia came off"; return false; }
             }
 
             // The retrieval animation blocks the next context menu; let it finish.
@@ -383,7 +383,7 @@ public sealed class GameActions : IGameActions
         if (!started)
         {
             dialogs.Disarm();
-            LastFailure ??= "The game call could not be started (empty slot or agent unavailable)";
+            LastFailure ??= "the game did not accept the request";
             return false;
         }
 
@@ -401,7 +401,7 @@ public sealed class GameActions : IGameActions
                 if (!answered)
                 {
                     LastFailure = dialogs.LastRejection ?? "the confirmation was not answered";
-                    log.Warning("{Failure} for {Slot}", LastFailure, slot);
+                    log.Debug("{Failure} for {Slot}", LastFailure, slot);
                     return false;
                 }
             }

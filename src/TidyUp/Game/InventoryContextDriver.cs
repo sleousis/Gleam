@@ -103,7 +103,7 @@ public sealed class InventoryContextDriver
     private unsafe int OpenAndFind(SlotRef slot, string englishLabel, uint? wantedLabelId)
     {
         var agent = AgentModule.Instance()->GetAgentInventoryContext();
-        if (agent == null) { LastFailure = "the item's menu could not be opened"; return -1; }
+        if (agent == null) { LastFailure = "the item's menu did not open"; return -1; }
         agent->OpenForItemSlot((InventoryType)slot.ContainerId, slot.Slot, 0, 0);
         var entries = ReadOpenEntries(agent);
         if (entries.Count == 0)
@@ -120,10 +120,10 @@ public sealed class InventoryContextDriver
         {
             var offered = string.Join(" | ", entries.Select(e => e.Text.Length > 0 ? e.Text : e.LabelId.ToString()));
             var hint = entries.Any(e => e.Text.Contains("Retainer", StringComparison.OrdinalIgnoreCase))
-                ? " A retainer window is open; close it and try again."
+                ? " while a retainer was open; leave the bell first"
                 : string.Empty;
-            log.Information("Menu for {Slot} had no '{Label}'. Offered: {Offered}", slot, englishLabel, offered);
-            LastFailure = $"the item's menu had no '{englishLabel}' option.{hint}";
+            log.Debug("Menu for {Slot} had no '{Label}'. Offered: {Offered}", slot, englishLabel, offered);
+            LastFailure = $"the item's menu had no '{englishLabel}' option{hint}";
             CloseMenu();
             return -1;
         }

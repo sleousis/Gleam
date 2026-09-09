@@ -205,7 +205,7 @@ public class RuleTests
         Assert.True(result.Action.IsDestructive());          // no more "show only": the preset decides
         Assert.False(result.DefaultChecked);                 // but it starts unchecked
         Assert.Contains(result.Warnings, w => w.Contains("19,000g")); // 20,000 × (1 - 0.05)
-        Assert.Contains("market", result.Reason, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(result.Warnings, w => w.Contains("market board", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]

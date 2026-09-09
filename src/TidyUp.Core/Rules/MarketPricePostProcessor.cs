@@ -42,9 +42,8 @@ public sealed class MarketPricePostProcessor : IProposalPostProcessor
                     // Still actionable: the preset decides what happens. The warning keeps it unchecked until you look.
                     p = p with
                     {
-                        Reason = $"{p.Reason} · worth about {marketTotal:N0}g on the market",
                         ValueLabel = $"{marketTotal:N0}g mkt",
-                        Warnings = [.. p.Warnings, $"Worth {marketTotal:N0}g on the market"],
+                        Warnings = [.. p.Warnings, $"Worth about {marketTotal:N0}g on the market board"],
                     };
                 }
             }

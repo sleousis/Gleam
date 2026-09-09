@@ -29,10 +29,9 @@ public sealed class MoveRunReport
     public string Summary()
     {
         var parts = new List<string> { $"{Done} moved" };
-        if (Skipped > 0) parts.Add($"{Skipped} had moved and were left alone");
+        if (Skipped > 0) parts.Add($"{Skipped} had moved and {(Skipped == 1 ? "was" : "were")} left alone");
         if (Failed > 0) parts.Add($"{Failed} failed");
         if (Pending.Count > 0) parts.Add($"{Pending.Count} waiting");
-        if (Aborted) parts.Add($"stopped: {AbortReason}");
         return string.Join(", ", parts);
     }
 }
@@ -119,7 +118,7 @@ public sealed class MoveExecutor
         if (source is null)
         {
             if (op.Leg == MoveLeg.RelayIn && !firstLegsDone.Contains(op.MoveId))
-                return new MoveResult(op, StepStatus.Pending, "waiting for its first leg into the bags");
+                return new MoveResult(op, StepStatus.Pending, "its first move into the bags has not happened yet");
             return new MoveResult(op, StepStatus.SkippedChanged, "the stack is no longer where it was");
         }
 
@@ -137,7 +136,7 @@ public sealed class MoveExecutor
             case MoveStatus.SourceChanged:
                 return new MoveResult(op, StepStatus.SkippedChanged, outcome.Message);
             default:
-                return new MoveResult(op, StepStatus.Failed, $"move did not complete: {outcome.Message}");
+                return new MoveResult(op, StepStatus.Failed, outcome.Message);
         }
     }
 

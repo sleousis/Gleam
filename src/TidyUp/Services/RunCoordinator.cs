@@ -118,7 +118,7 @@ public sealed class RunCoordinator : IDisposable
             if (profile.StackMergeBeforeScan && focus is null)
             {
                 var merged = await StackMergeAsync().ConfigureAwait(false);
-                if (merged > 0) chat.Print($"Tidy Up: merged {merged} split stack{(merged == 1 ? "" : "s")}.", "Tidy Up");
+                if (merged > 0) chat.Print($"Merged {merged} split stack{(merged == 1 ? "" : "s")}.", "Tidy Up");
             }
 
             var snapshot = await snapshots.CaptureAsync(profile, focus).ConfigureAwait(false);
@@ -149,8 +149,8 @@ public sealed class RunCoordinator : IDisposable
         catch (Exception ex)
         {
             log.Error(ex, "Scan failed");
-            Status = $"Scan failed: {ex.Message}";
-            chat.PrintError($"Tidy Up scan failed: {ex.Message}", "Tidy Up");
+            Status = "The scan did not finish";
+            chat.PrintError("The scan did not finish. Details are in the Dalamud log.", "Tidy Up");
         }
         finally
         {
@@ -263,7 +263,7 @@ public sealed class RunCoordinator : IDisposable
         RunTotal = queue.Count;
         RunDone = 0;
         LastProgress = null;
-        Status = "Running…";
+        Status = "Cleaning…";
         PlanChanged?.Invoke();
         runCts?.Dispose();
         runCts = new CancellationTokenSource();
@@ -289,33 +289,27 @@ public sealed class RunCoordinator : IDisposable
             if (config.SortAfterRun) await SortTouchedAsync(report).ConfigureAwait(false);
             Status = report.Summary();
 
-            // "Skipped because it changed" is only useful if we can see *what* changed.
-            var skipped = report.Results.Where(r => r.Outcome == ActionOutcome.SkippedChanged).ToList();
-            foreach (var r in skipped)
-                log.Information("Skipped {Item} at {Slot} (owner {Owner:X}): {Why}", r.Action.ItemName, r.Action.Slot, r.Action.Slot.OwnerId, r.Message);
-            if (skipped.Count >= 3)
-            {
-                chat.Print($"Tidy Up: {skipped.Count} items had moved since the scan and were left alone, for example:", "Tidy Up");
-                foreach (var r in skipped.Take(3))
-                    chat.Print($"  {r.Action.ItemName}: {r.Message}", "Tidy Up");
-            }
+            log.Information("Clean finished: {Summary}", report.Summary());
+            foreach (var r in report.Results.Where(r => r.Outcome == ActionOutcome.SkippedChanged))
+                log.Debug("Left alone {Item} at {Slot}: {Why}", r.Action.ItemName, r.Action.Slot, r.Message);
 
+            // The hands-free pilot prints one summary for the whole trip; a plain clean reports here.
             if (config.ChatSummaryAfterRun && !SuppressChatSummary)
             {
-                chat.Print($"Tidy Up: {report.Summary()}.", "Tidy Up");
+                chat.Print($"{report.Summary()}.", "Tidy Up");
                 foreach (var (reason, count) in report.PendingByReason())
-                    chat.Print($"  {count} waiting: {(string.IsNullOrEmpty(reason) ? "container not open" : reason)}.", "Tidy Up");
+                    chat.Print($"{count} waiting: {(string.IsNullOrEmpty(reason) ? "its storage is not open" : reason)}.", "Tidy Up");
                 if (report.Moved.Count > 0)
-                    chat.Print($"  {report.Moved.Count} brought back to your bags. Close the retainer and clean again to finish them.", "Tidy Up");
+                    chat.Print("Close the retainer and clean again to finish the items brought back.", "Tidy Up");
+                if (report.Aborted && report.Failed > 0)
+                    chat.PrintError($"Stopped: {report.AbortReason}. Nothing after that was touched.", "Tidy Up");
             }
-            if (report.Aborted && report.Failed > 0)
-                chat.PrintError($"Tidy Up stopped after repeated failures: {report.AbortReason}. Nothing after that item was touched.", "Tidy Up");
         }
         catch (Exception ex)
         {
             log.Error(ex, "Run failed");
-            Status = $"Run failed: {ex.Message}";
-            chat.PrintError($"Tidy Up run failed: {ex.Message}", "Tidy Up");
+            Status = "The run did not finish";
+            chat.PrintError("The run did not finish. Details are in the Dalamud log.", "Tidy Up");
         }
         finally
         {
@@ -375,6 +369,6 @@ public sealed class RunCoordinator : IDisposable
     {
         // A vendor or GC officer window opened; if actions were waiting for it, tell the user.
         var waiting = PendingActions.Count(p => p.Action is ActionKind.VendorSell or ActionKind.ExpertDelivery or ActionKind.MarketList);
-        if (waiting > 0) toast.ShowNormal($"Tidy Up: {waiting} waiting item{(waiting == 1 ? "" : "s")} can be finished here. Open /tidyup and clean.");
+        if (waiting > 0) toast.ShowNormal($"Tidy Up: {waiting} waiting item{(waiting == 1 ? "" : "s")} can be finished here. /tidyup to clean.");
     }
 }

@@ -14,11 +14,11 @@ public static class ContainerKindExtensions
 {
     public static string DisplayName(this ContainerKind kind) => kind switch
     {
-        ContainerKind.Inventory => "Inventory",
-        ContainerKind.Armoury => "Armoury Chest",
-        ContainerKind.Saddlebag => "Chocobo Saddlebag",
+        ContainerKind.Inventory => "Bags",
+        ContainerKind.Armoury => "Armoury chest",
+        ContainerKind.Saddlebag => "Chocobo saddlebag",
         ContainerKind.Retainer => "Retainer",
-        ContainerKind.GlamourDresser => "Glamour Dresser",
+        ContainerKind.GlamourDresser => "Glamour dresser",
         _ => kind.ToString(),
     };
 

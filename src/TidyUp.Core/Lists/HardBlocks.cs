@@ -56,13 +56,13 @@ public static class HardBlocks
 
     public static string Describe(HardBlockReason reason) => reason switch
     {
-        HardBlockReason.Indisposable => "The game does not allow this item to be discarded.",
-        HardBlockReason.UniqueUntradeable => "Unique and untradeable. It can never be reacquired.",
-        HardBlockReason.InGearset => "Part of a gearset.",
-        HardBlockReason.InGlamourPlate => "Used by a glamour plate.",
-        HardBlockReason.NeverProposedCategory => "In a category no rule ever proposes.",
+        HardBlockReason.Indisposable => "Cannot be discarded",
+        HardBlockReason.UniqueUntradeable => "Unique and untradeable; can never be reacquired",
+        HardBlockReason.InGearset => "In a gear set",
+        HardBlockReason.InGlamourPlate => "Used by a glamour plate",
+        HardBlockReason.NeverProposedCategory => "Never suggested by any rule",
         HardBlockReason.Currency => "Currency",
-        HardBlockReason.IrreplaceableUntradeable => "Untradeable with no vendor value. It cannot be bought back.",
+        HardBlockReason.IrreplaceableUntradeable => "Untradeable with no vendor value; cannot be bought back",
         _ => string.Empty,
     };
 }

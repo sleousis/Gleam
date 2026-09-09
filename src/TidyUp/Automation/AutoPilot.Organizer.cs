@@ -22,10 +22,10 @@ public sealed partial class AutoPilot
     {
         if (IsRunning || Organizer?.Current is null) return;
         if (MissingDependency() is { } missing) { Fail(missing); return; }
-        if (condition[ConditionFlag.InCombat] || condition[ConditionFlag.BoundByDuty]) { Fail("Not while in combat or in a duty"); return; }
+        if (condition[ConditionFlag.InCombat] || condition[ConditionFlag.BoundByDuty]) { Fail("not while in combat or in a duty"); return; }
         var result = Organizer.Current;
-        if (!result.Report.Feasible) { Fail("A storage would overflow; change a rule or free some space first"); return; }
-        if (result.Moves.Count == 0) { Fail("Nothing to move"); return; }
+        if (!result.Report.Feasible) { Fail("something would overflow; change a rule or free some space first"); return; }
+        if (result.Moves.Count == 0) { Nothing("Nothing to move"); return; }
 
         IsRunning = true;
         LastError = null;
@@ -60,13 +60,14 @@ public sealed partial class AutoPilot
             Status = "Done";
             var summary = $"{movesDone} moved" + (movesPending > 0 ? $", {movesPending} still waiting" : string.Empty)
                           + (tally.LegFailures.Count > 0 ? $", {tally.LegFailures.Count} step{(tally.LegFailures.Count == 1 ? "" : "s")} could not finish" : string.Empty);
-            chat.Print($"Tidy Up: organising finished. {summary}.", "Tidy Up");
-            foreach (var line in tally.LegFailures) chat.PrintError($"  {line}", "Tidy Up");
+            log.Information("Hands-free organize finished: {Summary}", summary);
+            chat.Print($"Hands-free organize finished: {summary}.", "Tidy Up");
+            foreach (var line in tally.LegFailures) chat.PrintError(line, "Tidy Up");
         }
         catch (OperationCanceledException)
         {
             Status = "Stopped";
-            chat.Print("Tidy Up: stopped. Nothing else was moved.", "Tidy Up");
+            chat.Print("Stopped. Nothing else was moved.", "Tidy Up");
         }
         catch (AutoPilotException ex)
         {
@@ -109,7 +110,7 @@ public sealed partial class AutoPilot
 
             if (storage is null)
             {
-                await Leg("bags", () => Step("Moving things within your bags and armoury", () => ExecuteMoves(ops), ct), ct).ConfigureAwait(false);
+                await Leg("bags", () => Step("Moving items within your bags and armoury chest", () => ExecuteMoves(ops), ct), ct).ConfigureAwait(false);
                 continue;
             }
 
@@ -119,7 +120,7 @@ public sealed partial class AutoPilot
                 await Leg("saddlebag", async () =>
                 {
                     await OpenSaddlebagAsync(ct).ConfigureAwait(false);
-                    await Step("Moving things to and from the saddlebag", () => ExecuteMoves(ops), ct).ConfigureAwait(false);
+                    await Step("Moving items to and from the saddlebag", () => ExecuteMoves(ops), ct).ConfigureAwait(false);
                     await framework.RunOnFrameworkThread(() => GameUi.Close("InventoryBuddy")).ConfigureAwait(false);
                 }, ct).ConfigureAwait(false);
                 continue;
@@ -151,7 +152,7 @@ public sealed partial class AutoPilot
                 {
                     await SummonRetainerAsync(index, name, ct).ConfigureAwait(false);
                     await OpenRetainerInventoryAsync(id, name, ct).ConfigureAwait(false);
-                    await Step($"Moving things with {name}", () => ExecuteMoves(ops), ct).ConfigureAwait(false);
+                    await Step($"Moving items with {name}", () => ExecuteMoves(ops), ct).ConfigureAwait(false);
                     await CloseRetainerInventoryAsync(name, ct).ConfigureAwait(false);
                     await LeaveRetainerAsync(name, ct).ConfigureAwait(false);
                 }, ct).ConfigureAwait(false);

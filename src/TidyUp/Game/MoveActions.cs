@@ -65,7 +65,7 @@ public sealed class MoveActions : IMoveActions
         if (expectAtDest < 0) return new MoveOutcome(MoveStatus.Refused, "the destination slot holds a different item");
 
         var sent = await framework.RunOnFrameworkThread(() => Native.Move(from, to, itemId)).ConfigureAwait(false);
-        if (sent is null) return new MoveOutcome(MoveStatus.Refused, "the source or destination slot could not be read");
+        if (sent is null) return new MoveOutcome(MoveStatus.Refused, "the item or its destination could not be read");
         log.Debug("MoveItemSlot {From} -> {To} returned {Code}", from, to, sent.Value);
 
         // The slots are the ground truth: the source empties (or shrinks, on a merge) and the destination gains.
@@ -80,8 +80,8 @@ public sealed class MoveActions : IMoveActions
             var destHas = dst is not null && dst.ItemId == itemId && dst.Quantity >= Math.Min(expectAtDest, quantity);
             if (sourceGone && destHas) return MoveOutcome.Ok;
         }
-        log.Warning("Move {From} -> {To} of item {Item} was sent (code {Code}) but not confirmed", from, to, itemId, sent.Value);
-        return new MoveOutcome(MoveStatus.Refused, "the game did not carry out the move");
+        log.Debug("Move {From} -> {To} of item {Item} was sent (code {Code}) but not confirmed", from, to, itemId, sent.Value);
+        return new MoveOutcome(MoveStatus.NotConfirmed, "the game did not carry out the move");
     }
 
     private static unsafe class Native

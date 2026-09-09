@@ -80,7 +80,7 @@ public sealed class ExecutionCore
             if (hooks.BlockedReason(op) is { } blocked)
             {
                 hooks.Park(op, blocked);
-                hooks.Report(op, new StepOutcome(StepStatus.Pending, $"Needs: {blocked}"));
+                hooks.Report(op, new StepOutcome(StepStatus.Pending, $"waiting: {blocked}"));
                 continue;
             }
 
@@ -104,7 +104,7 @@ public sealed class ExecutionCore
             }
             catch (OperationCanceledException)
             {
-                outcome = new StepOutcome(StepStatus.Cancelled, "Cancelled");
+                outcome = new StepOutcome(StepStatus.Cancelled, "cancelled");
             }
             catch (Exception ex)
             {
@@ -123,7 +123,7 @@ public sealed class ExecutionCore
                     if (consecutiveFailures >= maxConsecutiveFailures)
                     {
                         aborted = true;
-                        abortReason = $"{consecutiveFailures} items failed in a row, last: {hooks.Describe(op)}: {outcome.Message}";
+                        abortReason = $"{consecutiveFailures} items failed in a row; the last was {hooks.Describe(op)} ({outcome.Message})";
                     }
                     break;
                 case StepStatus.Done:

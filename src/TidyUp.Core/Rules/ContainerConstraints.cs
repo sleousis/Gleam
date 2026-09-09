@@ -45,7 +45,7 @@ public static class ContainerConstraints
         {
             Action = ActionKind.Discard,
             Alternatives = Array.Empty<ActionKind>(),
-            Reason = $"{p.Reason} · {where}: discard only, withdraw it to {p.Action.Label()}",
+            Reason = $"{p.Reason} · {where}: can only be discarded here; bring it to your bags to {p.Action.Verb()} it",
             ValueGil = 0,
             ValueLabel = "—",
         };

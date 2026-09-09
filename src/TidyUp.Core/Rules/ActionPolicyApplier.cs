@@ -65,7 +65,7 @@ public static class ActionPolicyApplier
 
     public static string DropReason(ActionPolicy policy) => policy switch
     {
-        ActionPolicy.SellOnly => "Sell-only policy: only tradeable items with a vendor price are proposed",
+        ActionPolicy.SellOnly => "Sell only: untradeable or no vendor price",
         _ => string.Empty,
     };
 }

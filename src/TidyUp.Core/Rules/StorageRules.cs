@@ -64,7 +64,7 @@ public sealed class OutleveledConsumablesRule : IRule
             Alternatives = action == ActionKind.VendorSell ? [ActionKind.Discard] : [],
             Confidence = info.IsMarketable ? Confidence.Medium : Confidence.High,
             RuleId = Id,
-            Reason = $"Outleveled consumable · iL{info.ItemLevel} vs your iL{ctx.MaxGearsetItemLevel}",
+            Reason = $"Outleveled consumable · IL {info.ItemLevel}, yours is {ctx.MaxGearsetItemLevel}",
             ValueGil = value,
             ValueLabel = Gil.Label(value),
             Warnings = info.IsMarketable ? ["Sellable on the market"] : [],
@@ -77,7 +77,7 @@ public sealed class UnusableCraftingMatsRule : IRule
 {
     public const string RuleId = "unusable-crafting-mats";
     public string Id => RuleId;
-    public string Name => "Unusable crafting mats";
+    public string Name => "Unusable crafting materials";
     public string Description => "Vendor-only materials used only in low-level recipes your crafters have far surpassed.";
     public IReadOnlySet<ContainerKind> Containers => RuleContainers.Storage;
 
@@ -102,7 +102,7 @@ public sealed class UnusableCraftingMatsRule : IRule
             Alternatives = info.VendorPrice > 0 ? [ActionKind.Discard] : [],
             Confidence = Confidence.High,
             RuleId = Id,
-            Reason = $"Unusable crafting mat · recipes ≤ lv{maxRecipe}, crafters far past it",
+            Reason = $"Unusable crafting material · only in recipes up to Lv. {maxRecipe}",
             ValueGil = value,
             ValueLabel = Gil.Label(value),
         };
@@ -129,7 +129,7 @@ public sealed class SeasonalItemsRule : IRule
             RuleId = Id,
             Reason = "Past seasonal event item",
             ValueGil = 0,
-            Warnings = ["From a curated list; review before accepting"],
+            Warnings = ["Seasonal item; check before cleaning"],
         };
     }
 }
