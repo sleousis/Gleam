@@ -171,7 +171,7 @@ public sealed class OrganizerSettings
 public sealed class Configuration : IPluginConfiguration
 {
     /// <summary>Bump when <see cref="Migrate"/> gains a step. New configs start here and skip the chain.</summary>
-    public const int CurrentVersion = 12;
+    public const int CurrentVersion = 13;
 
     public int Version { get; set; } = CurrentVersion;
 
@@ -199,8 +199,21 @@ public sealed class Configuration : IPluginConfiguration
     /// <summary>A clean has finished at least once, so the offer to organize is worth making.</summary>
     public bool HasCleanedOnce { get; set; }
 
-    /// <summary>The offer to start organizing has been answered, either way.</summary>
+    /// <summary>The offer to start using the other half has been answered, either way.</summary>
     public bool AnsweredOrganizeOffer { get; set; }
+
+    /// <summary>
+    /// What the player asked Gleam for on the first screen. Plenty of people want tidy bags and never want
+    /// anything thrown away, so cleaning is a choice, not a toll gate.
+    /// </summary>
+    public bool UseClean { get; set; } = true;
+    public bool UseOrganize { get; set; }
+
+    /// <summary>An organize run has finished at least once, so the offer to clean is worth making.</summary>
+    public bool HasOrganizedOnce { get; set; }
+
+    /// <summary>The page the window opens on when nothing else decides.</summary>
+    public bool StartOnOrganize => UseOrganize && !UseClean;
 
     /// <summary>
     /// Off: the simple layer only. One list with what will happen, quick setup for where things go, four settings.
@@ -323,6 +336,15 @@ public sealed class Configuration : IPluginConfiguration
             AdvancedMode = true;
             SeenFirstRun = true;
             Version = 12;
+            changed = true;
+        }
+        if (Version < 13)
+        {
+            // Anyone already here has both halves in front of them; keep it that way.
+            UseClean = true;
+            UseOrganize = true;
+            AnsweredOrganizeOffer = true;
+            Version = 13;
             changed = true;
         }
         changed |= EnsureDefaults();

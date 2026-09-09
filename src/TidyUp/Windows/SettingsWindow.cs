@@ -93,6 +93,20 @@ public sealed partial class SettingsWindow
     {
         var p = Editing;
 
+        using (Ui.Card("purpose"))
+        {
+            Ui.TextColored(Ui.Muted, "WHAT GLEAM DOES FOR YOU");
+            ImGui.Spacing();
+            var clean = config.UseClean;
+            if (ImGui.Checkbox("Clear out my junk", ref clean)) { config.UseClean = clean || !config.UseOrganize; dirty = true; }
+            Ui.Tooltip("Off: Gleam never suggests throwing anything away or selling it.");
+            ImGui.SameLine(0, 24 * Ui.Scale);
+            var org = config.UseOrganize;
+            if (ImGui.Checkbox("Put my things away", ref org)) { config.UseOrganize = org || !config.UseClean; dirty = true; }
+            Ui.Tooltip("Off: Gleam never moves anything between your bags, saddlebag and retainers.");
+        }
+
+        if (config.UseClean)
         using (Ui.Card("junk"))
         {
             Ui.TextColored(Ui.Muted, "WHAT TO DO WITH JUNK");

@@ -37,6 +37,9 @@ public sealed class ConfirmationWindow : StyledWindow
     internal Ui.AppMode Mode { get; private set; } = Ui.AppMode.Clean;
 
     /// <summary>Opens the window on the given half.</summary>
+    /// <summary>Where /gleam lands: the half the player actually asked for.</summary>
+    internal Ui.AppMode HomePage => config.StartOnOrganize ? Ui.AppMode.Organize : Ui.AppMode.Clean;
+
     internal void Show(Ui.AppMode mode)
     {
         Mode = mode;
@@ -190,10 +193,16 @@ public sealed class ConfirmationWindow : StyledWindow
     /// <summary>After the first clean, offer the other half once. Simple mode hides Organize until this is answered.</summary>
     private void DrawOrganizeOffer()
     {
-        if (!Simple || Organizer is null || !config.HasCleanedOnce || config.AnsweredOrganizeOffer) return;
+        if (!Simple || Organizer is null || config.UseOrganize || !config.HasCleanedOnce || config.AnsweredOrganizeOffer) return;
         Ui.Gap(0.3f);
         if (Ui.Banner(Ui.Accent, "One more thing", "Gleam can also put away what you keep. Materia in the saddlebag, spare gear with a retainer, that sort of thing.",
-                dismissLabel: "No thanks", link: ("Show me", () => { config.AnsweredOrganizeOffer = true; config.Save(PluginServices.PluginInterface); Show(Ui.AppMode.Organize); })))
+                dismissLabel: "No thanks", link: ("Show me", () =>
+                {
+                    config.UseOrganize = true;
+                    config.AnsweredOrganizeOffer = true;
+                    config.Save(PluginServices.PluginInterface);
+                    Show(Ui.AppMode.Organize);
+                })))
         {
             config.AnsweredOrganizeOffer = true;
             config.Save(PluginServices.PluginInterface);
@@ -248,7 +257,7 @@ public sealed class ConfirmationWindow : StyledWindow
             var sentence = total == 0 ? "Nothing looks like junk right now."
                 : $"Gleam found {total} item{(total == 1 ? "" : "s")} of junk." + (freed > 0 ? $" Cleaning them frees {freed} slot{(freed == 1 ? "" : "s")}" : string.Empty)
                   + (summary.GilRecovered + summary.MarketGil > 0 ? $"{(freed > 0 ? " and recovers" : " Cleaning them recovers")} about {Ui.Gil(summary.GilRecovered + summary.MarketGil)}." : freed > 0 ? "." : string.Empty);
-            var offerOrganize = Organizer is not null && config.AnsweredOrganizeOffer;
+            var offerOrganize = Organizer is not null && config.UseOrganize;
             Ui.Header(icons.LogoSmall, "Gleam", sentence, 0f, null, null, !offerOrganize ? null : () => { if (Ui.ModeSwitch(Ui.AppMode.Clean)) Show(Ui.AppMode.Organize); });
             ImGui.AlignTextToFramePadding();
             Ui.Hint(profile.Thresholds.Policy.Describe());
@@ -1091,6 +1100,15 @@ public sealed class ConfirmationWindow : StyledWindow
 
     // ---------- first run: three screens, once ----------
 
+    private int firstRunStep;
+
+    private static readonly (bool Clean, bool Organize, string Title, string Text)[] FirstRunPurposes =
+    [
+        (true, false, "Clear out my junk", "Gleam finds what is not worth keeping and shows you the list. You decide what happens to it."),
+        (false, true, "Put my things away", "Gleam moves what you keep to where you want it. Nothing is ever thrown away or sold."),
+        (true, true, "Both", "Clear out the junk, and put away what is left."),
+    ];
+
     private static readonly (Core.Rules.PresetName Preset, string Title, string Text)[] FirstRunPresets =
     [
         (Core.Rules.PresetName.Vendor, "Sell it to vendors", "The safe choice. Junk worth gil is sold, the rest is thrown away."),
@@ -1098,13 +1116,47 @@ public sealed class ConfirmationWindow : StyledWindow
         (Core.Rules.PresetName.DiscardAll, "Just throw it away", "Fastest. Nothing is sold and nothing comes back."),
     ];
 
-    /// <summary>One screen, once: pick what happens to junk, then straight into the list.</summary>
+    /// <summary>
+    /// First run. One question, or two for anyone who wants junk cleared: what is Gleam for, and then what
+    /// should happen to junk. Someone who only wants their things put away is never asked about discarding.
+    /// </summary>
     private void DrawFirstRun(RunPlan plan)
     {
         var width = Math.Min(520 * Ui.Scale, ImGui.GetContentRegionAvail().X - 20 * Ui.Scale);
         var left = (ImGui.GetWindowWidth() - width) / 2;
-        Ui.RunningHeader(icons.LogoMedium, "What should Gleam do with junk?", "Gleam always shows you the list first. Nothing happens until you press the button.");
+        var junkStep = firstRunStep == 1;
+        Ui.RunningHeader(icons.LogoMedium,
+            junkStep ? "What should happen to the junk?" : "What would you like Gleam to do?",
+            junkStep ? "Gleam always shows you the list first. Nothing happens until you press the button."
+                     : "You can change this later, and turn the other half on whenever you like.");
         Ui.Gap(1f);
+
+        if (!junkStep)
+        {
+            foreach (var (clean, organize, title, text) in FirstRunPurposes)
+            {
+                ImGui.SetCursorPosX(left);
+                if (OptionCard(title, text, false, width))
+                {
+                    config.UseClean = clean;
+                    config.UseOrganize = organize;
+                    config.AnsweredOrganizeOffer = clean && organize;
+                    if (clean) firstRunStep = 1;
+                    else
+                    {
+                        // Organize only: no junk question at all, straight to where things go.
+                        config.SeenFirstRun = true;
+                        config.SeenOrganizeIntro = true;
+                        config.Save(PluginServices.PluginInterface);
+                        Show(Ui.AppMode.Organize);
+                    }
+                }
+                Ui.Gap(0.35f);
+            }
+            _ = plan;
+            return;
+        }
+
         foreach (var (preset, title, text) in FirstRunPresets)
         {
             ImGui.SetCursorPosX(left);
@@ -1119,7 +1171,8 @@ public sealed class ConfirmationWindow : StyledWindow
             Ui.Gap(0.35f);
         }
         Ui.Gap(0.4f);
-        Ui.Centered("You can change this later in Settings.", muted: true);
+        ImGui.SetCursorPosX(left);
+        if (Ui.LinkButton("◂  Back")) firstRunStep = 0;
         _ = plan;
     }
 

@@ -142,6 +142,25 @@ public sealed class OrganizerPanel
     private MoveRunReport? bannerReport;
     private bool bannerDismissed;
 
+    /// <summary>Someone who came only to organize is offered the other half once, after their first run.</summary>
+    private void DrawCleanOffer()
+    {
+        if (config.UseClean || !config.HasOrganizedOnce || config.AnsweredOrganizeOffer) return;
+        if (Ui.Banner(Ui.Accent, "One more thing", "Gleam can also clear out junk. It shows you a list first and throws nothing away without your say-so.",
+                dismissLabel: "No thanks", link: ("Show me", () =>
+                {
+                    config.UseClean = true;
+                    config.AnsweredOrganizeOffer = true;
+                    save();
+                    SwitchToClean?.Invoke();
+                })))
+        {
+            config.AnsweredOrganizeOffer = true;
+            save();
+        }
+        Ui.Gap(0.3f);
+    }
+
     /// <summary>One line after a run, and why the last hands-free run stopped, each dismissed with a click.</summary>
     private void DrawBanners()
     {
@@ -266,11 +285,13 @@ public sealed class OrganizerPanel
             : organizer.Current is null ? "Where things go"
             : moves == 0 ? "Everything is where you want it."
             : $"{moves} item{(moves == 1 ? "" : "s")} will move.";
-        Ui.Header(icons.LogoSmall, "Gleam", subtitle, 0f, null, null, () => { if (Ui.ModeSwitch(Ui.AppMode.Organize)) SwitchToClean?.Invoke(); });
+        Ui.Header(icons.LogoSmall, "Gleam", subtitle, 0f, null, null,
+            !config.UseClean ? null : () => { if (Ui.ModeSwitch(Ui.AppMode.Organize)) SwitchToClean?.Invoke(); });
         Ui.Gap(0.4f);
 
         if (Pilot is { IsRunning: true, Mode: Automation.PilotMode.Organize } || organizer.IsRunning) { DrawRunning(); return; }
         DrawBanners();
+        DrawCleanOffer();
 
         var footer = ImGui.GetFrameHeight() * 2.4f + Ui.Space;
         using (var body = ImRaii.Child("##body", new Vector2(0, -footer), false, ImGuiWindowFlags.None))
