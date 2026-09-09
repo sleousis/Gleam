@@ -38,7 +38,7 @@ internal static class Ui
 
     // ---------- window-wide style ----------
 
-    /// <summary>Pushed by every Tidy Up window around Begin/End. Rounded corners, calmer frames, ink ground.</summary>
+    /// <summary>Pushed by every Satchel window around Begin/End. Rounded corners, calmer frames, ink ground.</summary>
     public static IDisposable PushWindowStyle() => new WindowStyle();
 
     private sealed class WindowStyle : IDisposable

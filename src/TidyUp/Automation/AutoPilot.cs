@@ -158,14 +158,14 @@ public sealed partial class AutoPilot : IDisposable
 
             Status = "Done";
             log.Information("Hands-free clean finished: {Summary}", tally.Summary());
-            chat.Print($"Hands-free clean finished: {tally.Summary()}", "Tidy Up");
-            foreach (var line in tally.PendingLines()) chat.Print(line, "Tidy Up");
-            foreach (var line in tally.LegFailures) chat.PrintError(line, "Tidy Up");
+            chat.Print($"Hands-free clean finished: {tally.Summary()}", "Satchel");
+            foreach (var line in tally.PendingLines()) chat.Print(line, "Satchel");
+            foreach (var line in tally.LegFailures) chat.PrintError(line, "Satchel");
         }
         catch (OperationCanceledException)
         {
             Status = "Stopped";
-            chat.Print("Stopped. Nothing else was touched.", "Tidy Up");
+            chat.Print("Stopped. Nothing else was touched.", "Satchel");
         }
         catch (AutoPilotException ex)
         {
@@ -901,14 +901,14 @@ public sealed partial class AutoPilot : IDisposable
         LastError = message;
         Status = $"Stopped: {message}";
         log.Warning("Hands-free run stopped: {Message}", message);
-        chat.PrintError($"Stopped: {message}.", "Tidy Up");
+        chat.PrintError($"Stopped: {message}.", "Satchel");
     }
 
     /// <summary>Nothing to do: not an error, one quiet line.</summary>
     private void Nothing(string message)
     {
         Status = message;
-        chat.Print($"{message}.", "Tidy Up");
+        chat.Print($"{message}.", "Satchel");
     }
 
     private sealed class AutoPilotException(string message) : Exception(message);

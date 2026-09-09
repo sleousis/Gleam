@@ -56,7 +56,7 @@ public sealed unsafe class AddonDriver : IDisposable
         LastRejection = null;
         if (framework.IsInFrameworkUpdateThread ? IsAddonVisible(addonName) : framework.RunOnFrameworkThread(() => IsAddonVisible(addonName)).Result)
         {
-            LastRejection = "a game window that Tidy Up needs to answer is already open; close it first";
+            LastRejection = "a game window that Satchel needs to answer is already open; close it first";
             return Task.FromResult(false);
         }
 

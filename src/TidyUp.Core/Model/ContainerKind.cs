@@ -1,6 +1,6 @@
 namespace TidyUp.Core.Model;
 
-/// <summary>The five storage areas Tidy Up can propose against.</summary>
+/// <summary>The five storage areas Satchel can propose against.</summary>
 public enum ContainerKind
 {
     Inventory,
