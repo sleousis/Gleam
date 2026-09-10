@@ -262,6 +262,19 @@ public sealed class Configuration : IPluginConfiguration
     /// <summary>The note that organizing is still a preview has been read.</summary>
     public bool SeenOrganizerPreviewNote { get; set; }
 
+    /// <summary>The stats page's period (0 a week, 1 a month, 2 a year, 3 all time) and whether it counts every character.</summary>
+    public int StatsRange { get; set; } = 1;
+    public bool StatsAllCharacters { get; set; }
+
+    /// <summary>One chat line when a milestone is reached.</summary>
+    public bool ShowMilestones { get; set; } = true;
+
+    /// <summary>Milestones already earned when the stats page first counted the history are written down quietly, once.</summary>
+    public bool StatsMilestonesPrimed { get; set; }
+
+    /// <summary>Set by "Reset statistics": nothing before it counts. The histories themselves are left alone.</summary>
+    public DateTimeOffset? StatsResetAt { get; set; }
+
     /// <summary>Glamour plate item ids seen the last time the dresser was open, per character, so the dresser rule has data before plates reload.</summary>
     public Dictionary<ulong, List<uint>> LastKnownPlateItems { get; set; } = new();
 

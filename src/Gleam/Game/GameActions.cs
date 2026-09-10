@@ -44,6 +44,9 @@ public sealed class GameActions : IGameActions
     /// <summary>Why the most recent action returned false, for the spike window and the run log.</summary>
     public string? LastFailure { get; private set; }
 
+    /// <summary>A piece was turned in, and the seals the delivery list offered for it.</summary>
+    public event Action<uint, int>? SealsEarned;
+
     private TimeSpan Timeout => TimeSpan.FromMilliseconds(config.Callbacks.ActionTimeoutMs);
 
     public bool IsContainerAvailable(ContainerKind kind, ulong ownerId) => kind switch
@@ -385,6 +388,7 @@ public sealed class GameActions : IGameActions
         var confirmed = await dialog.ConfigureAwait(false);
         if (!confirmed) { LastFailure = dialogs.LastRejection ?? "the delivery confirmation did not open"; return false; }
         if (await removed.ConfigureAwait(false) is null) { LastFailure = "the delivery was confirmed but the item stayed in your bags"; return false; }
+        SealsEarned?.Invoke(itemId, Native.LastSealReward);
         return true;
     }
 
@@ -554,6 +558,9 @@ public sealed class GameActions : IGameActions
 
         public enum DeliveryPick { NotListed, OtherCopyOnly, Selected }
 
+        /// <summary>The seal reward the list showed for the piece last picked.</summary>
+        public static int LastSealReward;
+
         /// <summary>
         /// Picks the list row for this exact piece, by the container and slot the list reports for it. The first
         /// row with the same item id could be a different copy: one with materia, or one the player kept back.
@@ -572,6 +579,7 @@ public sealed class GameActions : IGameActions
                 var values = stackalloc AtkValue[2];
                 values[0].SetInt(selectCallback);
                 values[1].SetInt(entry.Position);
+                LastSealReward = entry.SealReward;
                 return addon->FireCallback(2, values, false) ? DeliveryPick.Selected : DeliveryPick.NotListed;
             }
             return otherCopy ? DeliveryPick.OtherCopyOnly : DeliveryPick.NotListed;

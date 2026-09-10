@@ -151,6 +151,31 @@ for W in WIDTHS:
     if bar < 260 * SCALE:
         problems.append(f"run bar at {W}px: {bar:.0f} is below the readable floor")
 
+    # ---- stats page: the header's pickers, the four totals, the panel rows
+    SCROLL = 14 * SCALE
+    body = inner - SCROLL
+    seg = sum(w(t) + FRAME_PAD * 2 + 6 * SCALE for t in ("7 days", "30 days", "1 year", "All time")) + 8 * SCALE
+    pickers = seg + ITEM + 140 * SCALE
+    title = max(w("Your Gleam in numbers"), w("This character · since 10 Sep 2025"))
+    beside = inner >= 46 * SCALE + title + 16 * SCALE + pickers
+    if not beside:
+        check("stats pickers (own line)", W, pickers, inner, "the period and character pickers do not fit even on their own line")
+
+    cols = 4 if body >= 760 * SCALE else 2
+    tile = (body - 10 * SCALE * (cols - 1)) / cols
+    check("stats tile label", W, 12 * SCALE + 20 * SCALE + w("Listed on the market"), tile - 12 * SCALE, "a tile's label runs off the tile")
+    room = tile * 0.58 - 18 * SCALE
+    check("stats tile number", W, w("12,345,678") * 1.15, room, "a large gil total runs into the tile's sparkline even at its smallest")
+
+    wide = body >= 820 * SCALE
+    halves = (body - 10 * SCALE) / 2 - 24 * SCALE if wide else body - 24 * SCALE
+    check("stats rule row", W, w("Crafting materials no recipe uses") + ITEM + w("1,234 · 42%"), halves, "a rule's name runs into its figures")
+    check("stats ribbons", W, w("Saddlebag") + 12 * SCALE + 120 * SCALE + w("A long retainer") + w("1,234") + 22 * SCALE, halves,
+          "the organizer's ribbons are squeezed between their labels")
+    year = body - 24 * SCALE
+    cell = min(max((year - 3 * SCALE * 52) / 53, 5 * SCALE), 13 * SCALE)
+    check("stats year grid", W, 53 * (cell + 3 * SCALE) - 3 * SCALE, year + 12 * SCALE, "the year grid runs past its panel")
+
 print(f"checked {len(WIDTHS)} widths: {', '.join(str(x) for x in WIDTHS)}")
 if problems:
     print("\nPROBLEMS")

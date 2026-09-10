@@ -6,6 +6,7 @@ using Gleam.Core.Logging;
 using Gleam.Core.Merging;
 using Gleam.Core.Model;
 using Gleam.Core.Planning;
+using Gleam.Core.Stats;
 using Gleam.Game;
 
 namespace Gleam.Services;
@@ -86,6 +87,23 @@ public sealed class RunCoordinator : IDisposable
 
     public event Action? PlanChanged;
     public event Action? RequestOpenWindow;
+
+    /// <summary>Each item a run finished, as it happens. The stats page counts along with it.</summary>
+    public event Action<ActionResult>? ActionFinished;
+
+    /// <summary>A run ended: its report, how it came about, and when it started.</summary>
+    public event Action<RunReport, RunTrigger, DateTimeOffset>? RunFinished;
+
+    /// <summary>A full look through the player's things finished.</summary>
+    public event Action<InventorySnapshot, RunPlan>? ScanFinished;
+
+    /// <summary>The player started a run from this plan: what each rule suggested and what they kept ticked.</summary>
+    public event Action<RunPlan>? DecisionsTaken;
+
+    public void NoteDecisions()
+    {
+        if (CurrentPlan is { } plan) DecisionsTaken?.Invoke(plan);
+    }
 
     public RunCoordinator(IFramework framework, IPlayerState player, IChatGui chat, IToastGui toast, IPluginLog log,
         Configuration config, ItemDatabase db, GameInventoryScanner scanner, ItemContextBuilder contextBuilder,
@@ -192,6 +210,11 @@ public sealed class RunCoordinator : IDisposable
             }
 
             CurrentPlan = plan;
+            if (focus is null)
+            {
+                try { ScanFinished?.Invoke(snapshot, plan); }
+                catch (Exception ex) { log.Warning(ex, "Noting the scan for the stats failed"); }
+            }
             // Only what a rule suggested counts as junk. Every item is listed for hand-picking, and counting
             // those made the server info bar and the toasts call nearly the whole inventory junk.
             LastCleanableCount = plan.AllRows.Count(r => r.IsExecutable && r.IsSuggested);
@@ -319,7 +342,8 @@ public sealed class RunCoordinator : IDisposable
         var carried = PendingActions.Where(p => !queue.Any(q => q.Slot == p.Slot) && !declined.Contains(Identity(p.Slot, p.ItemId, p.IsHq)));
         var merged = carried.Concat(queue).ToList();
         PendingActions.Clear();
-        await ExecuteQueueAsync(merged, refreshAfter: true).ConfigureAwait(false);
+        NoteDecisions();
+        await ExecuteQueueAsync(merged, refreshAfter: true, RunTrigger.ByHand).ConfigureAwait(false);
     }
 
     private static (ContainerKind, ulong, uint, bool) Identity(SlotRef slot, uint itemId, bool hq) => (slot.Kind, slot.OwnerId, itemId, hq);
@@ -332,7 +356,7 @@ public sealed class RunCoordinator : IDisposable
     }
 
     /// <summary>Runs a queue now. Used by Accept and by the hands-free pilot for one container at a time.</summary>
-    public async Task ExecuteQueueAsync(IReadOnlyList<QueuedAction> queue, bool refreshAfter)
+    public async Task ExecuteQueueAsync(IReadOnlyList<QueuedAction> queue, bool refreshAfter, RunTrigger trigger = RunTrigger.ByHand)
     {
         // Never alongside an organize run: both would be moving the same bags at once.
         if (IsRunning || queue.Count == 0 || IsOrganizing()) return;
@@ -342,6 +366,7 @@ public sealed class RunCoordinator : IDisposable
         LastProgress = null;
         Status = "Cleaning…";
         PlanChanged?.Invoke();
+        var started = DateTimeOffset.Now;
         runCts?.Dispose();
         runCts = new CancellationTokenSource();
         try
@@ -357,12 +382,15 @@ public sealed class RunCoordinator : IDisposable
             {
                 LastProgress = r;
                 if (r.IsTerminal) RunDone++;
+                if (r.Outcome == ActionOutcome.Done) ActionFinished?.Invoke(r);
                 PlanChanged?.Invoke();
             });
             var runFor = player.ContentId;
             var identity = new RunIdentity(player.ContentId, player.CharacterName);
             var report = await engine.ExecuteAsync(queue, identity, runCts.Token, progress).ConfigureAwait(false);
             LastReport = report;
+            try { RunFinished?.Invoke(report, trigger, started); }
+            catch (Exception ex) { log.Warning(ex, "Noting the run for the stats failed"); }
             if (report.Done > 0 && !config.HasCleanedOnce) { config.HasCleanedOnce = true; save(); }
             // A run that ends after a logout or a character switch must not leave its waiting items behind for
             // whoever logs in next: matching is by item and quantity, so another character's stack would do.

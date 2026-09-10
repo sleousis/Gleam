@@ -3,6 +3,13 @@
 Each release's section is shown in Dalamud's plugin installer and on the GitHub release page. The release
 workflow refuses a tag whose version has no section here.
 
+## 0.11.0
+
+- A new stats page, "Your Gleam in numbers", opens from the chart button in the title bar or with /gleam stats. It shows bag slots freed, gil from sales, market listings and time saved. It also shows a chart of what Gleam did day by day, where the junk came from, how full your bags have been, which rules you keep or untick, where the organizer put things, your last hands-free trip, a year of activity and milestones.
+- While a run is going, the page follows it live: totals count up, today's bar grows, and moved items travel across the organizer's map.
+- Every figure has one definition, shown in its tooltip. Market listings count as "listed", never "earned", and time saved is labelled as an estimate with its formula.
+- Gleam now keeps a small journal of runs, trips, bag fullness, rule choices and seals. It stays on your PC, and "Reset statistics" starts the counting again without touching the history.
+
 ## 0.10.0
 
 - The old working name, TidyUp, is gone from everything, including the name Dalamud uses to track the plugin. Because of that, Dalamud treats this version as a new plugin. Install Gleam from the list, then remove the old copy, version 0.9.x. Your settings, layouts and history come across the first time the new copy starts.

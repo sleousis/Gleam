@@ -78,6 +78,19 @@ public sealed class JsonLinesLog<T> where T : class
         finally { gate.Release(); }
     }
 
+    /// <summary>Empties the file and what is held of it.</summary>
+    public async Task ClearAsync()
+    {
+        await gate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            await storage.WriteAsync(path, string.Empty).ConfigureAwait(false);
+            cache = new List<T>();
+            endsCleanly = true;
+        }
+        finally { gate.Release(); }
+    }
+
     private async Task<List<T>> LoadAsync()
     {
         if (cache is not null) return cache;
@@ -96,9 +109,9 @@ public sealed class JsonLinesLog<T> where T : class
                 var e = JsonSerializer.Deserialize<T>(line, JsonOptions);
                 if (e is not null) loaded.Add(e);
             }
-            catch (JsonException)
+            catch (Exception e) when (e is JsonException or NotSupportedException)
             {
-                // A corrupt line must never take the whole history with it.
+                // A corrupt line, or one of a kind a newer version wrote, must never take the whole history with it.
             }
         }
         return cache = loaded;

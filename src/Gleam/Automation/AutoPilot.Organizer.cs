@@ -1,5 +1,6 @@
 using Dalamud.Game.ClientState.Conditions;
 using Gleam.Core.Model;
+using Gleam.Core.Stats;
 using Gleam.Core.Organizer.Capacity;
 using Gleam.Core.Organizer.Solving;
 using Gleam.Services;
@@ -41,6 +42,8 @@ public sealed partial class AutoPilot
         movesSkipped = 0;
         movesFailed = 0;
         tally.Clear();
+        var stopped = false;
+        BeginTrip();
         try
         {
             Status = "Closing leftover windows";
@@ -74,6 +77,7 @@ public sealed partial class AutoPilot
         }
         catch (OperationCanceledException)
         {
+            stopped = true;
             Status = "Stopped";
             chat.Print("Stopped. Nothing else was moved.", "Gleam");
         }
@@ -89,6 +93,7 @@ public sealed partial class AutoPilot
         finally
         {
             await RecoverUiAsync(CancellationToken.None).ConfigureAwait(false);
+            EndTrip(RunTrigger.HandsFreeOrganize, PlannedTotal, movesDone, movesSkipped, movesFailed, movesPending, stopped, tally.LegFailures.Concat(tally.Reasons));
             IsRunning = false;
             _ = Organizer.PreviewAsync();
         }
@@ -175,13 +180,14 @@ public sealed partial class AutoPilot
     {
         if (Organizer is null) return;
         var before = Organizer.LastReport;
-        await Organizer.RunMovesAsync(ops, refreshAfter: false).ConfigureAwait(false);
+        await Organizer.RunMovesAsync(ops, refreshAfter: false, RunTrigger.PartOfTrip).ConfigureAwait(false);
         var report = Organizer.LastReport;
         // A run that returned early leaves the previous report in place; counting it again doubled the tally.
         if (report is null || ReferenceEquals(report, before)) return;
         movesDone += report.Done;
         movesSkipped += report.Skipped;
         movesFailed += report.Failed;
+        tally.Reasons.AddRange(report.Results.Where(r => r.Status == Core.Execution.StepStatus.Failed).Select(r => r.Message));
         movesPending += report.Pending.Count;
     }
 }

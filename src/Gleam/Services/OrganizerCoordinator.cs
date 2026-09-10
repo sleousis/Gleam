@@ -6,6 +6,7 @@ using Gleam.Core.Organizer.Capacity;
 using Gleam.Core.Organizer.Execution;
 using Gleam.Core.Organizer.Model;
 using Gleam.Core.Organizer.Solving;
+using Gleam.Core.Stats;
 using Gleam.Game;
 
 namespace Gleam.Services;
@@ -77,6 +78,12 @@ public sealed class OrganizerCoordinator : IDisposable
     }
 
     public event Action? Changed;
+
+    /// <summary>Each stack moved, as it happens.</summary>
+    public event Action<MoveResult>? MoveFinished;
+
+    /// <summary>A round of moves ended: its report, how it came about, and when it started.</summary>
+    public event Action<MoveRunReport, RunTrigger, DateTimeOffset>? MovesFinished;
 
     /// <summary>Bumped by every change to a layout, so a preview built before the change is known to be stale.</summary>
     public int LayoutVersion { get; private set; }
@@ -200,13 +207,13 @@ public sealed class OrganizerCoordinator : IDisposable
     }
 
     /// <summary>Runs the current preview's moves. Only what the user saw; closed storages leave their moves waiting.</summary>
-    public Task RunAsync() => RunMovesAsync(Current?.Moves ?? new List<MoveOp>(), refreshAfter: true);
+    public Task RunAsync() => RunMovesAsync(Current?.Moves ?? new List<MoveOp>(), refreshAfter: true, RunTrigger.Organize);
 
     /// <summary>Set by the plugin so a hands-free run does not trip the "another run is going" guard on itself.</summary>
     public Func<bool> IsPilotRunning { get; set; } = () => false;
 
     /// <summary>Runs a subset of moves now. The hands-free pilot calls this once per open storage.</summary>
-    public async Task RunMovesAsync(IReadOnlyList<MoveOp> ops, bool refreshAfter)
+    public async Task RunMovesAsync(IReadOnlyList<MoveOp> ops, bool refreshAfter, RunTrigger trigger = RunTrigger.Organize)
     {
         if (IsRunning || cleaner.IsRunning || ops.Count == 0) return;
         IsRunning = true;
@@ -215,6 +222,7 @@ public sealed class OrganizerCoordinator : IDisposable
         LastProgress = null;
         Status = "Organizing…";
         Changed?.Invoke();
+        var started = DateTimeOffset.Now;
         runCts?.Dispose();
         runCts = new CancellationTokenSource();
         try
@@ -227,12 +235,15 @@ public sealed class OrganizerCoordinator : IDisposable
             {
                 LastProgress = r;
                 if (r.IsTerminal) RunDone++;
+                if (r.Status == StepStatus.Done) MoveFinished?.Invoke(r);
                 Changed?.Invoke();
             });
             var runFor = player.ContentId;
             var identity = new RunIdentity(player.ContentId, player.CharacterName);
             var report = await executor.ExecuteAsync(ops, identity, runCts.Token, progress).ConfigureAwait(false);
             LastReport = report;
+            try { MovesFinished?.Invoke(report, trigger, started); }
+            catch (Exception ex) { log.Warning(ex, "Noting the moves for the stats failed"); }
             // Saved on the game's thread, where the settings page also draws.
             if (report.Done > 0 && !config.HasOrganizedOnce) { config.HasOrganizedOnce = true; _ = framework.RunOnFrameworkThread(() => config.Save(PluginServices.PluginInterface)); }
             PendingMoves.RemoveAll(ops.Contains);
@@ -288,7 +299,7 @@ public sealed class OrganizerCoordinator : IDisposable
             ran = true;
             var waitingBefore = PendingMoves.Count;
             var before = LastReport;
-            await RunMovesAsync(ready, refreshAfter: false).ConfigureAwait(false);
+            await RunMovesAsync(ready, refreshAfter: false, RunTrigger.StorageOpened).ConfigureAwait(false);
             // A round with a failure, or one that cleared nothing, is where it stops: the next round was sized
             // on this one having drained.
             if (ReferenceEquals(LastReport, before) || LastReport is null || LastReport.Failed > 0 || LastReport.Aborted) break;
