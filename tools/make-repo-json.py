@@ -5,7 +5,7 @@ things only the release knows: where to download the zip, where the icon lives, 
 Dalamud expects a JSON array, even for one plugin.
 
     python tools/make-repo-json.py --manifest src/TidyUp/bin/Release/TidyUp/TidyUp.json \
-        --tag v1.0.0 --repo savvasleousis/TidyUp --out repo.json
+        --tag v1.0.0 --repo sleousis/Gleam --out repo.json
 """
 import argparse
 import json
