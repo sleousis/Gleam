@@ -49,7 +49,7 @@ public sealed partial class SettingsWindow
         var known = coordinator.RetainerNames;
         Ui.HintWrapped("An unticked retainer is left completely alone: nothing is cleaned from it and nothing is moved to it.");
         Ui.Gap(0.3f);
-        if (known.Count == 0) { Ui.Hint("Summon a retainer once and they will appear here."); return; }
+        if (known.Count == 0) { Ui.Hint("No retainers yet. They appear once you are logged in on a character that has some."); return; }
         foreach (var (id, name) in known)
         {
             var included = !p.ExcludedRetainerIds.Contains(id);

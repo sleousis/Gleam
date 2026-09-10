@@ -180,7 +180,7 @@ public sealed class Plugin : IDalamudPlugin
         commands.AddHandler(ShortCommand, new CommandInfo(OnCommand) { HelpMessage = "Short for /gleam." });
         commands.AddHandler(LegacyCommand, new CommandInfo(OnCommand) { ShowInHelp = false });
 
-        pi.UiBuilder.Draw += windows.Draw;
+        pi.UiBuilder.Draw += DrawUi;
         pi.UiBuilder.OpenMainUi += OpenMain;
         pi.UiBuilder.OpenConfigUi += OpenConfig;
 
@@ -270,11 +270,21 @@ public sealed class Plugin : IDalamudPlugin
         chat.Print("Gleam is ready. Type /gleam (or just /gl) to see what it thinks is junk. Nothing is discarded or sold until you press Clean.", "Gleam");
     }
     private void OpenMain() => confirmWindow.Show(confirmWindow.HomePage);
+    /// <summary>
+    /// Drawing happens on the game's own thread, which is the only place its retainer list may be read, so
+    /// the directory is refreshed here rather than from a background task.
+    /// </summary>
+    private void DrawUi()
+    {
+        if (Game.RetainerDirectory.Poll(config)) config.Save(pi);
+        windows.Draw();
+    }
+
     private void OpenConfig() => confirmWindow.Show(Ui.AppMode.Settings);
 
     public void Dispose()
     {
-        pi.UiBuilder.Draw -= windows.Draw;
+        pi.UiBuilder.Draw -= DrawUi;
         pi.UiBuilder.OpenMainUi -= OpenMain;
         pi.UiBuilder.OpenConfigUi -= OpenConfig;
         clientState.Logout -= OnLogout;

@@ -60,7 +60,20 @@ public sealed class RunCoordinator : IDisposable
     /// <summary>Review mode: only what the rules propose, or every item with a default action to tick.</summary>
 
     public int LastCleanableCount { get; private set; }
-    public IReadOnlyDictionary<ulong, string> RetainerNames { get; private set; } = new Dictionary<ulong, string>();
+    private IReadOnlyDictionary<ulong, string> scannedRetainers = new Dictionary<ulong, string>();
+
+    /// <summary>Every retainer that can be named, whether or not the last scan reached it.</summary>
+    public IReadOnlyDictionary<ulong, string> RetainerNames
+    {
+        get
+        {
+            var known = Game.RetainerDirectory.Names(config);
+            if (scannedRetainers.Count == 0) return known;
+            var merged = new Dictionary<ulong, string>(known);
+            foreach (var (id, name) in scannedRetainers) merged[id] = name;
+            return merged;
+        }
+    }
 
     public event Action? PlanChanged;
     public event Action? RequestOpenWindow;
@@ -126,7 +139,9 @@ public sealed class RunCoordinator : IDisposable
             }
 
             var snapshot = await snapshots.CaptureAsync(profile, focus).ConfigureAwait(false);
-            RetainerNames = snapshot.RetainerNames;
+            scannedRetainers = snapshot.RetainerNames;
+            // A scan can reach retainers the game is not currently listing, so remember what it found.
+            if (Game.RetainerDirectory.Learn(config, snapshot.RetainerNames)) save();
             var withMarket = snapshot.Context;
 
             var plan = planner.Build(snapshot.Items, new PlannerInputs

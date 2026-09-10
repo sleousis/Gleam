@@ -62,7 +62,21 @@ public sealed class OrganizerCoordinator : IDisposable
 
     public event Action? Changed;
 
-    public IReadOnlyDictionary<ulong, string> RetainerNames => Snapshot?.RetainerNames ?? new Dictionary<ulong, string>();
+    /// <summary>
+    /// Every retainer that can be named, not only the ones the last scan happened to see. Before this, a
+    /// layout drawn at login showed raw ids because no snapshot had been taken yet.
+    /// </summary>
+    public IReadOnlyDictionary<ulong, string> RetainerNames
+    {
+        get
+        {
+            var known = Game.RetainerDirectory.Names(config);
+            if (Snapshot is null || Snapshot.RetainerNames.Count == 0) return known;
+            var merged = new Dictionary<ulong, string>(known);
+            foreach (var (id, name) in Snapshot.RetainerNames) merged[id] = name;
+            return merged;
+        }
+    }
 
     public void Dispose()
     {

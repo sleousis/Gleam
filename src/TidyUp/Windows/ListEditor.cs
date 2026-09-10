@@ -92,7 +92,8 @@ internal sealed class ListEditor
             ImGui.AlignTextToFramePadding();
             Ui.Text(info?.Name ?? $"item {e.ItemId}");
             ImGui.SameLine();
-            Ui.Hint(e.CharacterId is null ? "account" : (e.CharacterId == characterId() ? "this character" : $"char {e.CharacterId:X}"));
+            // A raw content id means nothing to a player; which character it was is the only part that matters.
+            Ui.Hint(e.CharacterId is null ? "account" : e.CharacterId == characterId() ? "this character" : "another character");
             if (!string.IsNullOrEmpty(e.Note)) Ui.Tooltip(e.Note);
             ImGui.TableNextColumn();
             var hq = e.IncludeHq;
