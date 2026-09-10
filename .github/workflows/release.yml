@@ -63,7 +63,8 @@ jobs:
         run: |
           Add-Type -AssemblyName System.IO.Compression.FileSystem
           $zip = [System.IO.Compression.ZipFile]::OpenRead((Resolve-Path "Gleam.zip"))
-          try { $names = @($zip.Entries.FullName) } finally { $zip.Dispose() }
+          # The packager writes Windows separators into the zip, so normalise before comparing.
+          try { $names = @($zip.Entries.FullName).Replace('\', '/') } finally { $zip.Dispose() }
           foreach ($needed in @("TidyUp.dll", "TidyUp.Core.dll", "TidyUp.json", "Data/curated.json", "images/icon-96.png", "images/icon-192.png")) {
             if ($names -notcontains $needed) { throw "release zip is missing $needed" }
           }
