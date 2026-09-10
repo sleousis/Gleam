@@ -178,7 +178,7 @@ public sealed class OrganizerSettings
 public sealed class Configuration : IPluginConfiguration
 {
     /// <summary>Bump when <see cref="Migrate"/> gains a step. New configs start here and skip the chain.</summary>
-    public const int CurrentVersion = 15;
+    public const int CurrentVersion = 16;
 
     public int Version { get; set; } = CurrentVersion;
 
@@ -220,6 +220,7 @@ public sealed class Configuration : IPluginConfiguration
     public bool HasOrganizedOnce { get; set; }
 
     /// <summary>The page the window opens on when nothing else decides.</summary>
+    [Newtonsoft.Json.JsonIgnore]
     public bool StartOnOrganize => UseOrganize && !UseClean;
 
     /// <summary>
@@ -386,6 +387,14 @@ public sealed class Configuration : IPluginConfiguration
             // Travelling is how Gleam works now, not a mode you switch on.
             Automation.Enabled = true;
             Version = 15;
+            changed = true;
+        }
+        if (Version < 16)
+        {
+            // Per-character overrides lost their settings page before the first public release, but the
+            // effective profile still honoured them: a leftover one would quietly change what Gleam does.
+            Profiles.Overrides.Clear();
+            Version = 16;
             changed = true;
         }
         changed |= EnsureDefaults();

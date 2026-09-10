@@ -75,6 +75,15 @@ public sealed class RunCoordinator : IDisposable
         }
     }
 
+    /// <summary>The last look through the player's things threw. The window offers to try again.</summary>
+    public bool ScanFailed { get; private set; }
+
+    /// <summary>Market prices came back for this scan. When not, "no listings" would be a guess.</summary>
+    public bool PricesKnown { get; private set; }
+
+    /// <summary>Set by the plugin: whether an organize run is moving things right now.</summary>
+    public Func<bool> IsOrganizing { get; set; } = () => false;
+
     public event Action? PlanChanged;
     public event Action? RequestOpenWindow;
 
@@ -103,14 +112,17 @@ public sealed class RunCoordinator : IDisposable
 
     public void Dispose()
     {
+        // Cancelled, not disposed: work still unwinding reads the token, and a disposed one throws.
         runCts?.Cancel();
-        runCts?.Dispose();
     }
 
     public Profile EffectiveProfile => config.Profiles.Effective(player.ContentId);
 
     public void OnLogout()
     {
+        // A run must not carry on into the next character's inventory.
+        runCts?.Cancel();
+        LastCleanableCount = 0;
         SessionSkips.Clear();
         PendingActions.Clear();
         CurrentPlan = null;
@@ -121,18 +133,23 @@ public sealed class RunCoordinator : IDisposable
     // ---------- scanning & planning ----------
 
     /// <summary>Full scan and plan. Merges stacks first when the profile says so. Optionally opens the window.</summary>
-    public async Task RefreshPlanAsync(bool openWindow, ContainerKind? focus = null)
+    /// <param name="userAsked">
+    /// True only when the player pressed Look again or asked for a scan. Split stacks are merged only then:
+    /// merging moves items, and a scan after login or after a duty must not change anything unasked.
+    /// </param>
+    /// <returns>Whether a fresh plan came out of it. A skipped or failed scan leaves the old one in place.</returns>
+    public async Task<bool> RefreshPlanAsync(bool openWindow, ContainerKind? focus = null, bool userAsked = false)
     {
-        if (IsRunning || !player.IsLoaded) return;
+        if (IsRunning || !player.IsLoaded) return false;
         // Two overlapping scans would both run the stack-merge pass and race each other's moves.
-        if (!await scanGate.WaitAsync(0).ConfigureAwait(false)) return;
+        if (!await scanGate.WaitAsync(0).ConfigureAwait(false)) return false;
         IsScanning = true;
         Status = "Scanning…";
         FocusContainer = focus;
         try
         {
             var profile = EffectiveProfile;
-            if (profile.StackMergeBeforeScan && focus is null)
+            if (profile.StackMergeBeforeScan && focus is null && userAsked)
             {
                 var merged = await StackMergeAsync().ConfigureAwait(false);
                 if (merged > 0) chat.Print($"Merged {merged} split stack{(merged == 1 ? "" : "s")}.", "Gleam");
@@ -159,19 +176,39 @@ public sealed class RunCoordinator : IDisposable
 
             if (focus is null && config.ShowAltSections) AddAltPreviews(plan, withMarket, profile);
 
+            // The player's own ticks survive a re-scan, matched by item rather than slot because a retainer's
+            // live slots differ from the cached ones. An item new since the list was last looked at starts
+            // unticked when nobody asked for this scan: loot landing while the window is open must never be
+            // waiting, ticked, behind a button the player is about to press.
+            if (CurrentPlan is { } before)
+            {
+                static (ContainerKind, ulong, uint, bool, int) Id(PlanRow r) => (r.Item.Slot.Kind, r.Item.Slot.OwnerId, r.Item.ItemId, r.Item.IsHq, r.Item.Quantity);
+                var was = before.AllRows.GroupBy(Id).ToDictionary(g => g.Key, g => g.First().Checked);
+                foreach (var row in plan.AllRows)
+                {
+                    if (was.TryGetValue(Id(row), out var ticked)) row.Checked = ticked && row.IsExecutable;
+                    else if (!userAsked) row.Checked = false;
+                }
+            }
+
             CurrentPlan = plan;
             // Only what a rule suggested counts as junk. Every item is listed for hand-picking, and counting
             // those made the server info bar and the toasts call nearly the whole inventory junk.
             LastCleanableCount = plan.AllRows.Count(r => r.IsExecutable && r.IsSuggested);
             Status = string.Empty;
+            ScanFailed = false;
+            PricesKnown = withMarket.MarketLookupAttempted && withMarket.MarketPrices.Count > 0;
             PlanChanged?.Invoke();
             if (openWindow) RequestOpenWindow?.Invoke();
+            return true;
         }
         catch (Exception ex)
         {
             log.Error(ex, "Scan failed");
             Status = "The scan did not finish";
+            ScanFailed = true;
             chat.PrintError("The scan did not finish. Details are in the Dalamud log.", "Gleam");
+            return false;
         }
         finally
         {
@@ -258,10 +295,14 @@ public sealed class RunCoordinator : IDisposable
     // ---------- execution ----------
 
     /// <summary>Checked, executable rows of the current plan as a queue, optionally filtered.</summary>
-    public List<QueuedAction> BuildQueueFromPlan(Func<PlanRow, bool> filter) =>
+    /// <param name="requireChecked">
+    /// False only for work done while the player is away, which picks its own rows (what a rule would tick
+    /// on its own) rather than trusting ticks that may be the player's, made for a different moment.
+    /// </param>
+    public List<QueuedAction> BuildQueueFromPlan(Func<PlanRow, bool> filter, bool requireChecked = true) =>
         CurrentPlan is null
             ? new List<QueuedAction>()
-            : CurrentPlan.AllRows.Where(r => r.Checked && r.IsExecutable && filter(r)).Select(QueuedAction.FromRow).ToList();
+            : CurrentPlan.AllRows.Where(r => (!requireChecked || r.Checked) && r.IsExecutable && filter(r)).Select(QueuedAction.FromRow).ToList();
 
     public void RaiseOpenWindow() => RequestOpenWindow?.Invoke();
 
@@ -293,7 +334,8 @@ public sealed class RunCoordinator : IDisposable
     /// <summary>Runs a queue now. Used by Accept and by the hands-free pilot for one container at a time.</summary>
     public async Task ExecuteQueueAsync(IReadOnlyList<QueuedAction> queue, bool refreshAfter)
     {
-        if (IsRunning || queue.Count == 0) return;
+        // Never alongside an organize run: both would be moving the same bags at once.
+        if (IsRunning || queue.Count == 0 || IsOrganizing()) return;
         IsRunning = true;
         RunTotal = queue.Count;
         RunDone = 0;
@@ -395,7 +437,7 @@ public sealed class RunCoordinator : IDisposable
     /// <summary>A closed container just opened: re-evaluate it live and show its own confirmation.</summary>
     public async Task OnContainerOpenedAsync(ContainerKind kind)
     {
-        if (IsRunning || IsPilotRunning() || !player.IsLoaded) return;
+        if (IsRunning || IsPilotRunning() || !player.IsLoaded || !config.UseClean) return;
         var profile = EffectiveProfile;
         if (!profile.IsContainerEnabled(kind)) return;
 

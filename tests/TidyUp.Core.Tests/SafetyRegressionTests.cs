@@ -1,3 +1,5 @@
+using TidyUp.Core.Execution;
+using TidyUp.Core.Logging;
 using TidyUp.Core.Lists;
 using TidyUp.Core.Model;
 using TidyUp.Core.Planning;
@@ -61,5 +63,44 @@ public class SafetyRegressionTests
         Assert.False(listed.IsSuggested);
         Assert.False(listed.Checked);
         Assert.True(listed.IsExecutable);   // it can still be picked by hand
+    }
+
+    [Fact]
+    public void Gear_is_left_alone_when_the_gear_sets_could_not_be_read()
+    {
+        var unread = Context() with { GearsetsKnown = false };
+        Assert.Equal(HardBlockReason.GearsetsUnknown, HardBlocks.Check(ScannedItem.Simple(Arm(0), 4, 1), Items[4], unread));
+        Assert.True(HardBlocks.IsImmovable(HardBlockReason.GearsetsUnknown));
+    }
+
+    [Fact]
+    public void Dresser_items_are_left_alone_until_the_plates_have_been_read()
+    {
+        var check = HardBlocks.Check(ScannedItem.Simple(SlotRef.Dresser(7), 6, 1), Items[6], Context(platesLoaded: false));
+        Assert.Equal(HardBlockReason.PlatesUnknown, check);
+        Assert.True(HardBlocks.IsImmovable(check));
+    }
+
+    [Fact]
+    public async Task A_history_that_cannot_be_read_is_never_written_over()
+    {
+        var storage = new UnreadableStorage();
+        var log = new JsonLinesRunLog(storage, "history.jsonl");
+        var entry = RunLogEntry.From(new QueuedAction(Inv(0), 1, 1, false, ActionKind.Discard, false, "Thing", 0, "rule"),
+            new RunIdentity(1, "Someone"), ActionOutcome.Done);
+
+        await Assert.ThrowsAsync<IOException>(() => log.AppendAsync(entry));
+        await Assert.ThrowsAsync<IOException>(() => log.AppendAsync(entry));   // a second try must not use an empty cache either
+
+        Assert.Equal(UnreadableStorage.Original, storage.Text);
+    }
+
+    private sealed class UnreadableStorage : ITextStorage
+    {
+        public const string Original = "{\"kept\":true}\n";
+        public string Text = Original;
+        public bool Exists(string path) => true;
+        public Task<string?> ReadAsync(string path) => throw new IOException("the file is locked");
+        public Task WriteAsync(string path, string contents) { Text = contents; return Task.CompletedTask; }
     }
 }

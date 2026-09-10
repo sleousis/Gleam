@@ -75,4 +75,24 @@ public class DiscardHelperImportTests
         var lists = DiscardHelperImport.Parse(json);
         Assert.True(lists.IsEmpty);
     }
+
+    [Fact]
+    public void Giving_it_our_lists_keeps_everything_else_in_its_file()
+    {
+        var merged = DiscardHelperImport.Merge(RealFile, new DiscardHelperLists([7u], [8u]));
+        var back = DiscardHelperImport.Parse(merged);
+
+        Assert.Equal([5u, 12u, 4551u, 7u], back.Discard);
+        Assert.Equal([2820u, 8u], back.Keep);
+        foreach (var kept in new[] { "\"$type\"", "RunAfterVenture", "IgnoreItemCountWhenAbove", "MaximumGearItemLevel", "ExcludedCharacters" })
+            Assert.Contains(kept, merged);
+    }
+
+    [Fact]
+    public void Something_either_side_keeps_is_never_added_as_junk()
+    {
+        var merged = DiscardHelperImport.Parse(DiscardHelperImport.Merge(RealFile, new DiscardHelperLists([2820u], [])));
+        Assert.DoesNotContain(2820u, merged.Discard);
+        Assert.Contains(2820u, merged.Keep);
+    }
 }

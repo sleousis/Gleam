@@ -34,16 +34,22 @@ public static class DesiredStateBuilder
         ItemContext ctx,
         Func<uint, ItemInfo?> infoLookup,
         Func<uint, bool, bool> onNeverTouch,
-        IReadOnlyCollection<ulong> knownRetainers)
+        IReadOnlyCollection<ulong> knownRetainers,
+        IReadOnlySet<ulong>? excludedRetainers = null,
+        Func<ContainerKind, bool>? mayOpen = null)
     {
         var state = new DesiredState();
-        var retainersInScope = plan.RetainersInScope.Count == 0 ? new HashSet<ulong>(knownRetainers) : plan.RetainersInScope;
+        var retainersInScope = new HashSet<ulong>(plan.RetainersInScope.Count == 0 ? knownRetainers : plan.RetainersInScope);
+        // A retainer the player told Gleam to leave alone is out of every layout, whatever the layout says.
+        if (excludedRetainers is not null) retainersInScope.ExceptWith(excludedRetainers);
         var rules = plan.Rules.Where(r => r.Enabled).ToList();
 
         var matched = new List<Match>();
         foreach (var item in items)
         {
             if (item.Slot.Kind == ContainerKind.GlamourDresser) continue;
+            // Places the player said Gleam may not open are left exactly as they are.
+            if (mayOpen is not null && !item.Slot.Kind.IsAlwaysLoaded() && !mayOpen(item.Slot.Kind)) continue;
             if (item.Slot.Kind == ContainerKind.Retainer && !retainersInScope.Contains(item.Slot.OwnerId)) continue;
             var info = infoLookup(item.ItemId);
             if (info is null) continue;
@@ -56,6 +62,28 @@ public static class DesiredStateBuilder
         foreach (var (item, info, rule, wanted) in matched)
         {
             var destination = kept.Contains(item.Slot) ? Destination.Bags : wanted;
+            var destKind = destination.IsAnyRetainer ? ContainerKind.Retainer : destination.Storage?.Kind;
+            var alreadyThere = destination.IsAnyRetainer
+                ? item.Slot.Kind == ContainerKind.Retainer
+                : destination.Storage is { } ds && ds.Kind == item.Slot.Kind && (ds.Kind != ContainerKind.Retainer || ds.OwnerId == item.Slot.OwnerId);
+
+            // Crystals keep to a pouch of their own. Moving one into the bags, or through them on the way to a
+            // retainer, asks the game for a bag slot a crystal can never take.
+            if (!alreadyThere && destination.Kind != DestinationKind.Stay && ItemTags.Of(info) == ItemTag.Crystals)
+            {
+                state.Pinned.Add(new PinnedItem(item, info, "Crystals keep to a pouch of their own, so Gleam leaves them where they are"));
+                continue;
+            }
+            if (!alreadyThere && mayOpen is not null && destKind is { } dk && !dk.IsAlwaysLoaded() && !mayOpen(dk))
+            {
+                state.Pinned.Add(new PinnedItem(item, info, $"Settings say Gleam may not open the {dk.DisplayName().ToLowerInvariant()}"));
+                continue;
+            }
+            if (!alreadyThere && destination.Kind == DestinationKind.Retainer && destination.RetainerId != 0 && excludedRetainers?.Contains(destination.RetainerId) == true)
+            {
+                state.Pinned.Add(new PinnedItem(item, info, "You told Gleam to leave that retainer alone"));
+                continue;
+            }
 
             if (destination.Kind == DestinationKind.Retainer && destination.RetainerId != 0 && !retainersInScope.Contains(destination.RetainerId))
             {

@@ -78,6 +78,9 @@ public sealed class RunReport
     /// <summary>Left untouched because the run stopped first. Not carried over: the next review shows them again.</summary>
     public int NotReached => Results.Count(r => r.Outcome == ActionOutcome.Cancelled);
 
+    /// <summary>Actions that happened but could not be written to the history file.</summary>
+    public int HistoryFailures { get; set; }
+
     public Dictionary<ContainerKind, int> PendingByContainer =>
         Pending.GroupBy(p => p.Kind).ToDictionary(g => g.Key, g => g.Count());
 
@@ -91,6 +94,7 @@ public sealed class RunReport
         if (Moved.Count - home > 0) parts.Add($"{Moved.Count - home} partly listed");
         if (Pending.Count > 0) parts.Add($"{Pending.Count} waiting");
         if (NotReached > 0) parts.Add($"{NotReached} left untouched");
+        if (HistoryFailures > 0) parts.Add($"the history could not record {HistoryFailures}");
         return string.Join(", ", parts);
     }
 }

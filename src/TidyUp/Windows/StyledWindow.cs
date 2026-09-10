@@ -38,7 +38,7 @@ public abstract class StyledWindow : Window
         style = Ui.PushWindowStyle();
         // Windows fade up over a quarter second instead of popping.
         var t = (float)Math.Clamp((ImGui.GetTime() - openedAt) / 0.24, 0, 1);
-        if (t < 1f) fade = ImRaii.PushStyle(ImGuiStyleVar.Alpha, 0.15f + 0.85f * Ui.EaseOut(t));
+        if (t < 1f && !Ui.Reduced) fade = ImRaii.PushStyle(ImGuiStyleVar.Alpha, 0.15f + 0.85f * Ui.EaseOut(t));
         base.PreDraw();
     }
 

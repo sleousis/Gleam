@@ -78,6 +78,34 @@ public sealed class OrganizerCoordinator : IDisposable
 
     public event Action? Changed;
 
+    /// <summary>Bumped by every change to a layout, so a preview built before the change is known to be stale.</summary>
+    public int LayoutVersion { get; private set; }
+
+    public void LayoutChanged()
+    {
+        LayoutVersion++;
+        Changed?.Invoke();
+    }
+
+    private (Guid Plan, int Version)? builtFor;
+
+    /// <summary>
+    /// The preview on screen was built from the layout as it is now. A preview that was skipped or failed
+    /// used to stay on screen, runnable, after the rules it came from had changed.
+    /// </summary>
+    public bool IsCurrentFresh => Current is not null && config.Organizer.Active is { } a && builtFor == (a.Id, LayoutVersion);
+
+    /// <summary>This character's retainers: the ones a layout can scope to or send things to.</summary>
+    public IReadOnlyDictionary<ulong, string> CurrentRetainers
+    {
+        get
+        {
+            var mine = new Dictionary<ulong, string>(Game.RetainerDirectory.Current());
+            if (Snapshot is not null) foreach (var (id, name) in Snapshot.RetainerNames) mine[id] = name;
+            return mine;
+        }
+    }
+
     /// <summary>
     /// Every retainer that can be named, not only the ones the last scan happened to see. Before this, a
     /// layout drawn at login showed raw ids because no snapshot had been taken yet.
@@ -96,12 +124,13 @@ public sealed class OrganizerCoordinator : IDisposable
 
     public void Dispose()
     {
+        // Cancelled, not disposed: work still unwinding reads the token, and a disposed one throws.
         runCts?.Cancel();
-        runCts?.Dispose();
     }
 
     public void OnLogout()
     {
+        runCts?.Cancel();
         Current = null;
         Snapshot = null;
         PendingMoves.Clear();
@@ -122,21 +151,30 @@ public sealed class OrganizerCoordinator : IDisposable
             if (plan is null) { Status = "No layout yet"; return; }
             Plan = plan;
 
-            var snapshot = await snapshots.CaptureAsync(cleaner.EffectiveProfile).ConfigureAwait(false);
+            var profile = cleaner.EffectiveProfile;
+            // "It only ever opens the places ticked here" holds for organizing too. The bags always count.
+            bool MayOpen(ContainerKind k) => k == ContainerKind.Inventory || profile.IsContainerEnabled(k);
+            var layoutVersion = LayoutVersion;
+            var snapshot = await snapshots.CaptureAsync(profile).ConfigureAwait(false);
             Snapshot = snapshot;
             var cid = snapshot.Context.CharacterId;
 
             var desired = DesiredStateBuilder.Build(
                 snapshot.Items, plan, snapshot.Context, db.Get,
                 (id, hq) => config.ProtectList.Contains(id, hq, cid),
-                snapshot.RetainerNames.Keys.ToList());
+                snapshot.RetainerNames.Keys.ToList(),
+                profile.ExcludedRetainerIds, MayOpen);
 
-            var storages = new List<StorageId> { new(ContainerKind.Inventory), new(ContainerKind.Armoury), new(ContainerKind.Saddlebag) };
-            storages.AddRange(snapshot.RetainerNames.Keys.Select(id => new StorageId(ContainerKind.Retainer, id)));
+            // Only places the player lets Gleam open, and never a retainer they told it to leave alone.
+            var storages = new List<StorageId> { new(ContainerKind.Inventory), new(ContainerKind.Armoury) };
+            if (MayOpen(ContainerKind.Saddlebag)) storages.Add(new(ContainerKind.Saddlebag));
+            if (MayOpen(ContainerKind.Retainer))
+                storages.AddRange(snapshot.RetainerNames.Keys.Where(id => !profile.ExcludedRetainerIds.Contains(id)).Select(id => new StorageId(ContainerKind.Retainer, id)));
             var liveSizes = await framework.RunOnFrameworkThread(mover.LiveSizes).ConfigureAwait(false);
             var spaces = CapacityModel.Build(snapshot.Items, storages, db.Get, liveSizes);
 
             Current = MoveSolver.Solve(desired, spaces, plan);
+            builtFor = (plan.Id, layoutVersion);
 
             // Waiting moves belong to the plan they came from. Once the layout, a rule or the storage has
             // changed, only the ones this plan still wants are kept: the rest would carry out a layout the
@@ -195,7 +233,8 @@ public sealed class OrganizerCoordinator : IDisposable
             var identity = new RunIdentity(player.ContentId, player.CharacterName);
             var report = await executor.ExecuteAsync(ops, identity, runCts.Token, progress).ConfigureAwait(false);
             LastReport = report;
-            if (report.Done > 0 && !config.HasOrganizedOnce) { config.HasOrganizedOnce = true; config.Save(PluginServices.PluginInterface); }
+            // Saved on the game's thread, where the settings page also draws.
+            if (report.Done > 0 && !config.HasOrganizedOnce) { config.HasOrganizedOnce = true; _ = framework.RunOnFrameworkThread(() => config.Save(PluginServices.PluginInterface)); }
             PendingMoves.RemoveAll(ops.Contains);
             // Never twice, and never for whoever logs in next: matching is by item and quantity.
             if (player.ContentId == runFor)

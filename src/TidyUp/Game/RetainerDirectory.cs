@@ -32,6 +32,22 @@ public static class RetainerDirectory
         }
     }
 
+    /// <summary>The retainers of the character you are on, as the game lists them now. Empty until it has.</summary>
+    public static IReadOnlyDictionary<ulong, string> Current()
+    {
+        lock (gate) return new Dictionary<ulong, string>(live);
+    }
+
+    /// <summary>At logout, so the next character never inherits the last one's retainers.</summary>
+    public static void ForgetLive()
+    {
+        lock (gate)
+        {
+            live.Clear();
+            lastLook = double.NegativeInfinity;
+        }
+    }
+
     /// <summary>One retainer's name, or a plain description when Gleam has never seen it.</summary>
     public static string Name(Configuration config, ulong retainerId) =>
         Names(config).TryGetValue(retainerId, out var name) ? name : "a retainer Gleam has not met";

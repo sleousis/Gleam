@@ -142,7 +142,8 @@ public sealed unsafe class GameInventoryScanner
         }
         foreach (var page in GameContainerIds.InventoryPages) Read(new StorageId(ContainerKind.Inventory), page);
         foreach (var page in GameContainerIds.ArmouryPages) Read(new StorageId(ContainerKind.Armoury), page);
-        Read(new StorageId(ContainerKind.Armoury), GameContainerIds.ArmorySoulCrystal);
+        // The soul crystal page is not counted: nothing Gleam moves can land there, and adding it made the
+        // armoury look emptier than it is.
         if (IsSaddlebagLoaded())
             foreach (var page in GameContainerIds.SaddlebagPages) Read(new StorageId(ContainerKind.Saddlebag), page);
         var (retainer, _) = ActiveRetainer();

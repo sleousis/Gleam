@@ -46,15 +46,24 @@ public sealed class DtrEntry : IDisposable
         entry = null;
     }
 
+    /// <summary>
+    /// A logout or a character switch. The next character's bags load a moment after login and the first
+    /// reading can be nonsense, so the fullness nudge waits until it has seen the bags below the line.
+    /// </summary>
+    public void Reset()
+    {
+        haveShown = false;
+        lastText = string.Empty;
+        nudgedThisCrossing = true;
+    }
+
     private void OnUpdate(IFramework f)
     {
-        if (!Enabled)
-        {
-            if (entry is not null) { entry.Shown = false; }
-            return;
-        }
+        // Hiding the entry no longer silences the fullness nudge: they are two settings on the page, so they
+        // are two switches here. Measuring carries on; only the drawing stops.
+        if (!Enabled && entry is not null) entry.Shown = false;
         if ((DateTime.UtcNow - lastRefresh).TotalSeconds >= 2) Measure();
-        DrawEntry(f);
+        if (Enabled) DrawEntry(f);
     }
 
     /// <summary>Reads the bags and updates what the entry is counting towards.</summary>
@@ -75,7 +84,7 @@ public sealed class DtrEntry : IDisposable
             else openWindow();
         };
         // Nothing loaded yet means nothing worth saying.
-        entry.Shown = total > 0;
+        entry.Shown = Enabled && total > 0;
         if (total == 0) return;
 
         targetFree = free;
@@ -165,7 +174,13 @@ public sealed class DutyNudge : IDisposable
         duty.DutyCompleted += OnCompleted;
     }
 
-    public void Dispose() => duty.DutyCompleted -= OnCompleted;
+    private bool disposed;
+
+    public void Dispose()
+    {
+        disposed = true;
+        duty.DutyCompleted -= OnCompleted;
+    }
 
     private void OnCompleted(IDutyStateEventArgs args)
     {
@@ -173,6 +188,8 @@ public sealed class DutyNudge : IDisposable
         // Loot lands a few seconds after the completion flag; give it time.
         framework.RunOnTick(async () =>
         {
+            // Queued six seconds ago; the plugin may have been unloaded since.
+            if (disposed) return;
             try
             {
                 var count = await scanAndCount().ConfigureAwait(false);

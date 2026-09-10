@@ -26,6 +26,9 @@ public sealed class MoveRunReport
     /// <summary>Left where they were because the run stopped first. Nothing about them is carried over.</summary>
     public int NotReached => Results.Count(r => r.Status == StepStatus.Cancelled);
 
+    /// <summary>Moves that happened but could not be written to the move history.</summary>
+    public int HistoryFailures { get; set; }
+
     public IEnumerable<(string Reason, int Count)> PendingByReason() =>
         Pending.GroupBy(p => PendingReasons.TryGetValue(p, out var r) ? r : string.Empty).Select(g => (g.Key, g.Count()));
 
@@ -36,6 +39,7 @@ public sealed class MoveRunReport
         if (Failed > 0) parts.Add($"{Failed} failed");
         if (Pending.Count > 0) parts.Add($"{Pending.Count} waiting");
         if (NotReached > 0) parts.Add($"{NotReached} left where they were");
+        if (HistoryFailures > 0) parts.Add($"the history could not record {HistoryFailures}");
         return string.Join(", ", parts);
     }
 }
@@ -74,6 +78,7 @@ public sealed class MoveExecutor
         var report = new MoveRunReport();
         var touched = new HashSet<SlotRef>();
         var reserved = new HashSet<SlotRef>();
+        var finished = new HashSet<MoveOp>();
         MoveResult? last = null;
 
         // Relay rounds run one at a time: a later round's moves wait until nothing from an earlier round is left.
@@ -84,7 +89,13 @@ public sealed class MoveExecutor
         {
             BlockedReason = op =>
             {
-                if (op.Pass > currentRound) return "an earlier round has to finish first";
+                if (op.Pass > currentRound)
+                {
+                    // A later round starts once everything from the earlier rounds of this run is done. The
+                    // round used to be fixed for the whole run, so a manual run never got past the first one.
+                    if (ops.Where(o => o.Pass < op.Pass).All(finished.Contains)) currentRound = op.Pass;
+                    else return "an earlier round has to finish first";
+                }
                 if (!game.IsOpen(op.From)) return op.From.Kind.RequirementText();
                 if (!game.IsOpen(op.To)) return op.To.Kind.RequirementText();
                 return null;
@@ -95,9 +106,15 @@ public sealed class MoveExecutor
                 last = result;
                 if (result.Status == StepStatus.Done)
                 {
-                    await log.AppendAsync(new MoveLogEntry(DateTimeOffset.UtcNow, identity.CharacterId, identity.CharacterName,
+                    finished.Add(op);
+                    // The move happened whether or not the history file could be written.
+                    try
+                    {
+                        await log.AppendAsync(new MoveLogEntry(DateTimeOffset.UtcNow, identity.CharacterId, identity.CharacterName,
                         op.Item.ItemId, op.Info.Name, op.Item.Quantity, op.Item.IsHq, op.From.Kind, op.From.OwnerId, op.To.Kind, op.To.OwnerId,
                         op.Leg.ToString(), string.Empty)).ConfigureAwait(false);
+                    }
+                    catch (Exception) { report.HistoryFailures++; }
                 }
                 return new StepOutcome(result.Status, result.Message);
             },
