@@ -125,7 +125,7 @@ internal static class E2e
     }
 
     public static Task<MoveRunReport> Organize(FakeWorld world, IReadOnlyList<MoveOp> moves, MemoryMoveLog? log = null, CancellationToken ct = default) =>
-        new MoveExecutor(world, log ?? new MemoryMoveLog(), new NoDelay()).ExecuteAsync(moves, Who, ct);
+        new MoveExecutor(world, log ?? new MemoryMoveLog(), new NoDelay(), relays: world.Relays).ExecuteAsync(moves, Who, ct);
 
     /// <summary>
     /// Plays the hands-free organizer: keeps opening whichever storage the remaining moves need and running

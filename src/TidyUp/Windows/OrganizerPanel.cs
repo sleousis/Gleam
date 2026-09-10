@@ -1022,13 +1022,23 @@ public sealed class OrganizerPanel
             if (nWaiting > 0) parts.Add($"{nWaiting} from earlier still waiting");
         }
         ImGui.AlignTextToFramePadding();
-        if (Simple) Ui.TextSwap("orgFoot", Rethinking ? "Working out what will move…" : r is null ? "" : nMoves == 0 ? "Nothing needs moving right now." : $"{nMoves} item{(nMoves == 1 ? "" : "s")} will move.", Ui.Muted * new Vector4(1, 1, 1, 0.8f));
+        var waitingNote = nWaiting > 0 ? $" {nWaiting} from earlier {(nWaiting == 1 ? "is" : "are")} still waiting." : string.Empty;
+        if (Simple) Ui.TextSwap("orgFoot", Rethinking ? "Working out what will move…" : r is null ? waitingNote.Trim() : (nMoves == 0 ? "Nothing needs moving right now." : $"{nMoves} item{(nMoves == 1 ? "" : "s")} will move.") + waitingNote, Ui.Muted * new Vector4(1, 1, 1, 0.8f));
         else Ui.TextSwap("orgFoot", parts.Count == 0 ? (string.IsNullOrEmpty(organizer.Status) ? "Refresh to see what would move." : organizer.Status) : string.Join("  ·  ", parts), Ui.Muted * new Vector4(1, 1, 1, 0.8f));
+        if (organizer.PendingMoves.Count > 0 && !organizer.IsRunning)
+        {
+            ImGui.SameLine();
+            if (Ui.LinkButton("Forget them")) organizer.ForgetPending();
+            Ui.Tooltip("Moves you approved earlier for a storage that was closed. They run the next time that storage opens, unless you forget them here.");
+        }
 
-        var needsTravel = r is not null && r.StoragesToOpen.Any();
-        var blocked = needsTravel ? Pilot?.MissingDependency() : null;
-        var canRun = r is not null && r.Report.Feasible && r.Moves.Count > 0 && !Rethinking && blocked is null;
+        // A storage that is already open needs no trip, and a run by hand never travels at all. Both used to
+        // count as travel, so an open saddlebag without vnavmesh still greyed the button out.
+        var needsTravel = r is not null && r.StoragesToOpen.Any(s => !organizer.IsOpen(s));
         var handsFree = Pilot is not null && config.Automation.Enabled && needsTravel;
+        var blocked = handsFree ? Pilot?.MissingDependency() : null;
+        var feasible = r is not null && r.Report.Feasible && r.Moves.Count > 0 && !Rethinking;
+        var canRun = feasible && blocked is null;
         if (blocked is not null)
         {
             ImGui.SameLine();
@@ -1037,11 +1047,12 @@ public sealed class OrganizerPanel
         var style = ImGui.GetStyle();
         // The button narrows before the window does, so a small window never pushes it off the edge.
         var buttonWidth = Math.Clamp((ImGui.GetWindowWidth() - style.WindowPadding.X * 2) * 0.42f, 150 * Ui.Scale, 220 * Ui.Scale);
-        var hereW = handsFree && !Simple ? ImGui.CalcTextSize("Organize here only", false, 0).X + style.FramePadding.X * 2 + style.ItemSpacing.X : 0;
+        var offerHere = handsFree && (!Simple || blocked is not null);
+        var hereW = offerHere ? ImGui.CalcTextSize("Organize here only", false, 0).X + style.FramePadding.X * 2 + style.ItemSpacing.X : 0;
         Ui.RightAlignOrWrap(hereW + buttonWidth, 160 * Ui.Scale);
-        if (handsFree && !Simple)
+        if (offerHere)
         {
-            using (ImRaii.Disabled(!canRun))
+            using (ImRaii.Disabled(!feasible))
             {
                 if (Ui.LinkButton("Organize here only")) _ = organizer.RunAsync();
             }

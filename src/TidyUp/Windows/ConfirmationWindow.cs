@@ -104,6 +104,8 @@ public sealed class ConfirmationWindow : StyledWindow
         rowFlash[row.Key] = ImGui.GetTime();
     }
     private bool capArmed;
+    /// <summary>The exact run the cap warning described; ticking anything else disarms it.</summary>
+    private (int Items, long Gil) capArmedAt;
     private int cursor = -1;
     private readonly List<PlanRow> visibleRows = new();
     private readonly Dictionary<string, bool> sectionOpen = new();
@@ -280,13 +282,15 @@ public sealed class ConfirmationWindow : StyledWindow
         var subtitle = coordinator.FocusContainer is { } fc
             ? $"Only the {FocusName(plan, fc)} · {shownChecked} of {shownTotal} selected"
             : $"{shownTotal} item{(shownTotal == 1 ? "" : "s")} in {containers} container{(containers == 1 ? "" : "s")} · {shownChecked} selected";
+        // Every item is listed so it can be picked by hand, but only what a rule suggested is junk.
+        var suggestedTotal = plan.AllRows.Count(r => r.IsExecutable && r.IsSuggested);
         if (Simple)
         {
             var summary = plan.Summarize();
             var freed = (int)Ui.Count("freed", summary.SlotsFreedByContainer.Values.Sum());
             var worth = Ui.Count("worth", summary.GilRecovered + summary.MarketGil);
-            var found = (int)Ui.Count("found", total);
-            var sentence = total == 0 ? "Nothing looks like junk right now."
+            var found = (int)Ui.Count("found", suggestedTotal);
+            var sentence = suggestedTotal == 0 ? "Nothing looks like junk right now."
                 : $"Gleam found {found} item{(found == 1 ? "" : "s")} of junk." + (freed > 0 ? $" Cleaning them frees {freed} slot{(freed == 1 ? "" : "s")}" : string.Empty)
                   + (worth > 0 ? $"{(freed > 0 ? " and recovers" : " Cleaning them recovers")} about {Ui.Gil(worth)}." : freed > 0 ? "." : string.Empty);
             var offerOrganize = Organizer is not null && config.UseOrganize;
@@ -373,11 +377,12 @@ public sealed class ConfirmationWindow : StyledWindow
         Ui.Tooltip("Looks through your containers again.");
         ImGui.SameLine();
         Ui.RightAlign(90 * Ui.Scale);
-        var executable = Filter(plan.AllRows).Where(r => r.IsExecutable).ToList();
+        // Only what Gleam suggested. The items listed under "More you could" are the player's to pick one by one.
+        var executable = Filter(plan.AllRows).Where(r => r.IsExecutable && r.IsSuggested).ToList();
         var allChecked = executable.Count > 0 && executable.All(r => r.Checked);
         if (Ui.LinkButton(allChecked ? "Clear" : "Select all"))
             foreach (var r in executable) SetChecked(r, !allChecked);
-        Ui.Tooltip(allChecked ? "Unticks every row." : "Ticks every row, including the ones Gleam was unsure about.");
+        Ui.Tooltip(allChecked ? "Unticks everything Gleam suggested." : "Ticks everything Gleam suggested, including the ones it was unsure about. The lists under More are left as they are.");
     }
 
     private void DrawContainerChips(RunPlan plan)
@@ -648,19 +653,31 @@ public sealed class ConfirmationWindow : StyledWindow
         var handsFree = Pilot is not null && config.Automation.Enabled;
         var reachable = plan.Sections.Where(s => handsFree || s.IsAvailableNow).SelectMany(s => s.Rows);
         if (coordinator.FocusContainer is { } f) reachable = plan.Sections.Where(s => s.Kind == f).SelectMany(s => s.Rows);
-        var groups = Filter(reachable)
-            .GroupBy(r => r.ChosenAction)
-            .OrderBy(g => g.Key == ActionKind.Discard ? 1 : 0)
-            .ThenBy(g => g.Key.Label(), StringComparer.OrdinalIgnoreCase)
-            .ToList();
-        foreach (var group in groups) DrawOutcomeGroup(group.Key, group.ToList());
-        return groups.Count > 0;
+        var shown = Filter(reachable).ToList();
+
+        // What Gleam suggests comes first, one card per outcome. Everything else it could touch follows in
+        // cards of its own with no tick for the whole group: listing an item is not the same as calling it
+        // junk, and one tick used to select the whole inventory.
+        var drew = false;
+        foreach (var suggested in new[] { true, false })
+        {
+            var groups = shown.Where(r => r.IsSuggested == suggested)
+                .GroupBy(r => r.ChosenAction)
+                .OrderBy(g => g.Key == ActionKind.Discard ? 1 : 0)
+                .ThenBy(g => g.Key.Label(), StringComparer.OrdinalIgnoreCase);
+            foreach (var group in groups)
+            {
+                DrawOutcomeGroup(group.Key, group.ToList(), suggested);
+                drew = true;
+            }
+        }
+        return drew;
     }
 
     /// <summary>One outcome card: a tick for the whole group, what it does, what it is worth, and the items inside.</summary>
-    private void DrawOutcomeGroup(ActionKind action, List<PlanRow> rows)
+    private void DrawOutcomeGroup(ActionKind action, List<PlanRow> rows, bool suggested = true)
     {
-        var key = $"grp:{action}";
+        var key = suggested ? $"grp:{action}" : $"more:{action}";
         if (!sectionOpen.TryGetValue(key, out var open)) open = false;
         var checkedHere = rows.Count(r => r.Checked);
         var value = rows.Where(r => r.Checked).Sum(r => r.Proposal.ValueGil);
@@ -673,25 +690,30 @@ public sealed class ConfirmationWindow : StyledWindow
             ActionKind.Desynth => "Break down",
             _ => action.Label(),
         };
+        if (!suggested) word = $"More you could {word.ToLowerInvariant()}";
 
         using (Ui.Card(key))
         {
             // A tick for the whole group is the only control most players will ever need.
-            var all = checkedHere == rows.Count;
-            var some = checkedHere > 0 && !all;
-            var box = all;
-            using (ImRaii.PushStyle(ImGuiStyleVar.Alpha, ImGui.GetStyle().Alpha * (some ? 0.7f : 1f)))
+            // Only a card of suggestions gets it: the "more you could" cards are picked one item at a time.
+            if (suggested)
             {
-                if (Ui.Check($"##all{key}", ref box))
-                    foreach (var r in rows) SetChecked(r, box);
+                var all = checkedHere == rows.Count;
+                var some = checkedHere > 0 && !all;
+                var box = all;
+                using (ImRaii.PushStyle(ImGuiStyleVar.Alpha, ImGui.GetStyle().Alpha * (some ? 0.7f : 1f)))
+                {
+                    if (Ui.Check($"##all{key}", ref box))
+                        foreach (var r in rows) SetChecked(r, box);
+                }
+                ImGui.SameLine();
             }
-            ImGui.SameLine();
             ImGui.AlignTextToFramePadding();
             Ui.ActionLabel(action, word);
             ImGui.SameLine();
-            var shownRows = (int)Ui.Count($"grpn:{action}", rows.Count);
+            var shownRows = (int)Ui.Count($"grpn:{key}", rows.Count);
             Ui.Text($"{shownRows} item{(shownRows == 1 ? "" : "s")}");
-            var shown = Ui.Count($"grpval:{action}", value);
+            var shown = Ui.Count($"grpval:{key}", value);
             // The worth is the first thing to go when the card is narrow; the link and the count are not.
             var linkLabel = open ? "Hide the list" : "See the list";
             var linkW = ImGui.CalcTextSize(linkLabel, false, 0).X + ImGui.GetStyle().FramePadding.X * 2 + 8 * Ui.Scale;
@@ -706,6 +728,11 @@ public sealed class ConfirmationWindow : StyledWindow
 
             if (!open) return;
             Ui.Gap(0.3f);
+            if (!suggested)
+            {
+                Ui.HintWrapped("Gleam did not pick these. Nothing here is ticked for you; tick any you want gone.");
+                Ui.Gap(0.2f);
+            }
             using var fade = ImRaii.PushStyle(ImGuiStyleVar.Alpha, ImGui.GetStyle().Alpha * Ui.Appear($"open:{key}", 0.18f));
             using var table = ImRaii.Table($"##t{key}", 4, ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingFixedFit | ImGuiTableFlags.NoSavedSettings | ImGuiTableFlags.PadOuterX);
             if (!table) return;
@@ -1176,9 +1203,15 @@ public sealed class ConfirmationWindow : StyledWindow
 
         ImGui.AlignTextToFramePadding();
         Ui.TextSwap("footer", parts.Count == 0 ? "Tick rows to see what this run would do." : string.Join("  ·  ", parts), Ui.Muted * new Vector4(1, 1, 1, 0.8f));
+        if (coordinator.PendingActions.Count > 0 && !coordinator.IsRunning)
+        {
+            ImGui.SameLine();
+            if (Ui.LinkButton("Forget them")) coordinator.ForgetPending();
+            Ui.Tooltip("Items you accepted earlier for a container that was closed. They go with your next clean unless you forget them here, and forgotten items simply come back to the list.");
+        }
 
         var (handsFree, needsTravel) = RunShape(plan);
-        var blocked = needsTravel ? Pilot?.MissingDependency() : null;
+        var blocked = RunBlocked(plan);
         if (blocked is not null)
         {
             Ui.Gap(0.2f);
@@ -1186,20 +1219,26 @@ public sealed class ConfirmationWindow : StyledWindow
         }
         var shownCap = (int)Ui.Count("capItems", cap.Items);
         var items = $"{shownCap} item{(shownCap == 1 ? "" : "s")}";
-        var verb = cap.Exceeded && !capArmed
+        // A big run asks twice. The first press arms it and the warning appears; the second runs it. Ticking
+        // anything else after arming disarms it, so the second press always confirms the run you were warned
+        // about. It used to warn before the first press, go quiet once armed, and stay armed for any list.
+        var armed = CapArmedFor(cap);
+        var verb = cap.Exceeded && armed
             ? $"Yes, clean all {items}"
             : handsFree && needsTravel && !Simple ? $"Clean {items} everywhere" : $"Clean {items}";
-        if (cap.Exceeded && !capArmed && Simple)
+        if (cap.Exceeded && armed)
         {
-            // A big run says so in words, on screen, instead of relying on a tooltip nobody hovers.
             Ui.Gap(0.2f);
-            Ui.TextColored(Ui.Warn, $"That is a lot at once. {cap.Items} items, worth about {Ui.Gil(cap.GilAtRisk)}. Press again if you are sure.");
+            Ui.TextColored(Ui.Warn, $"That is a lot at once: {cap.Items} items, worth about {Ui.Gil(cap.GilAtRisk)}. Press again to go ahead.");
         }
         var style = ImGui.GetStyle();
         // The button narrows before the window does, so a small window never pushes it off the edge.
         var buttonWidth = Math.Clamp((ImGui.GetWindowWidth() - style.WindowPadding.X * 2) * 0.42f, 150 * Ui.Scale, 240 * Ui.Scale);
         var sortW = Simple ? 0f : ImGui.CalcTextSize(SortAfterLabel, false, 0).X + ImGui.GetFrameHeight() + style.ItemInnerSpacing.X + style.ItemSpacing.X * 2;
-        var hereW = handsFree && needsTravel && !Simple ? ImGui.CalcTextSize("Clean here only", false, 0).X + style.FramePadding.X * 2 + style.ItemSpacing.X : 0;
+        // "Clean here only" is the way out whenever hands-free would travel: always in advanced mode, and in
+        // simple mode whenever hands-free cannot start, so nobody is left with only a greyed-out button.
+        var offerHere = handsFree && needsTravel && (!Simple || blocked is not null);
+        var hereW = offerHere ? ImGui.CalcTextSize("Clean here only", false, 0).X + style.FramePadding.X * 2 + style.ItemSpacing.X : 0;
         Ui.RightAlignOrWrap(sortW + hereW + buttonWidth, 160 * Ui.Scale);
         if (!Simple)
         {
@@ -1207,23 +1246,29 @@ public sealed class ConfirmationWindow : StyledWindow
             if (Ui.Check(SortAfterLabel, ref sortAfter)) { config.SortAfterRun = sortAfter; config.Save(PluginServices.PluginInterface); }
             Ui.Tooltip(SortAfterHint);
         }
-        if (handsFree && needsTravel && !Simple)
+        if (offerHere)
         {
             ImGui.SameLine();
             using (ImRaii.Disabled(cap.Items == 0))
             {
-                if (Ui.LinkButton("Clean here only")) { capArmed = false; _ = coordinator.AcceptAsync(); }
+                if (Ui.LinkButton("Clean here only")) Accept(plan, hereOnly: true);
             }
             Ui.Tooltip("Cleans what is reachable right now. The rest waits until you open its container.");
         }
         ImGui.SameLine();
         using (ImRaii.Disabled(cap.Items == 0 || blocked is not null))
         {
-            if (Ui.PrimaryButton(verb, buttonWidth, danger: cap.Exceeded && !capArmed)) Accept(plan);
+            if (Ui.PrimaryButton(verb, buttonWidth, danger: cap.Exceeded && armed)) Accept(plan);
         }
         var discards = plan.AllRows.Count(r => r.Checked && r.IsExecutable && r.ChosenAction == ActionKind.Discard);
-        var irreversible = discards > 0 ? $"{discards} will be discarded for good. Sold and listed items can be bought back." : string.Empty;
-        if (cap.Exceeded && !capArmed) Ui.Tooltip($"{cap.Explanation} Click again to go ahead.");
+        var sales = plan.AllRows.Count(r => r.Checked && r.IsExecutable && r.ChosenAction is ActionKind.VendorSell or ActionKind.MarketList);
+        // It used to promise that sold items can be bought back. A hands-free run answers the retainer's
+        // "no buyback once recalled" prompt and teleports away from merchants, so that was not true.
+        var finality = new List<string>();
+        if (discards > 0) finality.Add($"{discards} will be discarded for good.");
+        if (sales > 0) finality.Add("Treat sales as final too.");
+        var irreversible = string.Join(" ", finality);
+        if (cap.Exceeded && !armed) Ui.Tooltip($"A big run: the first press asks you to confirm. {irreversible}".TrimEnd());
         else if (handsFree && needsTravel) Ui.Tooltip(string.IsNullOrEmpty(irreversible) ? HandsFreeCleanHint : $"{HandsFreeCleanHint} {irreversible}");
         else Ui.Tooltip(irreversible);
     }
@@ -1345,17 +1390,38 @@ public sealed class ConfirmationWindow : StyledWindow
         return (handsFree, needsTravel);
     }
 
-    /// <summary>The one way a run starts, whether from the button, Enter or the gamepad: honours the cap and hands-free.</summary>
-    private void Accept(RunPlan plan)
+    /// <summary>
+    /// The one way a run starts, whether from the button, "Clean here only", Enter or the gamepad. Enter and
+    /// the gamepad never pass through the button, so every reason the button might be disabled is checked
+    /// again here; a run that the screen says cannot start must not start from the keyboard either.
+    /// </summary>
+    private void Accept(RunPlan plan, bool hereOnly = false)
     {
         if (coordinator.IsRunning) return;
         var rowsForCap = coordinator.FocusContainer is { } f ? plan.Sections.Where(s => s.Kind == f).SelectMany(s => s.Rows) : plan.AllRows;
         var cap = SoftCap.Evaluate(rowsForCap, coordinator.EffectiveProfile.Thresholds);
         if (cap.Items == 0) return;
-        if (cap.Exceeded && !capArmed) { capArmed = true; return; }
+        if (!hereOnly && RunBlocked(plan) is not null) return;
+        if (cap.Exceeded && !CapArmedFor(cap)) { capArmed = true; capArmedAt = (cap.Items, cap.GilAtRisk); return; }
         capArmed = false;
         var (handsFree, needsTravel) = RunShape(plan);
-        if (handsFree && needsTravel) _ = Pilot!.RunAsync(); else _ = coordinator.AcceptAsync();
+        if (handsFree && needsTravel && !hereOnly) _ = Pilot!.RunAsync(); else _ = coordinator.AcceptAsync();
+    }
+
+    /// <summary>Armed only for the exact run the warning described; any change to what is ticked disarms it.</summary>
+    private bool CapArmedFor(SoftCapResult cap)
+    {
+        if (capArmed && capArmedAt != (cap.Items, cap.GilAtRisk)) capArmed = false;
+        return capArmed;
+    }
+
+    /// <summary>Why this run cannot start, or null. Shared by the button and by <see cref="Accept"/>.</summary>
+    private string? RunBlocked(RunPlan plan)
+    {
+        // A run by hand never travels, so nothing can block it. Only a hands-free run that has to walk
+        // somewhere needs vnavmesh; Lifestream is checked leg by leg once the run is under way.
+        var (handsFree, needsTravel) = RunShape(plan);
+        return handsFree && needsTravel ? Pilot?.MissingDependency() : null;
     }
 
     private string FocusName(RunPlan plan, ContainerKind kind)

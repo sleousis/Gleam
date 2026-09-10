@@ -406,9 +406,11 @@ public class ExecutionEngineTests
         Assert.True(report.Aborted);
         Assert.Equal(1, report.Done);
         Assert.Equal(3, report.Failed);
-        Assert.Equal(2, report.Pending.Count);
+        // Nothing the run never reached is carried over to resume by itself when a container next opens.
+        Assert.Empty(report.Pending);
+        Assert.Equal(2, report.NotReached);
         Assert.Contains("3 items failed in a row", report.AbortReason);
-        Assert.All(report.Pending, p => Assert.Contains("earlier failure", report.PendingReasons[p]));
+        Assert.All(report.Results.Where(r => r.Outcome == ActionOutcome.Cancelled), r => Assert.Contains("earlier failure", r.Message));
     }
 
     [Fact]
@@ -437,7 +439,9 @@ public class ExecutionEngineTests
             .ExecuteAsync(Enumerable.Range(0, 3).Select(i => Q(Inv(i), 1, 1)).ToList(), Who, cts.Token);
 
         Assert.Equal(1, report.Done);
-        Assert.Equal(2, report.Pending.Count);
+        // Stop means stop: the two it never reached are not queued to run later on their own.
+        Assert.Empty(report.Pending);
+        Assert.Equal(2, report.NotReached);
     }
 
     [Fact]

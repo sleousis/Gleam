@@ -37,9 +37,10 @@ public interface IMoveActions
     /// Where an incoming stack of <paramref name="quantity"/> should go: a partial stack of the same item and
     /// quality with room for all of it first (the game merges), else the first empty slot, preferring
     /// <paramref name="preferredPage"/> when it is non-zero. Null when nothing there can take it.
-    /// Slots in <paramref name="reserved"/> are already promised to earlier moves this run.
+    /// Slots in <paramref name="reserved"/> are already promised to earlier moves this run. With
+    /// <paramref name="emptyOnly"/> it never merges: a relay's first leg needs a slot of its own.
     /// </summary>
-    SlotRef? FindLanding(StorageId storage, uint itemId, bool isHq, int quantity, uint preferredPage, IReadOnlySet<SlotRef> reserved);
+    SlotRef? FindLanding(StorageId storage, uint itemId, bool isHq, int quantity, uint preferredPage, IReadOnlySet<SlotRef> reserved, bool emptyOnly = false);
 
     /// <summary>Slot counts of the pages the game currently has loaded.</summary>
     IReadOnlyDictionary<(StorageId Storage, uint Page), int> LiveSizes();

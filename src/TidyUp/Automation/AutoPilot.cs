@@ -68,12 +68,18 @@ public sealed partial class AutoPilot : IDisposable
 
     private AutomationSettings S => config.Automation;
 
-    public string? MissingDependency()
-    {
-        if (S.TravelToInn && !travel.IsInstalled) return "the Lifestream plugin is not installed";
-        if (!nav.IsInstalled) return "the vnavmesh plugin is not installed";
-        return null;
-    }
+    /// <summary>
+    /// What stops a hands-free run from starting at all. Only vnavmesh: without it Gleam cannot walk a step.
+    /// Lifestream used to be here too, which disabled the default "sell to vendors" run for anyone without
+    /// it, even standing beside a merchant. Now each leg that needs a teleport checks for it and, without
+    /// it, leaves that leg's items waiting while the rest of the run carries on.
+    /// </summary>
+    public string? MissingDependency() => nav.IsInstalled ? null : "the vnavmesh plugin is not installed";
+
+    /// <summary>Whether a leg may teleport somewhere else.</summary>
+    private bool CanTravel => S.TravelToInn && travel.IsInstalled;
+
+    private const string NoLifestream = "Lifestream is not installed, so Gleam cannot travel there";
 
     public void Stop()
     {
@@ -99,6 +105,7 @@ public sealed partial class AutoPilot : IDisposable
 
         var queue = coordinator.BuildQueueFromPlan(r => true);
         if (queue.Count == 0) { Nothing("Nothing is ticked"); return; }
+        reviewed = coordinator.CurrentPlan.AllRows.Select(Seen).ToHashSet();
 
         Mode = PilotMode.Clean;
         PlannedTotal = queue.Count;
@@ -341,6 +348,7 @@ public sealed partial class AutoPilot : IDisposable
     {
         if (await OnFramework(IsInInn).ConfigureAwait(false)) return;
         if (!S.TravelToInn) throw new AutoPilotException("not in an inn room, and travelling there is turned off");
+        if (!travel.IsInstalled) throw new AutoPilotException($"{NoLifestream}. Start from an inn room and Gleam reaches the bell and the dresser itself");
         await Step("Travelling to an inn", async () =>
         {
             if (!travel.GoToInn(S.InnIndex)) throw new AutoPilotException("the teleport to the inn did not start");
@@ -611,7 +619,13 @@ public sealed partial class AutoPilot : IDisposable
     private async Task VendorAsync(List<QueuedAction> sells, CancellationToken ct)
     {
         var npc = await OnFramework(FindVendor).ConfigureAwait(false);
-        if (npc is null && S.TravelToInn && !string.IsNullOrWhiteSpace(db.LocalizePlaceName(S.VendorAetheryte)))
+        if (npc is null && !CanTravel && S.TravelToInn)
+        {
+            var why = "no merchant nearby, and without Lifestream Gleam cannot travel to one";
+            tally.Pending[why] = tally.Pending.GetValueOrDefault(why) + sells.Count;
+            return;
+        }
+        if (npc is null && CanTravel && !string.IsNullOrWhiteSpace(db.LocalizePlaceName(S.VendorAetheryte)))
         {
             await Step($"Teleporting to {db.LocalizePlaceName(S.VendorAetheryte)} for a merchant", async () =>
             {
@@ -660,6 +674,7 @@ public sealed partial class AutoPilot : IDisposable
         if (officer is null)
         {
             if (!S.TravelToInn) throw new AutoPilotException($"No '{db.LocalizeNpcName(S.PersonnelOfficerName)}' nearby and travel is off");
+            if (!travel.IsInstalled) throw new AutoPilotException($"no personnel officer nearby. {NoLifestream}");
             if (!S.GcCityAetheryte.TryGetValue(gc, out var city) || string.IsNullOrEmpty(city))
                 throw new AutoPilotException("no destination is set for your Grand Company's city");
 
@@ -711,10 +726,19 @@ public sealed partial class AutoPilot : IDisposable
         var plan = coordinator.CurrentPlan;
         if (plan is null || !plan.AllRows.Any(r => r.IsExecutable)) return;
 
-        var queue = coordinator.BuildQueueFromPlan(r => r.Checked);
+        // Only items the player never saw. Anything that was in the review was already accepted or declined,
+        // and matching it again here by slot re-ticked items the player had unticked once sorting or a
+        // retainer's real slot numbers moved them.
+        var queue = coordinator.BuildQueueFromPlan(r => r.Checked && r.IsSuggested && !reviewed.Contains(Seen(r)));
         if (queue.Count == 0) return;
         await Step($"Cleaning {queue.Count} more item{(queue.Count == 1 ? "" : "s")} found in {what}", () => Execute(queue), ct).ConfigureAwait(false);
     }
+
+    /// <summary>Every item the review showed when the run began, by container and item rather than slot.</summary>
+    private HashSet<(ContainerKind, ulong, uint, bool)> reviewed = new();
+
+    private static (ContainerKind, ulong, uint, bool) Seen(Core.Planning.PlanRow r) =>
+        (r.Item.Slot.Kind, r.Item.Slot.OwnerId, r.Item.ItemId, r.Item.IsHq);
 
     // ---------- movement & interaction ----------
 

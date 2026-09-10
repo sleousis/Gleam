@@ -50,8 +50,8 @@ public class ResilienceScenarios
         Assert.Contains("3 items failed in a row", report.AbortReason);
         Assert.Equal(1, report.Done);
         Assert.Equal(3, report.Failed);
-        Assert.Equal(2, report.Pending.Count);
-        Assert.All(report.PendingReasons.Values, r => Assert.Contains("earlier failure", r));
+        Assert.Empty(report.Pending);
+        Assert.Equal(2, report.NotReached);
         Assert.Equal(5, world.Count(ContainerKind.Inventory));
         Assert.True(world.Has(Bag(4))); Assert.True(world.Has(Bag(5)));
     }
@@ -72,7 +72,7 @@ public class ResilienceScenarios
     }
 
     [Fact]
-    public async Task Stopping_mid_run_finishes_the_current_item_and_parks_the_rest_for_later()
+    public async Task Stopping_mid_run_finishes_the_current_item_and_leaves_the_rest_for_the_next_review()
     {
         var world = new FakeWorld();
         for (var i = 0; i < 5; i++) world.Add(Bag(i), 1, 10 + i);
@@ -83,15 +83,11 @@ public class ResilienceScenarios
 
         var report = await Clean(world, queue, ct: cts.Token);
 
-        Assert.Equal(2, report.Done);                                          // the item in flight when Stop was pressed still finishes
-        Assert.Equal(3, report.Pending.Count);
-        Assert.All(report.PendingReasons.Values, r => Assert.Contains("stopped", r));
+        Assert.Equal(2, report.Done);                  // the item in flight when Stop was pressed still finishes
+        Assert.Equal(3, report.NotReached);            // the rest are untouched...
+        Assert.Empty(report.Pending);                  // ...and nothing is queued to run later by itself
+        Assert.Empty(Leftover(report));
         Assert.Equal(3, world.Count(ContainerKind.Inventory));
-
-        // Later, the parked rows run to completion with no duplicates.
-        var later = await Clean(world, Leftover(report));
-        Assert.Equal(3, later.Done);
-        Assert.Equal(0, world.Count(ContainerKind.Inventory));
     }
 
     [Fact]

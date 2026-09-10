@@ -43,6 +43,9 @@ internal sealed class FakeWorld : IGameActions, IMoveActions
     /// <summary>Runs right before every destructive action or move; scenarios use it to change the world mid-run.</summary>
     public Action? BeforeAction { get; set; }
 
+    /// <summary>Where relays' first legs landed. The coordinator owns one across runs, so the world does too.</summary>
+    public TidyUp.Core.Organizer.Execution.RelayLedger Relays { get; } = new();
+
     public string? LastFailure { get; private set; }
 
     // ------------------------------------------------------------------ setup helpers
@@ -222,10 +225,10 @@ internal sealed class FakeWorld : IGameActions, IMoveActions
         return preferred is { } p && hits.Contains(p) ? p : hits[0];
     }
 
-    public SlotRef? FindLanding(StorageId storage, uint itemId, bool isHq, int quantity, uint preferredPage, IReadOnlySet<SlotRef> reserved)
+    public SlotRef? FindLanding(StorageId storage, uint itemId, bool isHq, int quantity, uint preferredPage, IReadOnlySet<SlotRef> reserved, bool emptyOnly = false)
     {
         var info = E2e.Lookup(itemId);
-        if (info is { IsStackable: true })
+        if (!emptyOnly && info is { IsStackable: true })
         {
             var partial = Slots.Values.FirstOrDefault(i => StorageId.Of(i.Slot) == storage && i.ItemId == itemId && i.IsHq == isHq && i.Quantity + quantity <= info.StackSize && !reserved.Contains(i.Slot));
             if (partial is not null) return partial.Slot;

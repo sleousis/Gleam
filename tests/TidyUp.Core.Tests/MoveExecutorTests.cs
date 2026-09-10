@@ -26,11 +26,11 @@ internal sealed class FakeMoveActions : IMoveActions
         return preferred is { } p && hits.Contains(p) ? p : hits[0];
     }
 
-    public SlotRef? FindLanding(StorageId storage, uint itemId, bool isHq, int quantity, uint preferredPage, IReadOnlySet<SlotRef> reserved)
+    public SlotRef? FindLanding(StorageId storage, uint itemId, bool isHq, int quantity, uint preferredPage, IReadOnlySet<SlotRef> reserved, bool emptyOnly = false)
     {
         var page = preferredPage != 0 ? preferredPage : CapacityModel.PagesOf(storage.Kind).First();
         var stackSize = Lookup(itemId)?.StackSize ?? 1;
-        var partial = Slots.Values.FirstOrDefault(i => StorageId.Of(i.Slot) == storage && i.ItemId == itemId && i.IsHq == isHq && !reserved.Contains(i.Slot) && i.Quantity + quantity <= stackSize);
+        var partial = emptyOnly ? null : Slots.Values.FirstOrDefault(i => StorageId.Of(i.Slot) == storage && i.ItemId == itemId && i.IsHq == isHq && !reserved.Contains(i.Slot) && i.Quantity + quantity <= stackSize);
         if (partial is not null) return partial.Slot;
         var size = CapacityModel.DefaultPageSize(page);
         for (var i = 0; i < size; i++)
@@ -150,8 +150,58 @@ public class MoveExecutorTests
 
         Assert.True(report.Aborted);
         Assert.Equal(3, report.Failed);
-        Assert.Equal(2, report.Pending.Count);
+        // The two it never reached stay where they are and are not queued to move by themselves later.
+        Assert.Empty(report.Pending);
+        Assert.Equal(2, report.NotReached);
         Assert.Contains("failed in a row", report.AbortReason);
+    }
+
+    [Fact]
+    public async Task A_relay_never_merges_into_a_stack_the_player_already_has_in_the_bags()
+    {
+        var game = new FakeMoveActions();
+        game.Open.Add(RetA);
+        var mine = ScannedItem.Simple(Inv(0), 15, 10);                                              // the player's own partial stack
+        var travelling = ScannedItem.Simple(new SlotRef(ContainerKind.Retainer, GameContainerIds.RetainerPage1, 1, 0xA), 15, 5);
+        game.Slots[mine.Slot] = mine;
+        game.Slots[travelling.Slot] = travelling;
+        var id = Guid.NewGuid();
+        var exec = new MoveExecutor(game, new MemoryMoveLog(), new NoDelay());
+
+        await exec.ExecuteAsync([Op(travelling, Bags, MoveLeg.RelayOut, id)], Who, CancellationToken.None);
+
+        // Two stacks, not one of fifteen: the second leg can still find exactly the five it has to take.
+        Assert.Equal(10, game.Slots[mine.Slot].Quantity);
+        Assert.Contains(game.Slots.Values, i => i.ItemId == 15 && i.Quantity == 5 && i.Slot.Kind == ContainerKind.Inventory);
+
+        game.Open.Remove(RetA);
+        game.Open.Add(RetB);
+        var legIn = new MoveOp(id, travelling, Lookup(15)!, Bags, RetB, MoveLeg.RelayIn, 0, 1);
+        var second = await exec.ExecuteAsync([legIn], Who, CancellationToken.None);
+
+        Assert.Equal(1, second.Done);
+        Assert.Equal(10, game.Slots[mine.Slot].Quantity);                                          // the player's stack stayed put
+        Assert.Contains(game.Slots.Values, i => i.ItemId == 15 && i.Quantity == 5 && i.Slot.OwnerId == 0xB);
+    }
+
+    [Fact]
+    public async Task A_second_leg_never_ships_the_players_own_look_alike_stack()
+    {
+        var game = new FakeMoveActions();
+        game.Open.Add(RetB);                                                                          // A is closed, B is open
+        var coat = ScannedItem.Simple(new SlotRef(ContainerKind.Retainer, GameContainerIds.RetainerPage1, 2, 0xA), 6, 1);
+        var theirs = ScannedItem.Simple(Inv(3), 6, 1);                                                // an identical coat already in the bags
+        game.Slots[coat.Slot] = coat;
+        game.Slots[theirs.Slot] = theirs;
+        var id = Guid.NewGuid();
+        var legOut = Op(coat, Bags, MoveLeg.RelayOut, id);
+        var legIn = new MoveOp(id, coat, Lookup(6)!, Bags, RetB, MoveLeg.RelayIn, 0, 1);
+
+        var report = await new MoveExecutor(game, new MemoryMoveLog(), new NoDelay()).ExecuteAsync([legOut, legIn], Who, CancellationToken.None);
+
+        Assert.Equal(0, report.Done);
+        Assert.True(game.Slots.ContainsKey(theirs.Slot));                                            // the player's coat is untouched
+        Assert.DoesNotContain(game.Slots.Values, i => i.Slot.OwnerId == 0xB);
     }
 
     [Fact]

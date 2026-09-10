@@ -162,7 +162,7 @@ public class ExecutionCoreTests
     }
 
     [Fact]
-    public async Task Failures_in_a_row_abort_and_park_the_rest_with_a_reason()
+    public async Task Failures_in_a_row_abort_and_report_the_rest_as_not_reached()
     {
         var (hooks, parked, reported) = Wire();
         var ops = new[] { new Op("a", StepStatus.Failed), new Op("b", StepStatus.Failed), new Op("c", StepStatus.Done), new Op("d", StepStatus.Done) };
@@ -171,9 +171,11 @@ public class ExecutionCoreTests
         Assert.True(summary.Aborted);
         Assert.Contains("2 items failed in a row", summary.AbortReason);
         Assert.Contains("the last was b", summary.AbortReason);
-        Assert.Equal(["c", "d"], parked.Select(p => p.Op));
-        Assert.All(parked, p => Assert.Equal("the run stopped at an earlier failure", p.Reason));
-        Assert.Equal(2, reported.Count);
+        // Parked work resumes by itself later; work the run never reached must not.
+        Assert.Empty(parked);
+        var unreached = reported.Where(r => r.Outcome.Status == StepStatus.Cancelled).ToList();
+        Assert.Equal(["c", "d"], unreached.Select(r => r.Op));
+        Assert.All(unreached, r => Assert.Equal(ExecutionCore.NotReachedFailed, r.Outcome.Message));
     }
 
     [Fact]
@@ -203,15 +205,18 @@ public class ExecutionCoreTests
     }
 
     [Fact]
-    public async Task Cancellation_before_an_op_parks_everything_left()
+    public async Task Stopping_before_an_op_leaves_everything_unreached_and_nothing_parked()
     {
-        var (hooks, parked, _) = Wire();
+        var (hooks, parked, reported) = Wire();
         using var cts = new CancellationTokenSource();
         cts.Cancel();
-        var summary = await new ExecutionCore(new NoDelay(), TimeSpan.Zero, 3).RunAsync([new Op("a", StepStatus.Done), new Op("b", StepStatus.Done)], hooks, cts.Token);
-        Assert.False(summary.Aborted);
-        Assert.Equal(["a", "b"], parked.Select(p => p.Op));
-        Assert.All(parked, p => Assert.Equal("the run was stopped before reaching it", p.Reason));
+        var ops = new[] { new Op("a", StepStatus.Done), new Op("b", StepStatus.Done) };
+
+        await new ExecutionCore(new NoDelay(), TimeSpan.Zero, 3).RunAsync(ops, hooks, cts.Token);
+
+        Assert.Empty(parked);
+        Assert.Equal(["a", "b"], reported.Select(r => r.Op));
+        Assert.All(reported, r => Assert.Equal(ExecutionCore.NotReachedStopped, r.Outcome.Message));
     }
 }
 

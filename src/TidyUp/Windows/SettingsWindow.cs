@@ -168,9 +168,10 @@ public sealed partial class SettingsWindow
         DrawRequiredPlugins();
 
         using (Ui.Card("protect")) protectEditor.Draw();
-        if (config.AdvancedMode) using (Ui.Card("always")) alwaysEditor.Draw();
+        // Shown whenever it holds anything, because what is on it is cleaned: a list that acts is never hidden.
+        if (config.AdvancedMode || config.AlwaysDiscardList.Entries.Count > 0) using (Ui.Card("always")) alwaysEditor.Draw();
 
-        if (config.AdvancedMode)
+        if (config.AdvancedMode || config.Automation.CleanAfterVentures)
         using (Ui.Card("ventures"))
         {
             Ui.Ask("Should Gleam tidy up after your retainers?", "Needs the AutoRetainer plugin. It only discards, and only what the rules would tick on their own.");
@@ -181,6 +182,13 @@ public sealed partial class SettingsWindow
             if (AutoRetainer is null || !AutoRetainer.IsInstalled) Ui.Pill("not installed", Ui.Warn, null, "req:AutoRetainer"); else Ui.Pill("AutoRetainer", Ui.Ok, Dalamud.Interface.FontAwesomeIcon.Check, "req:AutoRetainer");
         }
 
+        if (!config.AdvancedMode && HiddenChanges() is { Count: > 0 } hidden)
+        using (Ui.Card("hidden"))
+        {
+            Ui.Ask("Some of your choices are hidden right now", $"{string.Join(". ", hidden)}. They still apply.");
+            if (Ui.LinkButton("Show every setting")) { config.AdvancedMode = true; dirty = true; }
+        }
+
         using (Ui.Card("finish"))
         {
             Ui.Ask("Anything to do once a run has finished?");
@@ -188,6 +196,22 @@ public sealed partial class SettingsWindow
             if (Ui.Check(ConfirmationWindow.SortAfterLabel, ref sortAfter)) { config.SortAfterRun = sortAfter; dirty = true; }
             Ui.Tooltip(ConfirmationWindow.SortAfterHint);
         }
+    }
+
+    /// <summary>
+    /// Choices made in advanced mode that still apply once it is switched off. Hiding a setting is fine;
+    /// hiding one that changes what Gleam does is not, so simple mode names them.
+    /// </summary>
+    private List<string> HiddenChanges()
+    {
+        var p = Editing;
+        var list = new List<string>();
+        var off = RuleEngine.AllRules.Count(r => !p.EnabledRules.Contains(r.Id));
+        if (off > 0) list.Add($"{off} junk rule{(off == 1 ? " is" : "s are")} turned off");
+        var closed = Enum.GetValues<ContainerKind>().Count(k => !p.IsContainerEnabled(k));
+        if (closed > 0) list.Add($"Gleam may not look in {closed} place{(closed == 1 ? "" : "s")}");
+        if (p.ExcludedRetainerIds.Count > 0) list.Add($"{p.ExcludedRetainerIds.Count} retainer{(p.ExcludedRetainerIds.Count == 1 ? " is" : "s are")} left alone");
+        return list;
     }
 
     /// <summary>The containers Gleam may open, in a row that wraps rather than running off the card.</summary>
@@ -239,10 +263,10 @@ public sealed partial class SettingsWindow
 
         using (Ui.Card("auto"))
         {
-            Ui.Ask("What Gleam needs to work", "Gleam travels and walks to every bell, dresser, merchant and Grand Company a run needs. Two free plugins do that part, so both have to be installed.");
+            Ui.Ask("What Gleam needs to work", "Gleam walks to every bell, dresser, merchant and Grand Company a run needs, and vnavmesh does the walking. Lifestream lets it travel between towns; without it, Gleam does everything reachable from where you start.");
 
             Requirement("vnavmesh", haveNav, "Walks you to the bell, the dresser and the merchant.");
-            Requirement("Lifestream", haveTravel, "Teleports you to the places a run needs.");
+            Requirement("Lifestream", haveTravel, "Teleports you between towns and into an inn.", optional: true);
 
             if (!haveNav || !haveTravel)
             {
@@ -259,7 +283,8 @@ public sealed partial class SettingsWindow
                 }
             }
 
-            if (config.AdvancedMode)
+            // Shown whenever it is on: it cleans without asking, so it is never tucked away behind advanced mode.
+            if (config.AdvancedMode || config.Automation.UnseenRows != UnseenRowsMode.Skip)
             {
                 Ui.Gap(0.4f);
                 var a = config.Automation;
@@ -275,11 +300,13 @@ public sealed partial class SettingsWindow
     /// beside the name while there is room for it and drops underneath when the window is narrow, so the
     /// row never runs off the card.
     /// </summary>
-    private static void Requirement(string name, bool installed, string what)
+    private static void Requirement(string name, bool installed, string what, bool optional = false)
     {
         var left = ImGui.GetCursorScreenPos().X;
         var room = ImGui.GetContentRegionAvail().X;
         if (installed) Ui.Pill("installed", Ui.Ok, Dalamud.Interface.FontAwesomeIcon.Check, $"req:{name}");
+        // Missing a plugin Gleam can live without is a note, not an alarm.
+        else if (optional) Ui.Pill("not installed", Ui.Warn, null, $"req:{name}");
         else Ui.Pill("missing", Ui.Danger, Dalamud.Interface.FontAwesomeIcon.ExclamationTriangle, $"req:{name}");
         ImGui.SameLine();
         ImGui.AlignTextToFramePadding();

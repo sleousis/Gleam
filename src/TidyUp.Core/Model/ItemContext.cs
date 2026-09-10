@@ -12,7 +12,7 @@ public readonly record struct MarketPrice(uint ItemId, long MinNq, long MinHq, D
 /// Everything about the *player* (not the item) that rules need, resolved once per scan.
 /// Built by the game adapter; constructed directly in tests.
 /// </summary>
-public sealed class ItemContext
+public sealed record ItemContext
 {
     public ulong CharacterId { get; init; }
     public string CharacterName { get; init; } = string.Empty;
@@ -51,6 +51,13 @@ public sealed class ItemContext
 
     /// <summary>For items that register something (minions, mounts, orchestrion rolls, cards...): whether this character already has it.</summary>
     public IReadOnlyDictionary<uint, bool> Registered { get; init; } = new Dictionary<uint, bool>();
+
+    /// <summary>
+    /// The same context with market prices and registration added. A copy made by hand once dropped the
+    /// curated never-touch ids on every real scan, so every other field is carried over by the compiler.
+    /// </summary>
+    public ItemContext WithMarket(IReadOnlyDictionary<uint, MarketPrice> prices, bool attempted, IReadOnlyDictionary<uint, bool> registered) =>
+        this with { MarketPrices = prices, MarketLookupAttempted = attempted, Registered = registered };
 
     /// <summary>Highest level of any combat, crafting, or gathering job.</summary>
     public short MaxJobLevel => JobLevels.Count == 0 ? (short)0 : JobLevels.Values.Max();

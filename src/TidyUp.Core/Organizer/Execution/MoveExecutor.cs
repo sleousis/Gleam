@@ -23,6 +23,9 @@ public sealed class MoveRunReport
     public int Skipped => Results.Count(r => r.Status == StepStatus.SkippedChanged);
     public int Failed => Results.Count(r => r.Status == StepStatus.Failed);
 
+    /// <summary>Left where they were because the run stopped first. Nothing about them is carried over.</summary>
+    public int NotReached => Results.Count(r => r.Status == StepStatus.Cancelled);
+
     public IEnumerable<(string Reason, int Count)> PendingByReason() =>
         Pending.GroupBy(p => PendingReasons.TryGetValue(p, out var r) ? r : string.Empty).Select(g => (g.Key, g.Count()));
 
@@ -32,6 +35,7 @@ public sealed class MoveRunReport
         if (Skipped > 0) parts.Add($"{Skipped} had moved and {(Skipped == 1 ? "was" : "were")} left alone");
         if (Failed > 0) parts.Add($"{Failed} failed");
         if (Pending.Count > 0) parts.Add($"{Pending.Count} waiting");
+        if (NotReached > 0) parts.Add($"{NotReached} left where they were");
         return string.Join(", ", parts);
     }
 }
@@ -54,12 +58,15 @@ public sealed class MoveExecutor
     private readonly IDelay delay;
     private readonly MoveExecutorOptions options;
 
-    public MoveExecutor(IMoveActions game, IMoveLog log, IDelay? delay = null, MoveExecutorOptions? options = null)
+    private readonly RelayLedger relays;
+
+    public MoveExecutor(IMoveActions game, IMoveLog log, IDelay? delay = null, MoveExecutorOptions? options = null, RelayLedger? relays = null)
     {
         this.game = game;
         this.log = log;
         this.delay = delay ?? new RealDelay();
         this.options = options ?? new MoveExecutorOptions();
+        this.relays = relays ?? new RelayLedger();
     }
 
     public async Task<MoveRunReport> ExecuteAsync(IReadOnlyList<MoveOp> ops, RunIdentity identity, CancellationToken ct, IProgress<MoveResult>? progress = null)
@@ -67,7 +74,6 @@ public sealed class MoveExecutor
         var report = new MoveRunReport();
         var touched = new HashSet<SlotRef>();
         var reserved = new HashSet<SlotRef>();
-        var completedFirstLegs = new HashSet<Guid>();
         MoveResult? last = null;
 
         // Relay rounds run one at a time: a later round's moves wait until nothing from an earlier round is left.
@@ -85,11 +91,10 @@ public sealed class MoveExecutor
             },
             Execute = async (op, token) =>
             {
-                var result = await ExecuteOneAsync(op, touched, reserved, completedFirstLegs, token).ConfigureAwait(false);
+                var result = await ExecuteOneAsync(op, touched, reserved, token).ConfigureAwait(false);
                 last = result;
                 if (result.Status == StepStatus.Done)
                 {
-                    completedFirstLegs.Add(op.MoveId);
                     await log.AppendAsync(new MoveLogEntry(DateTimeOffset.UtcNow, identity.CharacterId, identity.CharacterName,
                         op.Item.ItemId, op.Info.Name, op.Item.Quantity, op.Item.IsHq, op.From.Kind, op.From.OwnerId, op.To.Kind, op.To.OwnerId,
                         op.Leg.ToString(), string.Empty)).ConfigureAwait(false);
@@ -113,20 +118,34 @@ public sealed class MoveExecutor
         return report;
     }
 
-    private async Task<MoveResult> ExecuteOneAsync(MoveOp op, HashSet<SlotRef> touched, HashSet<SlotRef> reserved, HashSet<Guid> firstLegsDone, CancellationToken ct)
+    private async Task<MoveResult> ExecuteOneAsync(MoveOp op, HashSet<SlotRef> touched, HashSet<SlotRef> reserved, CancellationToken ct)
     {
-        // The source is found by identity: planned positions may come from a cache, and a relay's second
-        // leg only knows the stack landed *somewhere* in the bags.
-        var preferred = op.Leg == MoveLeg.RelayIn ? (SlotRef?)null : op.Item.Slot;
-        var source = game.FindSlot(op.From, op.Item.ItemId, op.Item.Quantity, op.Item.IsHq, touched, preferred);
-        if (source is null)
+        SlotRef? source;
+        if (op.Leg == MoveLeg.RelayIn)
         {
-            if (op.Leg == MoveLeg.RelayIn && !firstLegsDone.Contains(op.MoveId))
+            // The second leg moves only the stack its own first leg brought in, and never before that has
+            // happened. Looking for "a stack like it" in the bags used to find the player's own copy.
+            if (!relays.TryGet(op.MoveId, out var parked))
                 return new MoveResult(op, StepStatus.Pending, "its first move into the bags has not happened yet");
-            return new MoveResult(op, StepStatus.SkippedChanged, "the stack is no longer where it was");
+            var there = game.ReadSlot(parked);
+            if (there is null || there.ItemId != op.Item.ItemId || there.Quantity != op.Item.Quantity || there.IsHq != op.Item.IsHq)
+            {
+                relays.Forget(op.MoveId);
+                return new MoveResult(op, StepStatus.SkippedChanged, "the stack moved after it reached the bags");
+            }
+            source = parked;
+        }
+        else
+        {
+            // Found by identity, because planned positions may come from a cache.
+            source = game.FindSlot(op.From, op.Item.ItemId, op.Item.Quantity, op.Item.IsHq, touched, op.Item.Slot);
+            if (source is null) return new MoveResult(op, StepStatus.SkippedChanged, "the stack is no longer where it was");
         }
 
-        var landing = game.FindLanding(op.To, op.Item.ItemId, op.Item.IsHq, op.Item.Quantity, op.PreferredPage, reserved);
+        // A relay's first leg takes an empty bag slot of its own. Topping up a stack already there would
+        // merge the two, and the second leg could then never find the exact stack it has to take on.
+        var landing = game.FindLanding(op.To, op.Item.ItemId, op.Item.IsHq, op.Item.Quantity, op.PreferredPage, reserved,
+            emptyOnly: op.Leg == MoveLeg.RelayOut);
         if (landing is null)
             return new MoveResult(op, StepStatus.Pending, $"no room left in {Describe(op.To)}");
 
@@ -136,6 +155,8 @@ public sealed class MoveExecutor
         {
             case MoveStatus.Done:
                 reserved.Add(landing.Value);
+                if (op.Leg == MoveLeg.RelayOut) relays.Record(op.MoveId, landing.Value);
+                if (op.Leg == MoveLeg.RelayIn) relays.Forget(op.MoveId);
                 return new MoveResult(op, StepStatus.Done, $"{Describe(op.From)} → {Describe(op.To)}");
             case MoveStatus.SourceChanged:
                 return new MoveResult(op, StepStatus.SkippedChanged, outcome.Message);

@@ -16,6 +16,9 @@ public sealed class PlanRow
     public ItemInfo Info => Proposal.Info;
     public bool IsExecutable => ChosenAction.IsDestructive();
 
+    /// <summary>A rule put this row here. False for the rows listed only so they can be picked by hand.</summary>
+    public bool IsSuggested => Proposal.RuleId != RunPlanner.HandPickRuleId;
+
     /// <summary>Stable identity for session memory: same slot + same item + same qty.</summary>
     public string Key => $"{Item.Slot}|{Item.ItemId}|{Item.Quantity}|{Item.IsHq}";
 }

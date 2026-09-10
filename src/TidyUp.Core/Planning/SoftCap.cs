@@ -25,8 +25,10 @@ public static class SoftCap
         {
             if (!r.Checked || !r.IsExecutable) continue;
             items++;
-            // Gil at risk counts destroyed *and* sold value: both are irreversible property changes.
-            gil += (long)r.Info.VendorPrice * r.Item.Quantity;
+            // Gil at risk counts destroyed *and* sold value: both are irreversible property changes. A discarded
+            // market item loses its market value, not its vendor price, so take whichever is higher.
+            var unit = Math.Max((long)r.Info.VendorPrice, r.Proposal.MarketUnitPrice);
+            gil += unit * r.Item.Quantity;
         }
         var exceeded = items > t.SoftCapItems || gil > t.SoftCapGil;
         return new SoftCapResult(exceeded, items, gil, t.SoftCapItems, t.SoftCapGil);
