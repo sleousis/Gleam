@@ -3,7 +3,7 @@
     "Author": "Raiden Shinryu",
     "Name": "Gleam",
     "InternalName": "Gleam",
-    "AssemblyVersion": "0.10.0.0",
+    "AssemblyVersion": "0.11.0.0",
     "Description": "Gleam cleans and organizes your inventory, and does the walking itself.\n\nClean: it finds junk in your bags, armoury chest, saddlebag, retainers and glamour dresser and shows it in one list. You choose whether to sell on the market board, sell to vendors or discard, then press one button.\n\nOrganize: layouts move the items you keep to where you want them. For example, materia to the saddlebag, spare gear to a retainer and gear-set pieces to the armoury chest.\n\nNothing is changed until you press the button. Items that will be cleaned or moved are highlighted in the game's bag windows. Gleam then opens the saddlebag, travels to an inn for your retainers and the dresser, and visits your Grand Company when something is to be turned in.\n\nPlease note: Gleam moves your character and clicks through the game's menus for you. Square Enix's terms of service do not allow third-party tools, and automation is what they act against most. Use it at your own risk. Organizing is still a preview and has not had a full test in game.\n\nCommands: /gleam or /gl. Sub-commands: organize, history, settings, stop, selftest, report.\n\nPlugins Gleam needs:\nvnavmesh walks your character from place to place. Gleam needs it.\nLifestream teleports between aetherytes and into inns. Without it, start a run while you are already in an inn.\n\nOptional:\nAutoRetainer lets Gleam discard junk after each retainer's ventures.\nAllagan Tools shows retainer contents without summoning them.\nMarket prices come from Universalis and need an internet connection.",
     "ApplicableVersion": "any",
     "RepoUrl": "https://github.com/sleousis/Gleam",
@@ -27,13 +27,13 @@
     "IconUrl": "https://raw.githubusercontent.com/sleousis/Gleam/main/src/Gleam/images/icon.png",
     "Punchline": "Cleans and organizes your inventory, and walks there itself. Needs vnavmesh, plus Lifestream to travel.",
     "AcceptsFeedback": true,
-    "DownloadLinkInstall": "https://github.com/sleousis/Gleam/releases/download/v0.10.0/Gleam.zip",
-    "DownloadLinkUpdate": "https://github.com/sleousis/Gleam/releases/download/v0.10.0/Gleam.zip",
-    "DownloadLinkTesting": "https://github.com/sleousis/Gleam/releases/download/v0.10.0/Gleam.zip",
+    "DownloadLinkInstall": "https://github.com/sleousis/Gleam/releases/download/v0.11.0/Gleam.zip",
+    "DownloadLinkUpdate": "https://github.com/sleousis/Gleam/releases/download/v0.11.0/Gleam.zip",
+    "DownloadLinkTesting": "https://github.com/sleousis/Gleam/releases/download/v0.11.0/Gleam.zip",
     "IsHide": false,
     "IsTestingExclusive": false,
     "DownloadCount": 0,
-    "LastUpdate": 1789055163,
-    "Changelog": "- The old working name, TidyUp, is gone from everything, including the name Dalamud uses to track the plugin. Because of that, Dalamud treats this version as a new plugin. Install Gleam from the list, then remove the old copy, version 0.9.x. Your settings, layouts and history come across the first time the new copy starts.\n- Layouts exported from earlier versions still import.\n- The hidden /tidyup command is gone. Use /gleam or /gl.\n- After an update, Gleam shows what's new once, at the top of its own window. Fresh installs skip it.\n- The plugin description and the first screen now say plainly that Gleam automates the game, which Square Enix's terms do not allow.\n- Organizing is marked as a preview until it has had a full test in game."
+    "LastUpdate": 1789065267,
+    "Changelog": "- A new stats page, \"Your Gleam in numbers\", opens from the chart button in the title bar or with /gleam stats. It shows bag slots freed, gil from sales, market listings and time saved. It also shows a chart of what Gleam did day by day, where the junk came from, how full your bags have been, which rules you keep or untick, where the organizer put things, your last hands-free trip, a year of activity and milestones.\n- While a run is going, the page follows it live: totals count up, today's bar grows, and moved items travel across the organizer's map.\n- Every figure has one definition, shown in its tooltip. Market listings count as \"listed\", never \"earned\", and time saved is labelled as an estimate with its formula.\n- Gleam now keeps a small journal of runs, trips, bag fullness, rule choices and seals. It stays on your PC, and \"Reset statistics\" starts the counting again without touching the history."
   }
 ]
