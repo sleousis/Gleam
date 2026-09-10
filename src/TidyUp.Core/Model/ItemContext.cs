@@ -33,6 +33,9 @@ public sealed record ItemContext
     public IReadOnlyDictionary<uint, IReadOnlyList<uint>> ClassJobCategoryJobs { get; init; } =
         new Dictionary<uint, IReadOnlyList<uint>>();
 
+    /// <summary>False when the gear sets could not be read. Then any piece of gear might be in one.</summary>
+    public bool GearsetsKnown { get; init; } = true;
+
     /// <summary>Highest item level across all gearsets; the yardstick for "outleveled" consumables.</summary>
     public int MaxGearsetItemLevel { get; init; }
 

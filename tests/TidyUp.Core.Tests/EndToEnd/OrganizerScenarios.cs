@@ -17,7 +17,7 @@ public class OrganizerScenarios
     {
         var world = new FakeWorld();
         world.Add(Bag(0), Materia, 5);
-        world.Add(Bag(1), Crystal, 300);
+        world.Add(Bag(1), Crystal, 300);          // crystals keep to their own pouch: never moved
         world.Add(Bag(2), 12, 3);                 // potion: consumables stay in the bags
         world.Add(Bag(3), 5, 1);                  // Ironworks Cap: in a gear set → armoury
         world.Add(Bag(4), 4, 1);                  // Doublet: not in a gear set → any retainer
@@ -27,23 +27,25 @@ public class OrganizerScenarios
 
         var preview = Preview(world, layout, ctx);
         Assert.True(preview.Report.Feasible);
-        Assert.Equal(5, preview.Moves.Count);
+        Assert.Equal(4, preview.Moves.Count);
         Assert.DoesNotContain(preview.Moves, m => m.Item.ItemId == 12);
+        Assert.DoesNotContain(preview.Moves, m => m.Item.ItemId == Crystal);
         Assert.Equal(2, preview.StoragesToOpen.Count());     // the saddlebag and one retainer
 
         // Nothing is open: only the armoury move can happen now.
         var first = await Organize(world, preview.Moves);
         Assert.Equal(1, first.Done);
-        Assert.Equal(4, first.Pending.Count);
+        Assert.Equal(3, first.Pending.Count);
         Assert.Equal(1, world.Count(ContainerKind.Armoury));
         Assert.True(world.Has(Arm(0)));
 
         var rounds = await OrganizeEverywhere(world, first.Pending);
         Assert.True(rounds <= 2, $"one saddlebag visit and one retainer visit should do; took {rounds}");
         Assert.Equal(5, world.Slots.Values.Where(i => i.Slot.Kind == ContainerKind.Saddlebag && i.ItemId == Materia).Sum(i => i.Quantity));
-        Assert.Equal(2, world.Count(ContainerKind.Saddlebag));
+        Assert.Equal(1, world.Count(ContainerKind.Saddlebag));                  // the materia
         Assert.Equal(2, world.Count(ContainerKind.Retainer, RetA));            // both "any retainer" items on the same retainer
-        Assert.Equal(1, world.Count(ContainerKind.Inventory));           // only the potion is left
+        Assert.Equal(2, world.Count(ContainerKind.Inventory));           // the potion and the crystals are left
+        Assert.True(world.Has(Bag(1)));
         Assert.True(world.Has(Bag(2)));
     }
 

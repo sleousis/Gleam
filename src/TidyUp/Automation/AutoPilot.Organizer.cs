@@ -18,6 +18,7 @@ public sealed partial class AutoPilot
     private int movesDone;
     private int movesPending;
     private int movesSkipped;
+    private int movesFailed;
 
     public async Task RunOrganizerAsync()
     {
@@ -38,11 +39,12 @@ public sealed partial class AutoPilot
         movesDone = 0;
         movesPending = 0;
         movesSkipped = 0;
+        movesFailed = 0;
         tally.Clear();
         try
         {
             Status = "Closing leftover windows";
-            await RecoverUiAsync(ct).ConfigureAwait(false);
+            await RecoverUiAsync(ct, atStart: true).ConfigureAwait(false);
 
             // One round at a time: run the first round, look again, and the fresh plan's first round is the next one.
             for (var round = 1; round <= 20; round++)
@@ -61,7 +63,10 @@ public sealed partial class AutoPilot
             }
 
             Status = "Done";
-            var summary = $"{movesDone} moved" + (movesPending > 0 ? $", {movesPending} still waiting" : string.Empty)
+            // Failures are part of the summary. Half the moves failing used to read as "12 moved."
+            var summary = $"{movesDone} moved" + (movesFailed > 0 ? $", {movesFailed} failed" : string.Empty)
+                          + (movesSkipped > 0 ? $", {movesSkipped} had moved and were left alone" : string.Empty)
+                          + (movesPending > 0 ? $", {movesPending} still waiting" : string.Empty)
                           + (tally.LegFailures.Count > 0 ? $", {tally.LegFailures.Count} step{(tally.LegFailures.Count == 1 ? "" : "s")} could not finish" : string.Empty);
             log.Information("Hands-free organize finished: {Summary}", summary);
             chat.Print($"Hands-free organize finished: {summary}.", "Gleam");
@@ -169,11 +174,14 @@ public sealed partial class AutoPilot
     private async Task ExecuteMoves(IReadOnlyList<MoveOp> ops)
     {
         if (Organizer is null) return;
+        var before = Organizer.LastReport;
         await Organizer.RunMovesAsync(ops, refreshAfter: false).ConfigureAwait(false);
         var report = Organizer.LastReport;
-        if (report is null) return;
+        // A run that returned early leaves the previous report in place; counting it again doubled the tally.
+        if (report is null || ReferenceEquals(report, before)) return;
         movesDone += report.Done;
-        movesSkipped += report.Skipped + report.Failed;
+        movesSkipped += report.Skipped;
+        movesFailed += report.Failed;
         movesPending += report.Pending.Count;
     }
 }

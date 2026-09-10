@@ -88,6 +88,7 @@ public sealed class ConfirmationWindow : StyledWindow
     /// </summary>
     private float RowAlpha(int index)
     {
+        if (Ui.Reduced) return 1f;
         var elapsed = ImGui.GetTime() - staggerAt - Math.Min(index, 12) * 0.011;
         return Ui.EaseOut((float)Math.Clamp(elapsed / 0.16, 0, 1));
     }
@@ -101,7 +102,7 @@ public sealed class ConfirmationWindow : StyledWindow
         if (row.Checked == on) return;
         row.Checked = on;
         if (on) coordinator.SessionSkips.Remove(row.Key); else coordinator.SessionSkips.Add(row.Key);
-        rowFlash[row.Key] = ImGui.GetTime();
+        if (!Ui.Reduced) rowFlash[row.Key] = ImGui.GetTime();
     }
     private bool capArmed;
     /// <summary>The exact run the cap warning described; ticking anything else disarms it.</summary>
@@ -148,8 +149,20 @@ public sealed class ConfirmationWindow : StyledWindow
         var plan = coordinator.CurrentPlan;
         if (Pilot is { IsRunning: true, Mode: Automation.PilotMode.Clean }) { DrawPilotRunning(); return; }
         if (coordinator.IsRunning) { DrawRunning(); return; }
+        // The first question needs no scan, so it no longer waits behind one.
+        if (!config.SeenFirstRun) { DrawFirstRun(plan); return; }
         if (plan is null)
         {
+            if (coordinator.ScanFailed && !coordinator.IsScanning)
+            {
+                // A failed look used to leave the spinner turning for ever, with no way to try again.
+                Ui.EmptyState(icons.LogoMedium, "The look through your things did not finish.", "Details are in the Dalamud log.");
+                Ui.Gap(0.5f);
+                var again = "Try again";
+                ImGui.SetCursorPosX(Math.Max(0, (ImGui.GetWindowWidth() - ImGui.CalcTextSize(again, false, 0).X - 16 * Ui.Scale) / 2));
+                if (Ui.LinkButton(again)) _ = coordinator.RefreshPlanAsync(openWindow: false, userAsked: true);
+                return;
+            }
             Ui.RunningHeader(icons.LogoMedium, "Looking through your things…", string.IsNullOrEmpty(coordinator.Status) ? null : coordinator.Status);
             Ui.Gap(0.8f);
             var w = ImGui.GetWindowWidth() * 0.5f;
@@ -157,8 +170,6 @@ public sealed class ConfirmationWindow : StyledWindow
             Ui.ProgressBar("scan", null, w);
             return;
         }
-        if (!config.SeenFirstRun) { DrawFirstRun(plan); return; }
-
         DrawTopBar(plan);
         if (!config.SeenCleanIntro && !Simple)
         {
@@ -189,7 +200,7 @@ public sealed class ConfirmationWindow : StyledWindow
                     else
                     {
                         Ui.EmptyState(icons.LogoMedium, "Nothing to clean.", "Everything looks tidy.");
-                        if (Organizer is not null)
+                        if (Organizer is not null && config.UseOrganize)
                         {
                             Ui.Gap(0.5f);
                             var label = "Organize instead";
@@ -343,7 +354,7 @@ public sealed class ConfirmationWindow : StyledWindow
         DrawFilterMenu();
 
         ImGui.SameLine();
-        if (Ui.IconButton(FontAwesomeIcon.Sync, "Refresh", busy: coordinator.IsScanning)) _ = coordinator.RefreshPlanAsync(openWindow: false, coordinator.FocusContainer);
+        if (Ui.IconButton(FontAwesomeIcon.Sync, "Refresh", busy: coordinator.IsScanning)) _ = coordinator.RefreshPlanAsync(openWindow: false, coordinator.FocusContainer, userAsked: true);
         Ui.Tooltip("Looks through your containers again.");
 
         ImGui.SameLine();
@@ -373,7 +384,7 @@ public sealed class ConfirmationWindow : StyledWindow
     {
         var total = plan.AllRows.Count();
         if (total > 40) { Ui.SearchBox("##search", ref search, 260 * Ui.Scale); ImGui.SameLine(); }
-        if (Ui.IconButton(FontAwesomeIcon.Sync, "Look again", busy: coordinator.IsScanning)) _ = coordinator.RefreshPlanAsync(openWindow: false, coordinator.FocusContainer);
+        if (Ui.IconButton(FontAwesomeIcon.Sync, "Look again", busy: coordinator.IsScanning)) _ = coordinator.RefreshPlanAsync(openWindow: false, coordinator.FocusContainer, userAsked: true);
         Ui.Tooltip("Looks through your containers again.");
         ImGui.SameLine();
         Ui.RightAlign(90 * Ui.Scale);
@@ -949,8 +960,15 @@ public sealed class ConfirmationWindow : StyledWindow
         var unit = row.Proposal.MarketUnitPrice;
         if (unit <= 0)
         {
-            Ui.TextColored(Ui.Muted * new Vector4(1, 1, 1, 0.5f), config.UseUniversalis ? "no listings" : "prices off");
-            Ui.Tooltip(config.UseUniversalis ? "Nobody is selling this on your home world right now." : "Market board prices are off.");
+            // "No listings" is only said when the lookup actually answered; a lookup that failed is not a price.
+            var state = !config.UseUniversalis ? "prices off" : coordinator.PricesKnown ? "no listings" : "price unknown";
+            Ui.TextColored(Ui.Muted * new Vector4(1, 1, 1, 0.5f), state);
+            Ui.Tooltip(state switch
+            {
+                "prices off" => "Market board prices are off.",
+                "no listings" => "Nobody is selling this on your home world right now.",
+                _ => "The market lookup did not answer this time. Look again in a moment.",
+            });
             return;
         }
         // A price lands whenever the lookup answers, which is rarely the frame the row first drew.
@@ -1074,7 +1092,7 @@ public sealed class ConfirmationWindow : StyledWindow
             }
         }
 
-        var notes = row.Proposal.Warnings.Where(w => w != "Not proposed by any rule").ToList();
+        var notes = row.Proposal.Warnings.Where(w => w != "Not suggested by any rule").ToList();
         if (notes.Count > 0)
         {
             Ui.Gap(0.4f);
@@ -1082,7 +1100,7 @@ public sealed class ConfirmationWindow : StyledWindow
             Ui.Gap(0.4f);
             foreach (var w in notes)
             {
-                var severe = w.Contains("never be reacquired", StringComparison.Ordinal) || w.Contains("cannot be bought back", StringComparison.Ordinal);
+                var severe = w.Contains("never be reacquired", StringComparison.OrdinalIgnoreCase) || w.Contains("cannot be bought back", StringComparison.OrdinalIgnoreCase);
                 Ui.Icon(FontAwesomeIcon.ExclamationTriangle, severe ? Ui.Danger : Ui.Warn);
                 ImGui.SameLine(0, 6 * Ui.Scale);
                 using (ImRaii.TextWrapPos(0))
@@ -1274,7 +1292,7 @@ public sealed class ConfirmationWindow : StyledWindow
     }
 
     public const string SortAfterLabel = "Sort bags afterwards";
-    public const string SortAfterHint = "Runs the game's own sort on every container that was touched.";
+    public const string SortAfterHint = "After a clean, runs the game's own sort on every container it touched.";
     public const string HandsFreeCleanHint = "Hands-free: opens the saddlebag, travels to an inn, visits each retainer and the dresser, and cleans as it goes.";
     private const string StopHint = "Finishes the current item, then stops.";
 
@@ -1300,7 +1318,7 @@ public sealed class ConfirmationWindow : StyledWindow
     /// First run. One question, or two for anyone who wants junk cleared: what is Gleam for, and then what
     /// should happen to junk. Someone who only wants their things put away is never asked about discarding.
     /// </summary>
-    private void DrawFirstRun(RunPlan plan)
+    private void DrawFirstRun(RunPlan? plan)
     {
         var width = Math.Min(520 * Ui.Scale, ImGui.GetContentRegionAvail().X - 20 * Ui.Scale);
         var left = (ImGui.GetWindowWidth() - width) / 2;

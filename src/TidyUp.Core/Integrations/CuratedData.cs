@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -78,6 +79,32 @@ public static class DiscardHelperImport
         var json = JsonSerializer.Serialize(doc, new JsonSerializerOptions { WriteIndented = true });
         // Its type marker is a "$type" property, which C# cannot name directly.
         return json.Replace("\"type\":", "\"$type\":");
+    }
+
+    /// <summary>
+    /// Adds Gleam's two lists to an existing Discard Helper file and keeps everything else in it: its
+    /// after-venture and armoury settings, its character exclusions, and the entries it already had.
+    /// Writing a fresh file over the real one used to wipe all of that. Anything kept wins over junk.
+    /// </summary>
+    public static string Merge(string? existingJson, DiscardHelperLists lists)
+    {
+        if (string.IsNullOrWhiteSpace(existingJson)) return Write(lists);
+        try
+        {
+            if (JsonNode.Parse(existingJson) is not JsonObject root) return Write(lists);
+            var had = Parse(existingJson);
+            var keep = had.Keep.Concat(lists.Keep).Distinct().ToList();
+            var discard = had.Discard.Concat(lists.Discard).Distinct().Where(id => !keep.Contains(id)).ToList();
+            root["DiscardingItems"] = ToArrayNode(discard);
+            root["BlacklistedItems"] = ToArrayNode(keep);
+            return root.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
+        }
+        catch (JsonException)
+        {
+            return Write(lists);
+        }
+
+        static JsonArray ToArrayNode(IEnumerable<uint> ids) => new(ids.Select(id => (JsonNode?)JsonValue.Create(id)).ToArray());
     }
 
     private static IReadOnlyList<uint> Ids(JsonElement root, string property)
