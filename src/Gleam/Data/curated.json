@@ -1,0 +1,27 @@
+{
+  "version": "1",
+  "updatedForPatch": "7.56",
+  "_comment": "seasonalItemIds: item ids of consumables/tokens from seasonal events that have ended. Empty on purpose until verified in-game; the rule is low-confidence and unchecked by default anyway. retiredCurrencyNames: English item names of currencies that can no longer be earned. Tomestones are derived from the game's TomestonesItem sheet and do not need listing here. protectedItemIds: things that can never be regained once lost; Gleam never lists them. Ultimate weapons are recognised from game data instead.",
+  "seasonalItemIds": [],
+  "retiredCurrencyNames": [
+    "Red Crafters' Scrip",
+    "Red Gatherers' Scrip",
+    "Yellow Crafters' Scrip",
+    "Yellow Gatherers' Scrip",
+    "White Crafters' Scrip",
+    "White Gatherers' Scrip"
+  ],
+  "protectedItemIds": [
+    16039,
+    24589,
+    33648,
+    41081,
+    10155,
+    10373,
+    21197,
+    23175,
+    28633,
+    36810,
+    38951
+  ]
+}

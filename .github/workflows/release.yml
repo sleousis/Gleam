@@ -51,10 +51,10 @@ jobs:
       - name: Check the tag matches the version
         shell: bash
         run: |
-          ver=$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' src/TidyUp/TidyUp.csproj | head -1)
+          ver=$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' src/Gleam/Gleam.csproj | head -1)
           tag="${{ steps.tag.outputs.name }}"; tag="${tag#v}"
           if [ "$ver" != "$tag" ] && [ "$ver" != "$tag.0" ]; then
-            echo "::error::tag v$tag does not match <Version>$ver</Version> in TidyUp.csproj"
+            echo "::error::tag v$tag does not match <Version>$ver</Version> in Gleam.csproj"
             exit 1
           fi
           echo "tag v$tag matches version $ver"
@@ -66,16 +66,16 @@ jobs:
           fi
 
       - name: Test
-        run: dotnet test tests/TidyUp.Core.Tests/TidyUp.Core.Tests.csproj -c Release --nologo
+        run: dotnet test tests/Gleam.Core.Tests/Gleam.Core.Tests.csproj -c Release --nologo
 
       - name: Build
-        run: dotnet build src/TidyUp/TidyUp.csproj -c Release --nologo -p:DalamudLibPath=${{ github.workspace }}\dalamud\
+        run: dotnet build src/Gleam/Gleam.csproj -c Release --nologo -p:DalamudLibPath=${{ github.workspace }}\dalamud\
 
       # The packager names its output latest.zip. The release asset keeps the plugin's name so that a
       # download outside Dalamud is recognisable.
       - name: Name the asset
         shell: pwsh
-        run: Copy-Item "src/TidyUp/bin/Release/TidyUp/latest.zip" "Gleam.zip"
+        run: Copy-Item "src/Gleam/bin/Release/Gleam/latest.zip" "Gleam.zip"
 
       - name: Check the zip holds what the plugin loads at runtime
         shell: pwsh
@@ -84,7 +84,7 @@ jobs:
           $zip = [System.IO.Compression.ZipFile]::OpenRead((Resolve-Path "Gleam.zip"))
           # The packager writes Windows separators into the zip, so normalise before comparing.
           try { $names = @($zip.Entries.FullName).Replace('\', '/') } finally { $zip.Dispose() }
-          foreach ($needed in @("TidyUp.dll", "TidyUp.Core.dll", "TidyUp.json", "Data/curated.json", "images/icon-96.png", "images/icon-192.png")) {
+          foreach ($needed in @("Gleam.dll", "Gleam.Core.dll", "Gleam.json", "Data/curated.json", "images/icon-96.png", "images/icon-192.png")) {
             if ($names -notcontains $needed) { throw "release zip is missing $needed" }
           }
           Write-Host "zip contains every file the plugin opens at runtime"
@@ -93,7 +93,7 @@ jobs:
         shell: bash
         run: |
           python tools/make-repo-json.py \
-            --manifest src/TidyUp/bin/Release/TidyUp/TidyUp.json \
+            --manifest src/Gleam/bin/Release/Gleam/Gleam.json \
             --tag "${{ steps.tag.outputs.name }}" \
             --repo "${{ github.repository }}" \
             --changelog CHANGELOG.md \
@@ -118,7 +118,7 @@ jobs:
           git fetch origin ${{ github.event.repository.default_branch }}
           git checkout -B ${{ github.event.repository.default_branch }} origin/${{ github.event.repository.default_branch }}
           python tools/make-repo-json.py \
-            --manifest src/TidyUp/bin/Release/TidyUp/TidyUp.json \
+            --manifest src/Gleam/bin/Release/Gleam/Gleam.json \
             --tag "${{ steps.tag.outputs.name }}" \
             --repo "${{ github.repository }}" \
             --changelog CHANGELOG.md \
