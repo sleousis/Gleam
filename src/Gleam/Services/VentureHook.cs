@@ -65,7 +65,7 @@ public sealed class VentureHook : IDisposable
             if (queue.Count == 0) return;
             coordinator.SuppressChatSummary = true;
             var before = coordinator.LastReport;
-            await coordinator.ExecuteQueueAsync(queue, refreshAfter: false).ConfigureAwait(false);
+            await coordinator.ExecuteQueueAsync(queue, refreshAfter: false, Core.Stats.RunTrigger.AfterVentures).ConfigureAwait(false);
             // A run that did not start leaves the previous report in place; its count is not this run's.
             var done = ReferenceEquals(coordinator.LastReport, before) ? 0 : coordinator.LastReport?.Done ?? 0;
             if (done > 0) chat.Print($"After {retainer}'s ventures: discarded {done} item{(done == 1 ? "" : "s")} from your bags.", "Gleam");

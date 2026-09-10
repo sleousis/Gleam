@@ -5,6 +5,7 @@ using Dalamud.Plugin.Services;
 using Lumina.Excel.Sheets;
 using Gleam.Core.Execution;
 using Gleam.Core.Model;
+using Gleam.Core.Stats;
 using Gleam.Game;
 using Gleam.Integrations;
 using Gleam.Services;
@@ -121,6 +122,7 @@ public sealed partial class AutoPilot : IDisposable
         var queue = coordinator.BuildQueueFromPlan(r => true);
         if (queue.Count == 0) { Nothing("Nothing is ticked"); return; }
         reviewed = coordinator.CurrentPlan.AllRows.Select(Seen).ToHashSet();
+        coordinator.NoteDecisions();
 
         Mode = PilotMode.Clean;
         PlannedTotal = queue.Count;
@@ -129,6 +131,8 @@ public sealed partial class AutoPilot : IDisposable
         cts?.Dispose();
         cts = new CancellationTokenSource();
         var ct = cts.Token;
+        var stopped = false;
+        BeginTrip();
         try
         {
             var here = queue.Where(q => q.Kind.IsAlwaysLoaded() && q.Action is not ActionKind.VendorSell and not ActionKind.ExpertDelivery and not ActionKind.MarketList).ToList();
@@ -186,6 +190,7 @@ public sealed partial class AutoPilot : IDisposable
         }
         catch (OperationCanceledException)
         {
+            stopped = true;
             Status = "Stopped";
             chat.Print("Stopped. Nothing else was touched.", "Gleam");
         }
@@ -202,6 +207,7 @@ public sealed partial class AutoPilot : IDisposable
         {
             nav.Stop();
             coordinator.SuppressChatSummary = false;
+            EndTrip(RunTrigger.HandsFree, PlannedTotal, tally.Done, tally.Skipped, tally.Failed, tally.Pending.Values.Sum(), stopped, tally.LegFailures.Concat(tally.Reasons));
             IsRunning = false;
             await coordinator.RefreshPlanAsync(openWindow: false).ConfigureAwait(false);
         }
@@ -216,13 +222,16 @@ public sealed partial class AutoPilot : IDisposable
         public int Done, Skipped, Failed;
         public readonly Dictionary<string, int> Pending = new();
         public readonly List<string> LegFailures = new();
+        /// <summary>Why individual items failed, for the stats page's "most common reason".</summary>
+        public readonly List<string> Reasons = new();
 
-        public void Clear() { Done = Skipped = Failed = 0; Pending.Clear(); LegFailures.Clear(); }
+        public void Clear() { Done = Skipped = Failed = 0; Pending.Clear(); LegFailures.Clear(); Reasons.Clear(); }
 
         public void Add(RunReport? r)
         {
             if (r is null) return;
             Done += r.Done; Skipped += r.Skipped; Failed += r.Failed;
+            Reasons.AddRange(r.Results.Where(x => x.Outcome == ActionOutcome.Failed).Select(x => x.Message));
             foreach (var (reason, count) in r.PendingByReason())
                 Pending[reason] = Pending.GetValueOrDefault(reason) + count;
         }
@@ -242,12 +251,21 @@ public sealed partial class AutoPilot : IDisposable
             Pending.Where(kv => kv.Value > 0).Select(kv => $"{kv.Value} waiting: {(string.IsNullOrEmpty(kv.Key) ? "its storage is not open" : kv.Key)}.");
     }
 
-    /// <summary>Runs one leg; a failure is recorded and the run moves on to the next leg. Cancellation still stops everything.</summary>
+    /// <summary>
+    /// Runs one leg; a failure is recorded and the run moves on to the next leg. Cancellation still stops
+    /// everything. Top-level legs are timed for the stats page; a retainer's own leg inside them only counts.
+    /// </summary>
     private async Task<bool> Leg(string name, Func<Task> body, CancellationToken ct)
     {
+        var top = legDepth == 0;
+        if (name.StartsWith("retainer ", StringComparison.Ordinal)) retainersVisited++;
+        legDepth++;
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        var ok = false;
         try
         {
             await body().ConfigureAwait(false);
+            ok = true;
             return true;
         }
         catch (OperationCanceledException) { throw; }
@@ -265,7 +283,94 @@ public sealed partial class AutoPilot : IDisposable
             await RecoverUiAsync(ct).ConfigureAwait(false);
             return false;
         }
+        finally
+        {
+            legDepth--;
+            if (top) legs.Add(new LegRecord(LegName(name), Math.Round(clock.Elapsed.TotalSeconds, 1), ok));
+        }
     }
+
+    // ---------- the trip, for the stats page ----------
+
+    /// <summary>Set by the plugin: a finished trip, with its stops, teleports and distance walked.</summary>
+    public event Action<RunEvent>? TripFinished;
+
+    private readonly List<LegRecord> legs = new();
+    private int legDepth;
+    private int teleports;
+    private int retainersVisited;
+    private double walked;
+    private Vector3? lastPosition;
+    private DateTimeOffset tripStarted;
+
+    private void BeginTrip()
+    {
+        legs.Clear();
+        legDepth = 0;
+        teleports = 0;
+        retainersVisited = 0;
+        walked = 0;
+        lastPosition = null;
+        tripStarted = DateTimeOffset.Now;
+        framework.Update += SampleWalk;
+    }
+
+    private void EndTrip(RunTrigger trigger, int planned, int done, int skipped, int failed, int waiting, bool stopped, IEnumerable<string> reasons)
+    {
+        framework.Update -= SampleWalk;
+        try
+        {
+            TripFinished?.Invoke(new RunEvent
+            {
+                At = DateTimeOffset.Now,
+                Trigger = trigger,
+                Started = tripStarted,
+                Planned = planned,
+                Done = done,
+                Skipped = skipped,
+                Failed = failed,
+                Waiting = waiting,
+                Stopped = stopped,
+                Legs = legs.ToList(),
+                Teleports = teleports,
+                WalkedYalms = Math.Round(walked, 1),
+                RetainersVisited = retainersVisited,
+                FailureReasons = reasons.Where(r => !string.IsNullOrWhiteSpace(r)).Distinct().Take(5).ToList(),
+            });
+        }
+        catch (Exception ex)
+        {
+            log.Warning(ex, "Noting the trip for the stats failed");
+        }
+    }
+
+    /// <summary>Adds up the character's steps while a trip runs. A jump of many yalms at once is a teleport, not a walk.</summary>
+    private void SampleWalk(IFramework _)
+    {
+        var here = objects.LocalPlayer?.Position;
+        if (here is null) { lastPosition = null; return; }
+        if (lastPosition is { } before)
+        {
+            var step = Vector3.Distance(here.Value, before);
+            if (step < 15f) walked += step;
+        }
+        lastPosition = here;
+    }
+
+    /// <summary>A stop's name as the stats page shows it. Retainers go by "Retainer", never by name.</summary>
+    private static string LegName(string name) => name switch
+    {
+        "bags" => "Bags",
+        "saddlebag" => "Saddlebag",
+        "inn" => "Travel to the inn",
+        "retainers" => "Retainers",
+        "dresser" => "Dresser",
+        "items brought back" => "Items brought back",
+        "expert delivery" => "Grand Company",
+        "merchant" => "Merchant",
+        _ when name.StartsWith("retainer ", StringComparison.Ordinal) => "Retainer",
+        _ => name,
+    };
 
     /// <summary>
     /// Ends the retainer session completely: back to the list, list closed, and the game no longer counting the
@@ -307,7 +412,7 @@ public sealed partial class AutoPilot : IDisposable
 
     private async Task Execute(IReadOnlyList<QueuedAction> rows)
     {
-        await coordinator.ExecuteQueueAsync(rows, refreshAfter: false).ConfigureAwait(false);
+        await coordinator.ExecuteQueueAsync(rows, refreshAfter: false, RunTrigger.PartOfTrip).ConfigureAwait(false);
         tally.Add(coordinator.LastReport);
     }
 
@@ -371,6 +476,7 @@ public sealed partial class AutoPilot : IDisposable
         await Step("Travelling to an inn", async () =>
         {
             if (!travel.GoToInn(S.InnIndex)) throw new AutoPilotException("the teleport to the inn did not start");
+            teleports++;
             await Task.Delay(1500, ct).ConfigureAwait(false);
             await WaitUntil(() => !travel.IsBusy && !condition[ConditionFlag.BetweenAreas] && !condition[ConditionFlag.BetweenAreas51] && IsInInn(),
                 TimeSpan.FromSeconds(S.TravelTimeoutSeconds), "the inn room", ct).ConfigureAwait(false);
@@ -653,6 +759,7 @@ public sealed partial class AutoPilot : IDisposable
             {
                 var before = clientState.TerritoryType;
                 if (!travel.Execute(db.LocalizePlaceName(S.VendorAetheryte))) throw new AutoPilotException("the teleport did not start");
+                teleports++;
                 await Task.Delay(1500, ct).ConfigureAwait(false);
                 await WaitUntil(() => !travel.IsBusy && !condition[ConditionFlag.BetweenAreas] && !condition[ConditionFlag.BetweenAreas51] && clientState.TerritoryType != before,
                     TimeSpan.FromSeconds(S.TravelTimeoutSeconds), db.LocalizePlaceName(S.VendorAetheryte), ct).ConfigureAwait(false);
@@ -704,6 +811,7 @@ public sealed partial class AutoPilot : IDisposable
             {
                 var before = clientState.TerritoryType;
                 if (!travel.Execute(db.LocalizePlaceName(city))) throw new AutoPilotException("the teleport did not start");
+                teleports++;
                 await Task.Delay(1500, ct).ConfigureAwait(false);
                 await WaitUntil(() => !travel.IsBusy && !condition[ConditionFlag.BetweenAreas] && !condition[ConditionFlag.BetweenAreas51] && clientState.TerritoryType != before,
                     TimeSpan.FromSeconds(S.TravelTimeoutSeconds), city, ct).ConfigureAwait(false);
@@ -715,6 +823,7 @@ public sealed partial class AutoPilot : IDisposable
                 await Step($"Taking the aethernet to {shard}", async () =>
                 {
                     if (!travel.AethernetTeleport(db.LocalizePlaceName(shard))) throw new AutoPilotException($"the aethernet trip to {shard} did not start");
+                    teleports++;
                     await Task.Delay(1500, ct).ConfigureAwait(false);
                     await WaitUntil(() => !travel.IsBusy && !condition[ConditionFlag.BetweenAreas] && !condition[ConditionFlag.BetweenAreas51],
                         TimeSpan.FromSeconds(S.TravelTimeoutSeconds), shard, ct).ConfigureAwait(false);

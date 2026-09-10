@@ -434,7 +434,7 @@ internal static class Ui
     /// width is drawn right-aligned and vertically centred on the same row.
     /// </summary>
     /// <summary>Everywhere the one window can be. Clean and Organize are the two things it does; the other two are references.</summary>
-    public enum AppMode { Clean, Organize, History, Settings }
+    public enum AppMode { Clean, Organize, History, Settings, Stats }
 
     public static readonly IReadOnlyList<(AppMode, string)> ModeOptions = [(AppMode.Clean, "Clean"), (AppMode.Organize, "Organize")];
 

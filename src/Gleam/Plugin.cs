@@ -6,6 +6,7 @@ using Dalamud.Plugin.Services;
 using Gleam.Core.Integrations;
 using Gleam.Core.Logging;
 using Gleam.Core.Model;
+using Gleam.Core.Stats;
 using Gleam.Game;
 using Gleam.Integrations;
 using Gleam.Services;
@@ -60,6 +61,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly BagHighlighter highlighter;
     private readonly SelfTest selfTest;
     private readonly DebugReport report;
+    private readonly StatsService stats;
 
     public Plugin(
         IDalamudPluginInterface pi, ICommandManager commands, IClientState clientState, IPluginLog log,
@@ -101,6 +103,7 @@ public sealed class Plugin : IDalamudPlugin
         var snapshots = new InventorySnapshotService(framework, player, log, config, db, scanner, contextBuilder, allagan, market);
         coordinator = new RunCoordinator(framework, player, chat, toast, log, config, db, scanner, contextBuilder, actions, merger, runLog, allagan, market, snapshots, Save);
         var moveLog = new JsonLinesMoveLog(new ReliableTextStorage(storage, pi.GetPluginConfigDirectory()), "gleam-moves.jsonl");
+        var journal = new JsonLinesJournal(new ReliableTextStorage(storage, pi.GetPluginConfigDirectory()), "gleam-journal.jsonl");
         organizer = new OrganizerCoordinator(framework, player, chat, toast, log, config, db, snapshots, mover, moveLog, coordinator);
 
         var icons = new IconCache(textures, Path.Combine(pi.AssemblyLocation.Directory?.FullName ?? ".", "images"));
@@ -136,6 +139,23 @@ public sealed class Plugin : IDalamudPlugin
         debugWindow.SelfTest = selfTest;
         debugWindow.CopyReport = CopyReport;
         settingsWindow.CopyReport = CopyReport;
+
+        // The stats page counts along with every run, and keeps what the histories cannot tell in a journal.
+        stats = new StatsService(framework, player, chat, log, config, runLog, moveLog, journal, Save);
+        coordinator.ActionFinished += stats.OnActionFinished;
+        coordinator.RunFinished += stats.OnRunFinished;
+        coordinator.ScanFinished += stats.OnScan;
+        coordinator.DecisionsTaken += stats.OnDecisions;
+        organizer.MoveFinished += stats.OnMoveFinished;
+        organizer.MovesFinished += stats.OnMovesFinished;
+        pilot.TripFinished += stats.OnTrip;
+        actions.SealsEarned += stats.OnSeals;
+        confirmWindow.Stats = new StatsPage(stats, coordinator, organizer, pilot, config, icons)
+        {
+            Back = OpenReview,
+            OpenSettings = () => confirmWindow.Show(Ui.AppMode.Settings),
+        };
+        historyWindow.OpenStats = () => confirmWindow.Show(Ui.AppMode.Stats);
         coordinator.IsPilotRunning = () => pilot.IsRunning || organizer.IsRunning || ventures.IsRunning;
 
         // Tint the game's own bag windows: gold for what the review will clean, blue for what the organizer will move.
@@ -193,7 +213,7 @@ public sealed class Plugin : IDalamudPlugin
 
         commands.AddHandler(Command, new CommandInfo(OnCommand)
         {
-            HelpMessage = "Open Gleam. /gleam organize · settings · history · merge · stop · selftest · report",
+            HelpMessage = "Open Gleam. /gleam organize · stats · settings · history · merge · stop · selftest · report",
         });
         commands.AddHandler(ShortCommand, new CommandInfo(OnCommand) { HelpMessage = "Short for /gleam." });
 
@@ -340,6 +360,10 @@ public sealed class Plugin : IDalamudPlugin
                     chat.Print(t.Result > 0 ? $"Merged {t.Result} split stack{(t.Result == 1 ? "" : "s")}." : "Nothing to merge.", "Gleam");
                 });
                 break;
+            case "stats":
+            case "numbers":
+                confirmWindow.Show(Ui.AppMode.Stats);
+                break;
             case "selftest":
             case "self-test":
             case "check":
@@ -361,7 +385,7 @@ public sealed class Plugin : IDalamudPlugin
                 break;
             default:
                 // An unknown word used to toggle the window, so a typo closed it. It says what exists instead.
-                chat.Print("Try /gleam, /gleam organize, /gleam history, /gleam settings, /gleam scan, /gleam stop, /gleam selftest or /gleam report.", "Gleam");
+                chat.Print("Try /gleam, /gleam organize, /gleam stats, /gleam history, /gleam settings, /gleam scan, /gleam stop, /gleam selftest or /gleam report.", "Gleam");
                 break;
         }
     }
@@ -454,6 +478,7 @@ public sealed class Plugin : IDalamudPlugin
         organizer.Dispose();
         dutyNudge.Dispose();
         dtr.Dispose();
+        stats.Dispose();
         contextMenu.Dispose();
         watcher.Dispose();
         dialogs.Dispose();

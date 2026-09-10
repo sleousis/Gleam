@@ -76,6 +76,10 @@ public sealed partial class SettingsWindow
         var duty = p.PostDutyNudge;
         if (Ui.Check("Nudge after a duty when there is something to clean", ref duty)) { p.PostDutyNudge = duty; dirty = true; }
 
+        var milestones = config.ShowMilestones;
+        if (Ui.Check("Tell me when I reach a milestone", ref milestones)) { config.ShowMilestones = milestones; dirty = true; }
+        Ui.Tooltip("One chat line when Gleam passes something like 1,000 bag slots freed. The stats page shows them either way.");
+
         var kinds = new[] { ContainerKind.Saddlebag, ContainerKind.Retainer, ContainerKind.GlamourDresser };
         var open = kinds.Any(p.IsAutoOpen);
         if (Ui.Check("Open the review when a saddlebag, retainer or dresser opens", ref open))

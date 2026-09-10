@@ -31,6 +31,9 @@ public sealed class ConfirmationWindow : StyledWindow
     /// <summary>Set by the plugin. Shown once after an update.</summary>
     public WhatsNewCard? WhatsNew { get; set; }
 
+    /// <summary>Set by the plugin: the stats page.</summary>
+    public StatsPage? Stats { get; set; }
+
     /// <summary>The other pages of this window; set by the plugin.</summary>
     public OrganizerPanel? Organizer { get; set; }
     public HistoryWindow? History { get; set; }
@@ -51,6 +54,7 @@ public sealed class ConfirmationWindow : StyledWindow
         {
             case Ui.AppMode.Organize: Organizer?.OnShown(); break;
             case Ui.AppMode.History: History?.OnShown(); break;
+            case Ui.AppMode.Stats: Stats?.OnShown(); break;
             case Ui.AppMode.Settings: break;
             default:
                 if (coordinator.CurrentPlan is null && !coordinator.IsRunning) _ = coordinator.RefreshPlanAsync(openWindow: false);
@@ -126,6 +130,7 @@ public sealed class ConfirmationWindow : StyledWindow
         SizeCondition = ImGuiCond.FirstUseEver;
         SizeConstraints = new WindowSizeConstraints { MinimumSize = new Vector2(600, 380), MaximumSize = new Vector2(4000, 3000) };
         AddNav(FontAwesomeIcon.History, "What Gleam did", () => Show(Ui.AppMode.History));
+        AddNav(FontAwesomeIcon.ChartBar, "Your numbers", () => Show(Ui.AppMode.Stats));
         AddNav(FontAwesomeIcon.Cog, "Settings", () => Show(Ui.AppMode.Settings));
     }
 
@@ -147,6 +152,7 @@ public sealed class ConfirmationWindow : StyledWindow
         using var page = Ui.PageTransition(Mode);
         if (Mode == Ui.AppMode.Organize && Organizer is not null) { Organizer.Draw(); return; }
         if (Mode == Ui.AppMode.History && History is not null) { History.Draw(); return; }
+        if (Mode == Ui.AppMode.Stats && Stats is not null) { Stats.Draw(); return; }
         if (Mode == Ui.AppMode.Settings && SettingsPage is not null) { SettingsPage.Draw(); return; }
 
         var plan = coordinator.CurrentPlan;

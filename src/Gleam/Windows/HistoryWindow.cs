@@ -26,6 +26,9 @@ public sealed class HistoryWindow
     /// <summary>Set by the host window: the way back to the list.</summary>
     public Action? Back { get; set; }
 
+    /// <summary>Set by the host window: the stats page.</summary>
+    public Action? OpenStats { get; set; }
+
     public HistoryWindow(IRunLog runLog, IMoveLog moveLog, ItemDatabase db, IconCache icons)
     {
         this.runLog = runLog;
@@ -68,6 +71,7 @@ public sealed class HistoryWindow
         var onRecord = (int)Ui.Count("histCount", entries.Count);
         Ui.Header(icons.LogoSmall, "What Gleam did", $"{onRecord} item{(onRecord == 1 ? "" : "s")} on record");
         if (Back is not null) { if (Ui.BackLink()) Back(); }
+        if (OpenStats is not null) { ImGui.SameLine(0, 18 * Ui.Scale); if (Ui.LinkButton("See the numbers")) OpenStats(); }
         Ui.Gap(0.4f);
         Ui.SearchBox("##hs", ref search, 260 * Ui.Scale);
         ImGui.SameLine();
