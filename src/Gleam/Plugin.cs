@@ -156,6 +156,9 @@ public sealed class Plugin : IDalamudPlugin
         pilot.Organizer = organizer;
         organizerPanel.Pilot = pilot;
         confirmWindow.Pilot = pilot;
+        var whatsNew = new WhatsNewCard(config);
+        organizerPanel.WhatsNew = whatsNew;
+        confirmWindow.WhatsNew = whatsNew;
         settingsWindow.Pilot = pilot;
         settingsWindow.Nav = nav;
         settingsWindow.Travel = travel;

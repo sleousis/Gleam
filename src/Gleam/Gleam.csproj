@@ -15,6 +15,8 @@ Organize: layouts move the items you keep to where you want them. For example, m
 
 Nothing is changed until you press the button. Items that will be cleaned or moved are highlighted in the game's bag windows. Gleam then opens the saddlebag, travels to an inn for your retainers and the dresser, and visits your Grand Company when something is to be turned in.
 
+Please note: Gleam moves your character and clicks through the game's menus for you. Square Enix's terms of service do not allow third-party tools, and automation is what they act against most. Use it at your own risk. Organizing is still a preview and has not had a full test in game.
+
 Commands: /gleam or /gl. Sub-commands: organize, history, settings, stop, selftest, report.
 
 Plugins Gleam needs:
@@ -47,6 +49,8 @@ Market prices come from Universalis and need an internet connection.</Descriptio
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Read by the "what's new" card, so release notes are written once, in CHANGELOG.md. -->
+    <EmbeddedResource Include="..\..\CHANGELOG.md" LogicalName="Gleam.CHANGELOG.md" Visible="false" />
     <Content Include="Data\curated.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <Visible>true</Visible>

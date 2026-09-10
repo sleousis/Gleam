@@ -178,7 +178,7 @@ public sealed class OrganizerSettings
 public sealed class Configuration : IPluginConfiguration
 {
     /// <summary>Bump when <see cref="Migrate"/> gains a step. New configs start here and skip the chain.</summary>
-    public const int CurrentVersion = 16;
+    public const int CurrentVersion = 17;
 
     public int Version { get; set; } = CurrentVersion;
 
@@ -255,6 +255,12 @@ public sealed class Configuration : IPluginConfiguration
     /// Covers that one patch only: the next one is held back again.
     /// </summary>
     public string? AcceptedGameVersion { get; set; }
+
+    /// <summary>The newest release whose "what's new" the player has put away. Null on a fresh install.</summary>
+    public string? LastSeenVersion { get; set; }
+
+    /// <summary>The note that organizing is still a preview has been read.</summary>
+    public bool SeenOrganizerPreviewNote { get; set; }
 
     /// <summary>Glamour plate item ids seen the last time the dresser was open, per character, so the dresser rule has data before plates reload.</summary>
     public Dictionary<ulong, List<uint>> LastKnownPlateItems { get; set; } = new();
@@ -401,6 +407,13 @@ public sealed class Configuration : IPluginConfiguration
             // effective profile still honoured them: a leftover one would quietly change what Gleam does.
             Profiles.Overrides.Clear();
             Version = 16;
+            changed = true;
+        }
+        if (Version < 17)
+        {
+            // Everyone here was on 0.9.5 or earlier, before the "what's new" card: show them what came since.
+            if (SeenFirstRun && LastSeenVersion is null) LastSeenVersion = "0.9.5";
+            Version = 17;
             changed = true;
         }
         changed |= EnsureDefaults();
