@@ -69,6 +69,14 @@ public sealed class ExecutionEngine
         var core = new ExecutionCore(delay, options.RateLimit, options.MaxConsecutiveFailures);
         ActionResult? last = null;
 
+        // What happened in the game happened, whether or not the history file could be written. A failed
+        // write used to turn a finished action into a failure, which counted towards stopping the run.
+        async Task Record(RunLogEntry entry)
+        {
+            try { await log.AppendAsync(entry).ConfigureAwait(false); }
+            catch (Exception) { report.HistoryFailures++; }
+        }
+
         var summary = await core.RunAsync(ordered, new ExecutionCore.Hooks<QueuedAction>
         {
             BlockedReason = action =>
@@ -84,13 +92,13 @@ public sealed class ExecutionEngine
                 var result = await ExecuteOneAsync(action, token).ConfigureAwait(false);
                 last = result;
                 if (result.Outcome == ActionOutcome.Done)
-                    await log.AppendAsync(RunLogEntry.From(action, identity, result.Outcome)).ConfigureAwait(false);
+                    await Record(RunLogEntry.From(action, identity, result.Outcome)).ConfigureAwait(false);
                 if (result.Outcome == ActionOutcome.Moved && result.Followup is { } follow)
                 {
                     report.Moved.Add(follow);
                     // A partly listed stack: what did go up is history, the rest carries on as a smaller action.
                     if (!follow.BroughtHome && follow.Quantity < action.Quantity)
-                        await log.AppendAsync(RunLogEntry.From(action with { Quantity = action.Quantity - follow.Quantity }, identity, ActionOutcome.Done)).ConfigureAwait(false);
+                        await Record(RunLogEntry.From(action with { Quantity = action.Quantity - follow.Quantity }, identity, ActionOutcome.Done)).ConfigureAwait(false);
                 }
                 return new StepOutcome(ToStep(result.Outcome), result.Message);
             },

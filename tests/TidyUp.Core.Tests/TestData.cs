@@ -40,6 +40,7 @@ internal static class TestData
         // A material category that no recipe ever uses. This shape fell between the vendor-only rule and
         // the crafting rule and reached the player as "Not suggested by any rule".
         [22] = ItemInfo.Test(22, "Corpse Blue Dye", vendor: 1, marketable: false, untradable: true, category: "Dye", stack: 99),
+        [23] = ItemInfo.Test(23, "Fire Shard", vendor: 1, marketable: true, category: "Crystal", stack: 9999),
     };
 
     public static ItemInfo? Lookup(uint id) => Items.GetValueOrDefault(id);

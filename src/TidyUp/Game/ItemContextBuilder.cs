@@ -25,7 +25,7 @@ public sealed unsafe class ItemContextBuilder
 
     public ItemContext Build(IReadOnlyDictionary<uint, MarketPrice>? market = null)
     {
-        var (gearsetIds, maxIlvl) = ReadGearsets();
+        var (gearsetIds, maxIlvl, gearsetsKnown) = ReadGearsets();
         var plates = GameInventoryScanner.PlateItemIds();
         var cid = player.ContentId;
 
@@ -45,6 +45,7 @@ public sealed unsafe class ItemContextBuilder
             CharacterId = cid,
             CharacterName = player.CharacterName,
             GearsetItemIds = gearsetIds,
+            GearsetsKnown = gearsetsKnown,
             PlateItemIds = plates ?? new HashSet<uint>(),
             PlatesLoaded = plates is not null,
             JobLevels = ReadJobLevels(),
@@ -58,12 +59,13 @@ public sealed unsafe class ItemContextBuilder
         };
     }
 
-    private (HashSet<uint> Ids, int MaxItemLevel) ReadGearsets()
+    private (HashSet<uint> Ids, int MaxItemLevel, bool Known) ReadGearsets()
     {
         var ids = new HashSet<uint>();
         var maxIlvl = 0;
         var gm = RaptureGearsetModule.Instance();
-        if (gm == null) return (ids, maxIlvl);
+        if (gm == null) return (ids, maxIlvl, false);
+        var known = true;
         try
         {
             for (var i = 0; i < gm->Entries.Length; i++)
@@ -78,9 +80,11 @@ public sealed unsafe class ItemContextBuilder
         }
         catch (Exception ex)
         {
-            log.Warning(ex, "Gearset read failed; treating every equipment item as possibly referenced");
+            // An empty set here used to mean "in no gear set", so a bad read left every set piece unprotected.
+            known = false;
+            log.Warning(ex, "Gear sets could not be read; Gleam leaves every piece of gear alone this time");
         }
-        return (ids, maxIlvl);
+        return (ids, maxIlvl, known);
     }
 
     private Dictionary<uint, short> ReadJobLevels()

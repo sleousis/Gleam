@@ -445,6 +445,20 @@ public class ExecutionEngineTests
     }
 
     [Fact]
+    public async Task A_history_that_cannot_be_written_does_not_turn_a_finished_action_into_a_failure()
+    {
+        var game = new FakeGame();
+        game.Slots[Inv(0)] = ScannedItem.Simple(Inv(0), 1, 1);
+
+        var report = await new ExecutionEngine(game, new BrokenRunLog(), new NoDelay())
+            .ExecuteAsync([Q(Inv(0), 1, 1)], Who, CancellationToken.None);
+
+        Assert.Equal(1, report.Done);
+        Assert.Equal(0, report.Failed);
+        Assert.Equal(1, report.HistoryFailures);
+    }
+
+    [Fact]
     public async Task Progress_reports_pending_and_terminal_results()
     {
         var game = new FakeGame();
@@ -463,4 +477,11 @@ public class ExecutionEngineTests
     {
         public void Report(ActionResult value) => sink.Add(value.Outcome);
     }
+}
+
+/// <summary>A history file that can never be written: a full disk, a locked file.</summary>
+internal sealed class BrokenRunLog : IRunLog
+{
+    public Task AppendAsync(RunLogEntry entry) => throw new IOException("the disk is full");
+    public Task<IReadOnlyList<RunLogEntry>> ReadAllAsync() => Task.FromResult<IReadOnlyList<RunLogEntry>>(Array.Empty<RunLogEntry>());
 }

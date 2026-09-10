@@ -129,7 +129,7 @@ public sealed partial class AutoPilot : IDisposable
 
             // A previous run or the player may have left a retainer window, shop, or dresser open.
             Status = "Closing leftover windows";
-            await RecoverUiAsync(ct).ConfigureAwait(false);
+            await RecoverUiAsync(ct, atStart: true).ConfigureAwait(false);
 
             if (here.Count > 0) await Leg("bags", () => Step("Cleaning your bags and armoury chest", () => Execute(here), ct), ct);
 
@@ -269,9 +269,13 @@ public sealed partial class AutoPilot : IDisposable
     }
 
     /// <summary>Closes whatever menu or window a failed leg left open so the next leg starts clean.</summary>
-    private async Task RecoverUiAsync(CancellationToken ct)
+    private async Task RecoverUiAsync(CancellationToken ct, bool atStart = false)
     {
         nav.Stop();
+        // At the start of a run any yes/no question on screen is the player's, not Gleam's. It used to be
+        // answered yes, which could confirm a discard the player had not decided on.
+        if (atStart && await OnFramework(() => GameUi.IsVisible("SelectYesno")).ConfigureAwait(false))
+            throw new AutoPilotException("a yes/no question is open in the game. Answer it, then start again");
         // A retainer's leave prompt left open blocks every later confirmation; answer it before closing windows.
         if (await OnFramework(() => GameUi.IsVisible("SelectYesno") && (GameUi.IsVisible("RetainerList") || GameUi.SelectStringReady())).ConfigureAwait(false))
         {
@@ -371,10 +375,13 @@ public sealed partial class AutoPilot : IDisposable
 
         listingFailure = null;
         var order = await OnFramework(RetainerOrder).ConfigureAwait(false);
+        var leftAlone = coordinator.EffectiveProfile.ExcludedRetainerIds;
         for (var index = 0; index < order.Count; index++)
         {
             ct.ThrowIfCancellationRequested();
             var (id, name, freeMarket) = order[index];
+            // Skipped, not removed from the list: the list position is how the game selects a retainer.
+            if (leftAlone.Contains(id)) continue;
             var rows = byRetainer.GetValueOrDefault(id) ?? new List<QueuedAction>();
             // Only go to a retainer for listings if it has room and listing has not already failed elsewhere.
             var wantsListings = listings.Count > 0 && freeMarket > 0 && listingFailure is null;
@@ -729,7 +736,9 @@ public sealed partial class AutoPilot : IDisposable
         // Only items the player never saw. Anything that was in the review was already accepted or declined,
         // and matching it again here by slot re-ticked items the player had unticked once sorting or a
         // retainer's real slot numbers moved them.
-        var queue = coordinator.BuildQueueFromPlan(r => r.Checked && r.IsSuggested && !reviewed.Contains(Seen(r)));
+        // What a rule would tick on its own, never a tick carried over from some other moment.
+        var queue = coordinator.BuildQueueFromPlan(r => r.IsSuggested && r.Proposal.DefaultChecked && !coordinator.SessionSkips.Contains(r.Key) && !reviewed.Contains(Seen(r)),
+            requireChecked: false);
         if (queue.Count == 0) return;
         await Step($"Cleaning {queue.Count} more item{(queue.Count == 1 ? "" : "s")} found in {what}", () => Execute(queue), ct).ConfigureAwait(false);
     }

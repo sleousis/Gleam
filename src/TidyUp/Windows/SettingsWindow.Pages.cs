@@ -46,7 +46,8 @@ public sealed partial class SettingsWindow
     private void DrawContainers()
     {
         var p = Editing;
-        var known = coordinator.RetainerNames;
+        // This character's retainers only: every retainer ever seen on the account used to be listed.
+        var known = Game.RetainerDirectory.Current();
         Ui.HintWrapped("An unticked retainer is left completely alone: nothing is cleaned from it and nothing is moved to it.");
         Ui.Gap(0.3f);
         if (known.Count == 0) { Ui.Hint("No retainers yet. They appear once you are logged in on a character that has some."); return; }
@@ -161,8 +162,10 @@ public sealed partial class SettingsWindow
             if (!ok || string.IsNullOrEmpty(path)) return;
             try
             {
-                File.WriteAllText(path, Core.Integrations.DiscardHelperImport.Write(mine));
-                ImportResult = $"Wrote {mine.Discard.Count + mine.Keep.Count}.";
+                // Added to an existing file rather than written over it, which used to wipe its other settings.
+                var existing = File.Exists(path) ? File.ReadAllText(path) : null;
+                File.WriteAllText(path, Core.Integrations.DiscardHelperImport.Merge(existing, mine));
+                ImportResult = existing is null ? $"Wrote {mine.Discard.Count + mine.Keep.Count}." : "Added to that file. Its other settings were kept.";
             }
             catch (Exception)
             {

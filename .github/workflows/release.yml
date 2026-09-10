@@ -46,6 +46,19 @@ jobs:
           Invoke-WebRequest -Uri "https://goatcorp.github.io/dalamud-distrib/latest.zip" -OutFile dalamud.zip
           Expand-Archive -Path dalamud.zip -DestinationPath "$env:GITHUB_WORKSPACE\dalamud" -Force
 
+      # A tag that does not match the project's version ships an update Dalamud never offers, because the
+      # version players already have is the same one. Stop before anything is built or published.
+      - name: Check the tag matches the version
+        shell: bash
+        run: |
+          ver=$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' src/TidyUp/TidyUp.csproj | head -1)
+          tag="${{ steps.tag.outputs.name }}"; tag="${tag#v}"
+          if [ "$ver" != "$tag" ] && [ "$ver" != "$tag.0" ]; then
+            echo "::error::tag v$tag does not match <Version>$ver</Version> in TidyUp.csproj"
+            exit 1
+          fi
+          echo "tag v$tag matches version $ver"
+
       - name: Test
         run: dotnet test tests/TidyUp.Core.Tests/TidyUp.Core.Tests.csproj -c Release --nologo
 
@@ -69,15 +82,6 @@ jobs:
             if ($names -notcontains $needed) { throw "release zip is missing $needed" }
           }
           Write-Host "zip contains every file the plugin opens at runtime"
-
-      - name: Write the repository file
-        shell: bash
-        run: |
-          python tools/make-repo-json.py \
-            --manifest src/TidyUp/bin/Release/TidyUp/TidyUp.json \
-            --tag "${{ steps.tag.outputs.name }}" \
-            --repo "${{ github.repository }}" \
-            --out repo.json
 
       - name: Publish the release
         uses: softprops/action-gh-release@v2
