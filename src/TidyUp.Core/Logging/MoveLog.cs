@@ -26,7 +26,13 @@ public interface IMoveLog
     Task<IReadOnlyList<MoveLogEntry>> ReadAllAsync();
 }
 
-/// <summary>JSON-lines append-only log of any record type; same shape and durability as the cleaner's history.</summary>
+/// <summary>
+/// JSON-lines log of any record type, one line per entry, used by both histories.
+///
+/// Each entry is appended as one line. The whole file used to be rewritten for every item cleaned or moved,
+/// so each action cost more than the one before it. A line cut short by a crash is skipped on reading, and
+/// the next entry starts on a line of its own, so a torn line never takes its neighbour with it.
+/// </summary>
 public sealed class JsonLinesLog<T> where T : class
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -39,6 +45,8 @@ public sealed class JsonLinesLog<T> where T : class
     private readonly string path;
     private readonly SemaphoreSlim gate = new(1, 1);
     private List<T>? cache;
+    /// <summary>Whether the file on disk ends at a line break, so an appended line starts on a line of its own.</summary>
+    private bool endsCleanly = true;
 
     public JsonLinesLog(ITextStorage storage, string path)
     {
@@ -52,9 +60,10 @@ public sealed class JsonLinesLog<T> where T : class
         try
         {
             var all = await LoadAsync().ConfigureAwait(false);
+            var line = JsonSerializer.Serialize(entry, JsonOptions) + "\n";
+            await storage.AppendAsync(path, endsCleanly ? line : "\n" + line).ConfigureAwait(false);
+            endsCleanly = true;
             all.Add(entry);
-            var text = string.Join('\n', all.Select(e => JsonSerializer.Serialize(e, JsonOptions))) + "\n";
-            await storage.WriteAsync(path, text).ConfigureAwait(false);
         }
         finally
         {
@@ -77,6 +86,7 @@ public sealed class JsonLinesLog<T> where T : class
         var loaded = new List<T>();
         if (!storage.Exists(path)) return cache = loaded;
         var text = await storage.ReadAsync(path).ConfigureAwait(false);
+        endsCleanly = string.IsNullOrEmpty(text) || text.EndsWith('\n');
         if (string.IsNullOrWhiteSpace(text)) return cache = loaded;
         foreach (var line in text.Split('\n'))
         {

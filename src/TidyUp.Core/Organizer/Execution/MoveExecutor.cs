@@ -112,7 +112,7 @@ public sealed class MoveExecutor
                     {
                         await log.AppendAsync(new MoveLogEntry(DateTimeOffset.UtcNow, identity.CharacterId, identity.CharacterName,
                         op.Item.ItemId, op.Info.Name, op.Item.Quantity, op.Item.IsHq, op.From.Kind, op.From.OwnerId, op.To.Kind, op.To.OwnerId,
-                        op.Leg.ToString(), string.Empty)).ConfigureAwait(false);
+                        op.Leg.ToString(), op.RuleName)).ConfigureAwait(false);
                     }
                     catch (Exception) { report.HistoryFailures++; }
                 }

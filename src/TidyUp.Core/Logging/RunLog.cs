@@ -1,5 +1,3 @@
-using System.Text.Json;
-using System.Text.Json.Serialization;
 using TidyUp.Core.Execution;
 using TidyUp.Core.Model;
 
@@ -40,81 +38,22 @@ public interface ITextStorage
     bool Exists(string path);
     Task<string?> ReadAsync(string path);
     Task WriteAsync(string path, string contents);
+
+    /// <summary>Adds text to the end of a file, creating it if needed. Storage that cannot append rewrites the file.</summary>
+    async Task AppendAsync(string path, string text)
+    {
+        var existing = Exists(path) ? await ReadAsync(path).ConfigureAwait(false) : null;
+        await WriteAsync(path, (existing ?? string.Empty) + text).ConfigureAwait(false);
+    }
 }
 
-/// <summary>JSON-lines log. Small enough to rewrite whole on each append, which keeps it a single durable write.</summary>
+/// <summary>The cleaner's history: one JSON line per stack acted on.</summary>
 public sealed class JsonLinesRunLog : IRunLog
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        Converters = { new JsonStringEnumConverter() },
-        DefaultIgnoreCondition = JsonIgnoreCondition.Never,
-    };
-
-    private readonly ITextStorage storage;
-    private readonly string path;
-    private readonly SemaphoreSlim gate = new(1, 1);
-    private List<RunLogEntry>? cache;
-
-    public JsonLinesRunLog(ITextStorage storage, string path)
-    {
-        this.storage = storage;
-        this.path = path;
-    }
-
-    public async Task AppendAsync(RunLogEntry entry)
-    {
-        await gate.WaitAsync().ConfigureAwait(false);
-        try
-        {
-            var all = await LoadAsync().ConfigureAwait(false);
-            all.Add(entry);
-            var text = string.Join('\n', all.Select(e => JsonSerializer.Serialize(e, JsonOptions))) + "\n";
-            await storage.WriteAsync(path, text).ConfigureAwait(false);
-        }
-        finally
-        {
-            gate.Release();
-        }
-    }
-
-    public async Task<IReadOnlyList<RunLogEntry>> ReadAllAsync()
-    {
-        await gate.WaitAsync().ConfigureAwait(false);
-        try
-        {
-            return (await LoadAsync().ConfigureAwait(false)).ToList();
-        }
-        finally
-        {
-            gate.Release();
-        }
-    }
-
-    private async Task<List<RunLogEntry>> LoadAsync()
-    {
-        if (cache is not null) return cache;
-        // Nothing is cached until the file has actually been read. A read that threw used to leave an
-        // empty list cached, and the next append wrote that empty list over the whole history.
-        var loaded = new List<RunLogEntry>();
-        if (!storage.Exists(path)) return cache = loaded;
-        var text = await storage.ReadAsync(path).ConfigureAwait(false);
-        if (string.IsNullOrWhiteSpace(text)) return cache = loaded;
-        foreach (var line in text.Split('\n'))
-        {
-            if (string.IsNullOrWhiteSpace(line)) continue;
-            try
-            {
-                var e = JsonSerializer.Deserialize<RunLogEntry>(line, JsonOptions);
-                if (e is not null) loaded.Add(e);
-            }
-            catch (JsonException)
-            {
-                // A corrupt line must never take the whole history with it.
-            }
-        }
-        return cache = loaded;
-    }
+    private readonly JsonLinesLog<RunLogEntry> inner;
+    public JsonLinesRunLog(ITextStorage storage, string path) => inner = new JsonLinesLog<RunLogEntry>(storage, path);
+    public Task AppendAsync(RunLogEntry entry) => inner.AppendAsync(entry);
+    public Task<IReadOnlyList<RunLogEntry>> ReadAllAsync() => inner.ReadAllAsync();
 }
 
 /// <summary>In-memory log for tests and for the debug window.</summary>

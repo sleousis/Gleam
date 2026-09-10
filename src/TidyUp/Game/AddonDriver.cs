@@ -22,7 +22,8 @@ public sealed unsafe class AddonDriver : IDisposable
     {
         public required string AddonName;
         public required int CallbackValue;
-        public string? ExpectedSubstring;
+        /// <summary>Any one of these must appear in a yes/no prompt: the item's names in the client's language.</summary>
+        public IReadOnlyList<string>? ExpectedNames;
         public required TaskCompletionSource<bool> Completion;
     }
 
@@ -51,7 +52,7 @@ public sealed unsafe class AddonDriver : IDisposable
     /// the native action so the dialog cannot slip in first. Returns immediately-false if that dialog is
     /// already open, because then it is not ours to answer.
     /// </summary>
-    public Task<bool> ExpectAsync(string addonName, int callbackValue, string? expectedSubstring, TimeSpan timeout, CancellationToken ct)
+    public Task<bool> ExpectAsync(string addonName, int callbackValue, IReadOnlyList<string>? expectedNames, TimeSpan timeout, CancellationToken ct)
     {
         LastRejection = null;
         if (framework.IsInFrameworkUpdateThread ? IsAddonVisible(addonName) : framework.RunOnFrameworkThread(() => IsAddonVisible(addonName)).Result)
@@ -64,7 +65,7 @@ public sealed unsafe class AddonDriver : IDisposable
         lock (gate)
         {
             armed?.Completion.TrySetResult(false);
-            armed = new Armed { AddonName = addonName, CallbackValue = callbackValue, ExpectedSubstring = expectedSubstring, Completion = tcs };
+            armed = new Armed { AddonName = addonName, CallbackValue = callbackValue, ExpectedNames = expectedNames, Completion = tcs };
         }
 
         var timeoutTask = Task.Delay(timeout, ct);
@@ -101,11 +102,11 @@ public sealed unsafe class AddonDriver : IDisposable
         var addon = GetAddon(a.AddonName);
         if (addon == null || !addon->IsVisible) return;
 
-        if (a.AddonName == "SelectYesno" && a.ExpectedSubstring is not null)
+        if (a.AddonName == "SelectYesno" && a.ExpectedNames is { Count: > 0 } names)
         {
             var prompt = ReadYesNoPrompt(addon);
             // Item names carry soft hyphens and the prompt carries payload bytes; compare letters and digits only.
-            if (prompt is null || !PromptMentions(prompt, a.ExpectedSubstring))
+            if (prompt is null || !names.Any(n => PromptMentions(prompt, n)))
             {
                 LastRejection = "the confirmation that appeared was about a different item, so it was left alone";
                 log.Warning("{Rejection}", LastRejection);

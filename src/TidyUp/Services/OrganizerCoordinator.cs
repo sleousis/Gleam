@@ -271,13 +271,29 @@ public sealed class OrganizerCoordinator : IDisposable
     /// <summary>Whether a storage can be moved into right now, so an open saddlebag needs no trip.</summary>
     public bool IsOpen(StorageId storage) => mover.IsOpen(storage);
 
-    /// <summary>A saddlebag or retainer opened: approved moves that were waiting for it run now.</summary>
+    /// <summary>
+    /// A saddlebag or retainer opened: approved moves that were waiting for it run now, one round at a time.
+    /// A later round only runs once nothing from an earlier round is waiting anywhere, and follows straight
+    /// on when it needs the storage that is already open.
+    /// </summary>
     public async Task OnContainerOpenedAsync(ContainerKind kind)
     {
-        if (IsRunning || cleaner.IsRunning || cleaner.IsPilotRunning() || !player.IsLoaded) return;
-        var ready = PendingMoves.Where(m => m.RequiresOpen is { } s && s.Kind == kind && mover.IsOpen(s)).ToList();
-        if (ready.Count == 0) return;
-        toast.ShowNormal($"Gleam: putting away {ready.Count} item{(ready.Count == 1 ? "" : "s")} from your earlier preview.");
-        await RunMovesAsync(ready, refreshAfter: true).ConfigureAwait(false);
+        var ran = false;
+        for (var round = 0; round < 20; round++)
+        {
+            if (IsRunning || cleaner.IsRunning || cleaner.IsPilotRunning() || !player.IsLoaded) break;
+            var ready = PendingMoveGate.ReadyFor(PendingMoves, kind, mover.IsOpen);
+            if (ready.Count == 0) break;
+            if (!ran) toast.ShowNormal($"Gleam: putting away {ready.Count} item{(ready.Count == 1 ? "" : "s")} from your earlier preview.");
+            ran = true;
+            var waitingBefore = PendingMoves.Count;
+            var before = LastReport;
+            await RunMovesAsync(ready, refreshAfter: false).ConfigureAwait(false);
+            // A round with a failure, or one that cleared nothing, is where it stops: the next round was sized
+            // on this one having drained.
+            if (ReferenceEquals(LastReport, before) || LastReport is null || LastReport.Failed > 0 || LastReport.Aborted) break;
+            if (PendingMoves.Count >= waitingBefore) break;
+        }
+        if (ran) await PreviewAsync().ConfigureAwait(false);
     }
 }
