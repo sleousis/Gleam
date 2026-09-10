@@ -242,6 +242,13 @@ public sealed class Configuration : IPluginConfiguration
     public bool ShowAltSections { get; set; } = true;
     public bool ChatSummaryAfterRun { get; set; } = true;
 
+    /// <summary>
+    /// Retainer names Gleam has seen, by retainer id. The game only lists the retainers of the character you
+    /// are on, so without this a layout that sends things to another character's retainer could only show a
+    /// number. Names are cheap to keep and never go stale in a way that matters.
+    /// </summary>
+    public Dictionary<ulong, string> KnownRetainerNames { get; set; } = new();
+
     /// <summary>Glamour plate item ids seen the last time the dresser was open, per character, so the dresser rule has data before plates reload.</summary>
     public Dictionary<ulong, List<uint>> LastKnownPlateItems { get; set; } = new();
 

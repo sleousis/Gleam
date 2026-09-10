@@ -799,7 +799,7 @@ public sealed class OrganizerPanel
         DestinationKind.Armoury => "armoury chest",
         DestinationKind.Saddlebag => "chocobo saddlebag",
         DestinationKind.Retainer when d.RetainerId == 0 => "any retainer",
-        DestinationKind.Retainer => organizer.RetainerNames.TryGetValue(d.RetainerId, out var n) ? n : "a retainer",
+        DestinationKind.Retainer => organizer.RetainerNames.TryGetValue(d.RetainerId, out var n) ? n : "a retainer Gleam has not met",
         _ => d.Kind.ToString(),
     };
 
@@ -814,7 +814,18 @@ public sealed class OrganizerPanel
         foreach (var (rid, rname) in organizer.RetainerNames.OrderBy(kv => kv.Value)) options.Add((Destination.RetainerNamed(rid), $"Retainer: {rname}"));
         var current = value;
         var idx = options.FindIndex(o => o.D == current);
-        if (idx < 0) { options.Add((current, current.Kind == DestinationKind.Retainer ? $"Retainer {current.RetainerId:X}" : current.Kind.ToString())); idx = options.Count - 1; }
+        // A layout can name a retainer this character does not have: another character's, or a dismissed one.
+        // Say so in words. It used to print the raw id, which tells a player nothing at all.
+        if (idx < 0)
+        {
+            string label;
+            if (current.Kind != DestinationKind.Retainer) label = current.Kind.ToString();
+            else if (Game.RetainerDirectory.Names(config).TryGetValue(current.RetainerId, out var known))
+                label = $"{known}  ·  not on this character";
+            else label = "A retainer Gleam has not met";
+            options.Add((current, label));
+            idx = options.Count - 1;
+        }
         ImGui.SetNextItemWidth(210 * Ui.Scale);
         using var bg = ImRaii.PushColor(ImGuiCol.FrameBg, new Vector4(1, 1, 1, 0.06f));
         if (!Ui.Combo(id, ref idx, options.Select(o => o.Label).ToList())) return false;
