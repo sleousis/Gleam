@@ -44,6 +44,9 @@ public sealed class OrganizerPanel
     /// <summary>Set by the plugin when hands-free mode is available.</summary>
     public Automation.AutoPilot? Pilot { get; set; }
 
+    /// <summary>Set by the plugin. Shown once after an update, on whichever page the player opens first.</summary>
+    public WhatsNewCard? WhatsNew { get; set; }
+
     /// <summary>Set by the host window: flips the header switch back to Clean.</summary>
     public Action? SwitchToClean { get; set; }
 
@@ -101,6 +104,21 @@ public sealed class OrganizerPanel
         dirty = true;
     }
 
+    /// <summary>
+    /// Organizing has not had a full pass in game yet. Said once, with the worst case: it only moves things, so
+    /// nothing can be lost, but a run that stops can leave an item in the bags. Remove once it has been tested.
+    /// </summary>
+    private void DrawPreviewNote()
+    {
+        if (config.SeenOrganizerPreviewNote) return;
+        if (Ui.Banner(Ui.Warn, "Preview.", "Organizing has not had a full test in game yet. It never discards; at worst an item stays in your bags or a run stops early.", dismissLabel: "Got it"))
+        {
+            config.SeenOrganizerPreviewNote = true;
+            dirty = true;
+        }
+        Ui.Gap(0.4f);
+    }
+
     public void Draw()
     {
         if (Simple) { DrawSimple(BorrowSimpleLayout()); return; }
@@ -118,6 +136,8 @@ public sealed class OrganizerPanel
 
         DrawPlanBar();
         Ui.Gap(0.4f);
+        WhatsNew?.Draw();
+        DrawPreviewNote();
         if (!config.SeenOrganizeIntro && plan is not null)
         {
             if (Ui.Banner(Ui.Info, "New here?", "A layout is a short list of rules: what goes where. Start with the starter layout and change it later.", dismissLabel: "Got it"))
@@ -347,6 +367,8 @@ public sealed class OrganizerPanel
         if (Ui.IconButton(FontAwesomeIcon.Sync, "Look again", busy: Rethinking) && !Rethinking) _ = organizer.PreviewAsync();
         Ui.Tooltip("Looks through your bags and storage again.");
         Ui.Gap(0.4f);
+        WhatsNew?.Draw();
+        DrawPreviewNote();
 
         if (Pilot is { IsRunning: true, Mode: Automation.PilotMode.Organize } || organizer.IsRunning) { DrawRunning(); return; }
         DrawBanners();

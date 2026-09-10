@@ -28,6 +28,9 @@ public sealed class ConfirmationWindow : StyledWindow
     /// <summary>Set by the plugin when hands-free mode is available.</summary>
     public Automation.AutoPilot? Pilot { get; set; }
 
+    /// <summary>Set by the plugin. Shown once after an update.</summary>
+    public WhatsNewCard? WhatsNew { get; set; }
+
     /// <summary>The other pages of this window; set by the plugin.</summary>
     public OrganizerPanel? Organizer { get; set; }
     public HistoryWindow? History { get; set; }
@@ -171,6 +174,7 @@ public sealed class ConfirmationWindow : StyledWindow
             return;
         }
         DrawTopBar(plan);
+        WhatsNew?.Draw();
         if (!config.SeenCleanIntro && !Simple)
         {
             Ui.Gap(0.3f);
@@ -1359,6 +1363,11 @@ public sealed class ConfirmationWindow : StyledWindow
                 }
                 Ui.Gap(0.35f);
             }
+            // Said before anyone picks, not buried in a description: this is automation, and that has a risk.
+            Ui.Gap(0.5f);
+            ImGui.SetCursorPosX(left);
+            using (ImRaii.TextWrapPos(left + width))
+                Ui.Hint("Gleam walks your character and answers the game's menus for you. Square Enix's terms do not allow third-party tools like this, so use it at your own risk.");
             _ = plan;
             return;
         }
