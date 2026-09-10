@@ -3,8 +3,8 @@
     "Author": "Raiden Shinryu",
     "Name": "Gleam",
     "InternalName": "TidyUp",
-    "AssemblyVersion": "0.9.4.0",
-    "Description": "Gleam cleans and organizes your inventory, and does the walking itself.\n\nClean: it finds junk in your bags, armoury chest, saddlebag, retainers and glamour dresser and shows it in one list. You choose whether to sell on the market board, sell to vendors or discard, then press one button.\n\nOrganize: layouts move the items you keep to where you want them. For example, materia to the saddlebag, spare gear to a retainer and gear-set pieces to the armoury chest.\n\nNothing is changed until you press the button. Items that will be cleaned or moved are highlighted in the game's bag windows. Gleam then opens the saddlebag, travels to an inn for your retainers and the dresser, and visits your Grand Company when something is to be turned in.\n\nCommands: /gleam or /gl. Sub-commands: organize, history, settings, stop.\n\nPlugins Gleam needs:\nvnavmesh walks your character from place to place. Gleam needs it.\nLifestream teleports between aetherytes and into inns. Without it, start a run while you are already in an inn.\n\nOptional:\nAutoRetainer lets Gleam discard junk after each retainer's ventures.\nAllagan Tools shows retainer contents without summoning them.\nMarket prices come from Universalis and need an internet connection.",
+    "AssemblyVersion": "0.9.5.0",
+    "Description": "Gleam cleans and organizes your inventory, and does the walking itself.\n\nClean: it finds junk in your bags, armoury chest, saddlebag, retainers and glamour dresser and shows it in one list. You choose whether to sell on the market board, sell to vendors or discard, then press one button.\n\nOrganize: layouts move the items you keep to where you want them. For example, materia to the saddlebag, spare gear to a retainer and gear-set pieces to the armoury chest.\n\nNothing is changed until you press the button. Items that will be cleaned or moved are highlighted in the game's bag windows. Gleam then opens the saddlebag, travels to an inn for your retainers and the dresser, and visits your Grand Company when something is to be turned in.\n\nCommands: /gleam or /gl. Sub-commands: organize, history, settings, stop, selftest, report.\n\nPlugins Gleam needs:\nvnavmesh walks your character from place to place. Gleam needs it.\nLifestream teleports between aetherytes and into inns. Without it, start a run while you are already in an inn.\n\nOptional:\nAutoRetainer lets Gleam discard junk after each retainer's ventures.\nAllagan Tools shows retainer contents without summoning them.\nMarket prices come from Universalis and need an internet connection.",
     "ApplicableVersion": "any",
     "RepoUrl": "https://github.com/sleousis/Gleam",
     "Tags": [
@@ -27,12 +27,13 @@
     "IconUrl": "https://raw.githubusercontent.com/sleousis/Gleam/main/src/TidyUp/images/icon.png",
     "Punchline": "Cleans and organizes your inventory, and walks there itself. Needs vnavmesh, plus Lifestream to travel.",
     "AcceptsFeedback": true,
-    "DownloadLinkInstall": "https://github.com/sleousis/Gleam/releases/download/v0.9.4/Gleam.zip",
-    "DownloadLinkUpdate": "https://github.com/sleousis/Gleam/releases/download/v0.9.4/Gleam.zip",
-    "DownloadLinkTesting": "https://github.com/sleousis/Gleam/releases/download/v0.9.4/Gleam.zip",
+    "DownloadLinkInstall": "https://github.com/sleousis/Gleam/releases/download/v0.9.5/Gleam.zip",
+    "DownloadLinkUpdate": "https://github.com/sleousis/Gleam/releases/download/v0.9.5/Gleam.zip",
+    "DownloadLinkTesting": "https://github.com/sleousis/Gleam/releases/download/v0.9.5/Gleam.zip",
     "IsHide": false,
     "IsTestingExclusive": false,
     "DownloadCount": 0,
-    "LastUpdate": 1789052152
+    "LastUpdate": 1789054315,
+    "Changelog": "- Gleam can now run hands-free on Japanese, German and French game clients as well as English ones. It matches item-menu entries by every text id the game uses for them. It recognises NPC menu entries by reading them back into English. It accepts a sale or discard prompt when the prompt uses the item's inflected name.\n- After a game patch Gleam has not been checked on, hands-free runs pause. Runs you start by hand keep working. \"Go ahead on this patch\" lifts the pause for that patch only.\n- `/gleam selftest` checks that Gleam can still find every menu entry, NPC, object and place it uses, without touching any item.\n- `/gleam report`, or \"Copy a bug report\" in Settings, copies versions, settings, recent failures and the last self-test to paste into a bug report. The report contains no character or retainer names.\n- Gleam now checks the price of each market listing after posting it. A listing at the wrong price is reported as failed, and Gleam stops listing further items.\n- Expert Delivery now turns in the exact piece that was planned, not the first item with the same name.\n- The move history now records which layout rule moved each item.\n- Both histories now add one line per item instead of rewriting the whole file each time.\n- When a storage opens, moves that were waiting for it run one round at a time. A later round no longer runs before an earlier one has finished."
   }
 ]
