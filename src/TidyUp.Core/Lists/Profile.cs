@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Runtime.Serialization;
 using TidyUp.Core.Model;
 using TidyUp.Core.Rules;
 
@@ -11,6 +12,14 @@ public sealed class Profile
     public Thresholds Thresholds { get; set; } = Presets.For(PresetName.Vendor);
 
     public HashSet<string> EnabledRules { get; set; } = new(RuleEngine.AllRuleIds);
+
+    /// <summary>
+    /// Dalamud's loader fills an existing collection instead of replacing it. EnabledRules starts full, so
+    /// loading added the saved rules to all of them and a rule the player turned off came back on every
+    /// restart. Emptying it first makes the saved set the whole truth.
+    /// </summary>
+    [OnDeserializing]
+    private void BeforeLoad(StreamingContext _) => EnabledRules = new HashSet<string>();
 
     public Dictionary<ContainerKind, bool> ContainerEnabled { get; set; } =
         Enum.GetValues<ContainerKind>().ToDictionary(k => k, _ => true);

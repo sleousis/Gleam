@@ -75,6 +75,9 @@ public sealed class RunReport
     public int Skipped => Results.Count(r => r.Outcome == ActionOutcome.SkippedChanged);
     public int Failed => Results.Count(r => r.Outcome == ActionOutcome.Failed);
 
+    /// <summary>Left untouched because the run stopped first. Not carried over: the next review shows them again.</summary>
+    public int NotReached => Results.Count(r => r.Outcome == ActionOutcome.Cancelled);
+
     public Dictionary<ContainerKind, int> PendingByContainer =>
         Pending.GroupBy(p => p.Kind).ToDictionary(g => g.Key, g => g.Count());
 
@@ -87,6 +90,7 @@ public sealed class RunReport
         if (home > 0) parts.Add($"{home} brought back to your bags");
         if (Moved.Count - home > 0) parts.Add($"{Moved.Count - home} partly listed");
         if (Pending.Count > 0) parts.Add($"{Pending.Count} waiting");
+        if (NotReached > 0) parts.Add($"{NotReached} left untouched");
         return string.Join(", ", parts);
     }
 }

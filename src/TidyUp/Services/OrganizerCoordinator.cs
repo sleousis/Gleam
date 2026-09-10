@@ -60,6 +60,22 @@ public sealed class OrganizerCoordinator : IDisposable
     /// <summary>Approved moves whose storage was closed when the run reached them.</summary>
     public List<MoveOp> PendingMoves { get; } = new();
 
+    /// <summary>Where each relay's first leg left its stack, kept across runs so the second leg takes exactly that one.</summary>
+    private readonly RelayLedger relays = new();
+
+    /// <summary>The same move, whichever solve produced it: every solve hands out fresh move ids.</summary>
+    private static bool SameMove(MoveOp a, MoveOp b) =>
+        a.Item.Slot == b.Item.Slot && a.Item.ItemId == b.Item.ItemId && a.Item.Quantity == b.Item.Quantity && a.To == b.To && a.Leg == b.Leg;
+
+    /// <summary>Drops every move approved earlier for a storage that was closed. The next preview proposes afresh.</summary>
+    public void ForgetPending()
+    {
+        PendingMoves.Clear();
+        relays.Clear();
+        relays.Clear();
+        Changed?.Invoke();
+    }
+
     public event Action? Changed;
 
     /// <summary>
@@ -121,6 +137,15 @@ public sealed class OrganizerCoordinator : IDisposable
             var spaces = CapacityModel.Build(snapshot.Items, storages, db.Get, liveSizes);
 
             Current = MoveSolver.Solve(desired, spaces, plan);
+
+            // Waiting moves belong to the plan they came from. Once the layout, a rule or the storage has
+            // changed, only the ones this plan still wants are kept: the rest would carry out a layout the
+            // player has since rewritten, the next time some unrelated saddlebag or retainer opened.
+            foreach (var stale in PendingMoves.Where(p => !Current.Moves.Any(m => SameMove(m, p))).ToList())
+            {
+                PendingMoves.Remove(stale);
+                relays.Forget(stale.MoveId);
+            }
             Status = string.Empty;
         }
         catch (Exception ex)
@@ -159,19 +184,23 @@ public sealed class OrganizerCoordinator : IDisposable
             var executor = new MoveExecutor(mover, moveLog, new RealDelay(), new MoveExecutorOptions
             {
                 RateLimit = TimeSpan.FromMilliseconds(config.Callbacks.RateLimitMs),
-            });
+            }, relays);
             var progress = new Progress<MoveResult>(r =>
             {
                 LastProgress = r;
                 if (r.IsTerminal) RunDone++;
                 Changed?.Invoke();
             });
+            var runFor = player.ContentId;
             var identity = new RunIdentity(player.ContentId, player.CharacterName);
             var report = await executor.ExecuteAsync(ops, identity, runCts.Token, progress).ConfigureAwait(false);
             LastReport = report;
             if (report.Done > 0 && !config.HasOrganizedOnce) { config.HasOrganizedOnce = true; config.Save(PluginServices.PluginInterface); }
             PendingMoves.RemoveAll(ops.Contains);
-            PendingMoves.AddRange(report.Pending);
+            // Never twice, and never for whoever logs in next: matching is by item and quantity.
+            if (player.ContentId == runFor)
+                foreach (var waiting in report.Pending)
+                    if (!PendingMoves.Any(p => SameMove(p, waiting))) PendingMoves.Add(waiting);
             Status = report.Summary();
 
             log.Information("Organize finished: {Summary}", report.Summary());
@@ -199,6 +228,9 @@ public sealed class OrganizerCoordinator : IDisposable
     }
 
     public void CancelRun() => runCts?.Cancel();
+
+    /// <summary>Whether a storage can be moved into right now, so an open saddlebag needs no trip.</summary>
+    public bool IsOpen(StorageId storage) => mover.IsOpen(storage);
 
     /// <summary>A saddlebag or retainer opened: approved moves that were waiting for it run now.</summary>
     public async Task OnContainerOpenedAsync(ContainerKind kind)

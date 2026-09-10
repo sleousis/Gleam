@@ -362,17 +362,21 @@ public sealed class GameActions : IGameActions
         (string Addon, int Callback, string? Expect)? expectDialog, bool dialogOptional = false)
     {
         LastFailure = null;
+        // Once the request may reach the server the item is gone or it is not, and Stop cannot change that.
+        // So the confirmation is waited out on its own timeouts rather than on the run's token: an item
+        // destroyed mid-Stop used to be reported as cancelled and left out of history.
+        var finish = CancellationToken.None;
         var removed = WaitForEvent<InventoryItemRemovedArgs>(
-            e => (uint)e.Item.ContainerType == slot.ContainerId && e.Item.InventorySlot == (uint)slot.Slot, ct);
+            e => (uint)e.Item.ContainerType == slot.ContainerId && e.Item.InventorySlot == (uint)slot.Slot, finish);
         var changed = WaitForEvent<InventoryItemChangedArgs>(
-            e => (uint)e.Item.ContainerType == slot.ContainerId && e.Item.InventorySlot == (uint)slot.Slot && e.Item.IsEmpty, ct);
+            e => (uint)e.Item.ContainerType == slot.ContainerId && e.Item.InventorySlot == (uint)slot.Slot && e.Item.IsEmpty, finish);
 
         // Arm first, then act: the dialog can only be answered if it appears after this point, and a
         // dialog that is already open (the player's own) makes the whole action refuse to start.
         Task<bool>? dialogTask = null;
         if (expectDialog is { } d)
         {
-            dialogTask = dialogs.ExpectAsync(d.Addon, d.Callback, d.Expect, Timeout, ct);
+            dialogTask = dialogs.ExpectAsync(d.Addon, d.Callback, d.Expect, Timeout, finish);
             if (dialogTask.IsCompleted && !dialogTask.Result)
             {
                 LastFailure = dialogs.LastRejection;
@@ -429,7 +433,7 @@ public sealed class GameActions : IGameActions
                 return false;
             }
             if (after is null || after.ItemId != expectedItemId) return true;
-            await Task.Delay(2000, ct).ConfigureAwait(false);
+            await Task.Delay(2000, finish).ConfigureAwait(false);
         }
         LastFailure = "the confirmation was answered but the item is still there";
         return false;

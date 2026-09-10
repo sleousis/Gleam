@@ -137,16 +137,6 @@ public sealed class InventorySnapshotService
             }
         }
 
-        return new ItemContext
-        {
-            CharacterId = ctx.CharacterId, CharacterName = ctx.CharacterName,
-            GearsetItemIds = ctx.GearsetItemIds, PlateItemIds = ctx.PlateItemIds, PlatesLoaded = ctx.PlatesLoaded,
-            JobLevels = ctx.JobLevels, ClassJobCategoryJobs = ctx.ClassJobCategoryJobs,
-            MaxGearsetItemLevel = ctx.MaxGearsetItemLevel, RecipesUsing = ctx.RecipesUsing,
-            SeasonalItemIds = ctx.SeasonalItemIds, RetiredCurrencyGearIds = ctx.RetiredCurrencyGearIds,
-            MarketPrices = prices,
-            MarketLookupAttempted = lookedUp,
-            Registered = registered,
-        };
+        return ctx.WithMarket(prices, lookedUp, registered);
     }
 }

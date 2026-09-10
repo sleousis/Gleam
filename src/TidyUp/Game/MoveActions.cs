@@ -53,8 +53,8 @@ public sealed class MoveActions : IMoveActions
         return preferred is { } p && hits.Contains(p) ? p : hits[0];
     }
 
-    public SlotRef? FindLanding(StorageId storage, uint itemId, bool isHq, int quantity, uint preferredPage, IReadOnlySet<SlotRef> reserved) =>
-        Native.FindLanding(storage, itemId, isHq, quantity, stackSizeOf(itemId), preferredPage, reserved);
+    public SlotRef? FindLanding(StorageId storage, uint itemId, bool isHq, int quantity, uint preferredPage, IReadOnlySet<SlotRef> reserved, bool emptyOnly = false) =>
+        Native.FindLanding(storage, itemId, isHq, quantity, stackSizeOf(itemId), preferredPage, reserved, emptyOnly);
 
     public IReadOnlyDictionary<(StorageId Storage, uint Page), int> LiveSizes() => GameInventoryScanner.LiveSizes();
 
@@ -75,10 +75,12 @@ public sealed class MoveActions : IMoveActions
 
         // The slots are the ground truth: the source empties (or shrinks, on a merge) and the destination gains.
         // The call's return code is logged but not trusted either way.
+        // The move has been sent, so it is confirmed on its own deadline whatever Stop says. Waiting on the
+        // run's token reported a move that happened as cancelled, and kept it out of the move history.
         var deadline = DateTime.UtcNow + Timeout;
         while (DateTime.UtcNow < deadline)
         {
-            await Task.Delay(100, ct).ConfigureAwait(false);
+            await Task.Delay(100, CancellationToken.None).ConfigureAwait(false);
             var src = scanner.ReadSlot(from);
             var dst = scanner.ReadSlot(to);
             var sourceGone = src is null || src.ItemId != itemId || src.Quantity < quantity;
@@ -103,7 +105,7 @@ public sealed class MoveActions : IMoveActions
             return im->MoveItemSlot((InventoryType)from.ContainerId, (ushort)from.Slot, (InventoryType)to.ContainerId, (ushort)to.Slot, true);
         }
 
-        public static SlotRef? FindLanding(StorageId storage, uint itemId, bool isHq, int quantity, uint stackSize, uint preferredPage, IReadOnlySet<SlotRef> reserved)
+        public static SlotRef? FindLanding(StorageId storage, uint itemId, bool isHq, int quantity, uint stackSize, uint preferredPage, IReadOnlySet<SlotRef> reserved, bool emptyOnly)
         {
             var im = InventoryManager.Instance();
             if (im == null) return null;
@@ -127,7 +129,7 @@ public sealed class MoveActions : IMoveActions
                         firstEmpty ??= slot;
                         continue;
                     }
-                    if (ScannedItem.BaseItemId(item->ItemId) == itemId && item->IsHighQuality() == isHq && !item->IsCollectable()
+                    if (!emptyOnly && ScannedItem.BaseItemId(item->ItemId) == itemId && item->IsHighQuality() == isHq && !item->IsCollectable()
                         && item->GetQuantity() + quantity <= stackSize)
                         return slot; // a stack of the same thing with room for all of it: the game merges into it
                 }

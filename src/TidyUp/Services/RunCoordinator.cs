@@ -160,7 +160,9 @@ public sealed class RunCoordinator : IDisposable
             if (focus is null && config.ShowAltSections) AddAltPreviews(plan, withMarket, profile);
 
             CurrentPlan = plan;
-            LastCleanableCount = plan.AllRows.Count(r => r.IsExecutable);
+            // Only what a rule suggested counts as junk. Every item is listed for hand-picking, and counting
+            // those made the server info bar and the toasts call nearly the whole inventory junk.
+            LastCleanableCount = plan.AllRows.Count(r => r.IsExecutable && r.IsSuggested);
             Status = string.Empty;
             PlanChanged?.Invoke();
             if (openWindow) RequestOpenWindow?.Invoke();
@@ -269,10 +271,23 @@ public sealed class RunCoordinator : IDisposable
         var queue = BuildQueueFromPlan(_ => true);
         if (queue.Count == 0) return;
 
-        // Rows the user accepted earlier for still-closed containers stay queued alongside the new ones.
-        var merged = PendingActions.Where(p => !queue.Any(q => q.Slot == p.Slot)).Concat(queue).ToList();
+        // Rows accepted earlier for a container that was closed ride along, unless the player has since said
+        // no to that item. An unticked row for the same item is a no, wherever the item now sits.
+        var declined = CurrentPlan.AllRows.Where(r => !r.Checked)
+            .Select(r => Identity(r.Item.Slot, r.Item.ItemId, r.Item.IsHq)).ToHashSet();
+        var carried = PendingActions.Where(p => !queue.Any(q => q.Slot == p.Slot) && !declined.Contains(Identity(p.Slot, p.ItemId, p.IsHq)));
+        var merged = carried.Concat(queue).ToList();
         PendingActions.Clear();
         await ExecuteQueueAsync(merged, refreshAfter: true).ConfigureAwait(false);
+    }
+
+    private static (ContainerKind, ulong, uint, bool) Identity(SlotRef slot, uint itemId, bool hq) => (slot.Kind, slot.OwnerId, itemId, hq);
+
+    /// <summary>Drops everything accepted earlier for a container that was closed. Those items return to the review.</summary>
+    public void ForgetPending()
+    {
+        PendingActions.Clear();
+        PlanChanged?.Invoke();
     }
 
     /// <summary>Runs a queue now. Used by Accept and by the hands-free pilot for one container at a time.</summary>
@@ -302,12 +317,18 @@ public sealed class RunCoordinator : IDisposable
                 if (r.IsTerminal) RunDone++;
                 PlanChanged?.Invoke();
             });
+            var runFor = player.ContentId;
             var identity = new RunIdentity(player.ContentId, player.CharacterName);
             var report = await engine.ExecuteAsync(queue, identity, runCts.Token, progress).ConfigureAwait(false);
             LastReport = report;
             if (report.Done > 0 && !config.HasCleanedOnce) { config.HasCleanedOnce = true; save(); }
-            PendingActions.AddRange(report.Pending);
-            PendingActions.AddRange(report.Moved);
+            // A run that ends after a logout or a character switch must not leave its waiting items behind for
+            // whoever logs in next: matching is by item and quantity, so another character's stack would do.
+            if (player.ContentId == runFor)
+            {
+                PendingActions.AddRange(report.Pending);
+                PendingActions.AddRange(report.Moved);
+            }
             if (config.SortAfterRun) await SortTouchedAsync(report).ConfigureAwait(false);
             Status = report.Summary();
 

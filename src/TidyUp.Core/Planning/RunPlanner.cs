@@ -32,6 +32,12 @@ public sealed class PlannerInputs
 /// <summary>Turns scanned items into the confirmation window's content. Pure: no game access.</summary>
 public sealed class RunPlanner
 {
+    /// <summary>
+    /// Rule id of a row no rule proposed. Every discardable item is listed so the player can pick it by hand,
+    /// but those rows are not junk: they never count as junk and no bulk control ticks them.
+    /// </summary>
+    public const string HandPickRuleId = "manual";
+
     private readonly RuleEngine engine;
 
     public RunPlanner(RuleEngine? engine = null)
@@ -129,7 +135,7 @@ public sealed class RunPlanner
                     Action = canSell ? ActionKind.VendorSell : ActionKind.Discard,
                     Alternatives = canSell ? [ActionKind.Discard] : [],
                     Confidence = Confidence.Low,
-                    RuleId = "manual",
+                    RuleId = HandPickRuleId,
                     Reason = "Picked by hand",
                     ValueGil = value,
                     ValueLabel = value > 0 ? $"{value:N0}g" : "—",

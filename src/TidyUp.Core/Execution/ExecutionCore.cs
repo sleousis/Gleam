@@ -56,6 +56,9 @@ public sealed class ExecutionCore
 
     public sealed record Summary(bool Aborted, string AbortReason);
 
+    public const string NotReachedStopped = "not reached: the run was stopped";
+    public const string NotReachedFailed = "not reached: the run stopped at an earlier failure";
+
     public async Task<Summary> RunAsync<TOp>(IReadOnlyList<TOp> ops, Hooks<TOp> hooks, CancellationToken ct)
     {
         var aborted = false;
@@ -65,15 +68,17 @@ public sealed class ExecutionCore
 
         foreach (var op in ops)
         {
+            // Anything the run never reached is reported, not parked. Parked work resumes by itself the next
+            // time its container opens, and after Stop that meant items moving or vanishing later on.
             if (ct.IsCancellationRequested)
             {
-                hooks.Park(op, "the run was stopped before reaching it");
+                hooks.Report(op, new StepOutcome(StepStatus.Cancelled, NotReachedStopped));
                 continue;
             }
 
             if (aborted)
             {
-                hooks.Park(op, "the run stopped at an earlier failure");
+                hooks.Report(op, new StepOutcome(StepStatus.Cancelled, NotReachedFailed));
                 continue;
             }
 
@@ -89,7 +94,7 @@ public sealed class ExecutionCore
                 try { await delay.Wait(rateLimit, ct).ConfigureAwait(false); }
                 catch (OperationCanceledException)
                 {
-                    hooks.Park(op, "the run was stopped before reaching it");
+                    hooks.Report(op, new StepOutcome(StepStatus.Cancelled, NotReachedStopped));
                     aborted = true;
                     abortReason = "cancelled";
                     continue;
