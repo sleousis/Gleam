@@ -35,9 +35,18 @@ public sealed class VentureHook : IDisposable
         ar.RetainerReady -= OnReady;
     }
 
+    private bool saidHeldByPatch;
+
     private void OnStep(string retainer)
     {
         if (!config.UseClean || !config.Automation.CleanAfterVentures || coordinator.IsRunning || coordinator.IsPilotRunning()) return;
+        // This runs while the player is away, so a patch nobody has checked Gleam against holds it back.
+        if (!Game.GameVersionGuard.AllowsUnattended(config))
+        {
+            if (!saidHeldByPatch) chat.Print($"Not cleaning after ventures: {Game.GameVersionGuard.HeldReason}. Settings has the choice to go ahead anyway.", "Gleam");
+            saidHeldByPatch = true;
+            return;
+        }
         ar.RequestTurn();
     }
 

@@ -34,6 +34,9 @@ internal static class Ui
     public static readonly Vector4 Market = new(0.906f, 0.780f, 0.471f, 1f);      // #E7C778, gil
     public static readonly Vector4 OnAccent = new(1f, 1f, 1f, 1f);
 
+    /// <summary>What "Go ahead on this patch" does, said the same way wherever it is offered.</summary>
+    public const string PatchGoAheadHint = "Runs you start by hand keep working either way. Going ahead lets Gleam walk and answer menus by itself on this patch. If a step misbehaves, /gleam stop ends the run and /gleam selftest shows what it can no longer find.";
+
     public static float Scale => ImGuiHelpers.GlobalScale;
     public static float Space => 8f * Scale;
     public static float Rounding => 6f * Scale;

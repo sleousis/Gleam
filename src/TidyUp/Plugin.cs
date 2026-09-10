@@ -59,6 +59,8 @@ public sealed class Plugin : IDalamudPlugin
     private readonly AutoRetainerIpc autoRetainer;
     private readonly VentureHook ventures;
     private readonly BagHighlighter highlighter;
+    private readonly SelfTest selfTest;
+    private readonly DebugReport report;
 
     public Plugin(
         IDalamudPluginInterface pi, ICommandManager commands, IClientState clientState, IPluginLog log,
@@ -89,6 +91,7 @@ public sealed class Plugin : IDalamudPlugin
         var contextBuilder = new ItemContextBuilder(player, data, db, config, log);
         dialogs = new AddonDriver(addonLifecycle, framework, log);
         var contextDriver = new InventoryContextDriver(framework, db, log);
+        selfTest = new SelfTest(framework, condition, pi, config, db, contextDriver, scanner);
         var actions = new GameActions(framework, inventory, scanner, dialogs, contextDriver, db, config, log, condition);
         var mover = new MoveActions(framework, scanner, log, config, id => db.Get(id)?.StackSize ?? 1);
         var merger = new StackMerger(mover, log);
@@ -129,6 +132,11 @@ public sealed class Plugin : IDalamudPlugin
         autoRetainer = new AutoRetainerIpc(pi);
         ventures = new VentureHook(autoRetainer, coordinator, config, chat, log);
         settingsWindow.AutoRetainer = autoRetainer;
+        report = new DebugReport(pi, config, coordinator, organizer, pilot, runLog, moveLog, selfTest);
+        selfTest.IsBusy = () => coordinator.IsRunning || organizer.IsRunning || pilot.IsRunning;
+        debugWindow.SelfTest = selfTest;
+        debugWindow.CopyReport = CopyReport;
+        settingsWindow.CopyReport = CopyReport;
         coordinator.IsPilotRunning = () => pilot.IsRunning || organizer.IsRunning || ventures.IsRunning;
 
         // Tint the game's own bag windows: gold for what the review will clean, blue for what the organizer will move.
@@ -183,7 +191,7 @@ public sealed class Plugin : IDalamudPlugin
 
         commands.AddHandler(Command, new CommandInfo(OnCommand)
         {
-            HelpMessage = "Open Gleam. /gleam organize · settings · history · merge · stop",
+            HelpMessage = "Open Gleam. /gleam organize · settings · history · merge · stop · selftest · report",
         });
         commands.AddHandler(ShortCommand, new CommandInfo(OnCommand) { HelpMessage = "Short for /gleam." });
         commands.AddHandler(LegacyCommand, new CommandInfo(OnCommand) { ShowInHelp = false });
@@ -286,6 +294,14 @@ public sealed class Plugin : IDalamudPlugin
                     chat.Print(t.Result > 0 ? $"Merged {t.Result} split stack{(t.Result == 1 ? "" : "s")}." : "Nothing to merge.", "Gleam");
                 });
                 break;
+            case "selftest":
+            case "self-test":
+            case "check":
+                RunSelfTest();
+                break;
+            case "report":
+                CopyReport();
+                break;
             case "stop":
                 var wasRunning = coordinator.IsRunning || organizer.IsRunning || (confirmWindow.Pilot?.IsRunning ?? false);
                 confirmWindow.Pilot?.Stop();
@@ -299,12 +315,38 @@ public sealed class Plugin : IDalamudPlugin
                 break;
             default:
                 // An unknown word used to toggle the window, so a typo closed it. It says what exists instead.
-                chat.Print("Try /gleam, /gleam organize, /gleam history, /gleam settings, /gleam scan or /gleam stop.", "Gleam");
+                chat.Print("Try /gleam, /gleam organize, /gleam history, /gleam settings, /gleam scan, /gleam stop, /gleam selftest or /gleam report.", "Gleam");
                 break;
         }
     }
 
     private readonly IFramework framework;
+
+    /// <summary>Checks what Gleam can find in the game and says how it went; the details open when something needs a look.</summary>
+    private void RunSelfTest()
+    {
+        chat.Print("Checking what Gleam can find in the game. No item is touched.", "Gleam");
+        _ = selfTest.RunAsync().ContinueWith(t =>
+        {
+            if (t.IsFaulted)
+            {
+                log.Error(t.Exception, "Self-test failed");
+                chat.PrintError("The self-test could not finish. Details are in the Dalamud log.", "Gleam");
+                return;
+            }
+            chat.Print($"Self-test: {selfTest.Summary()}", "Gleam");
+            if (selfTest.Count(SelfTestResult.Fail) + selfTest.Count(SelfTestResult.Warn) > 0)
+                framework.RunOnFrameworkThread(() => { if (!disposed) debugWindow.IsOpen = true; });
+        });
+    }
+
+    /// <summary>Builds the bug report in the background; <see cref="DrawUi"/> puts it on the clipboard.</summary>
+    private void CopyReport() => _ = report.QueueCopyAsync().ContinueWith(t =>
+    {
+        if (!t.IsFaulted) return;
+        log.Error(t.Exception, "Bug report failed");
+        chat.PrintError("Gleam could not put the report together. Details are in the Dalamud log.", "Gleam");
+    });
 
     private void OnLogout(int type, int code)
     {
@@ -333,6 +375,12 @@ public sealed class Plugin : IDalamudPlugin
     private void DrawUi()
     {
         if (Game.RetainerDirectory.Poll(config)) config.Save(pi);
+        // The clipboard belongs to the drawing thread; a report built in the background waits here for it.
+        if (report.TakeReady() is { } text)
+        {
+            Dalamud.Bindings.ImGui.ImGui.SetClipboardText(text);
+            chat.Print("Gleam copied a bug report to your clipboard. Paste it into an issue on GitHub. It holds no character or retainer names.", "Gleam");
+        }
         windows.Draw();
     }
 

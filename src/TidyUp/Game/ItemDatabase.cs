@@ -380,6 +380,115 @@ public sealed class ItemDatabase
         return result;
     }
 
+    /// <summary>The language the game client runs in.</summary>
+    public ClientLanguage Language => data.Language;
+
+    private readonly ConcurrentDictionary<string, IReadOnlyList<uint>> addonIdsByEnglish = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Every Addon sheet row whose English text is exactly this. The sheet repeats common words ("Sell",
+    /// "Sort") under several ids and a menu may use any of them. Only the first used to be taken: an English
+    /// client was rescued by comparing the text, and every other client simply found nothing.
+    /// </summary>
+    public IReadOnlyList<uint> AddonRowIdsForEnglishText(string text) => addonIdsByEnglish.GetOrAdd(text, t =>
+    {
+        var ids = new List<uint>();
+        try
+        {
+            foreach (var row in data.GetExcelSheet<Addon>(ClientLanguage.English)!)
+                if (string.Equals(row.Text.ExtractText(), t, StringComparison.OrdinalIgnoreCase)) ids.Add(row.RowId);
+        }
+        catch (Exception ex)
+        {
+            log.Warning(ex, "Addon sheet lookup failed for {Text}", t);
+        }
+        return ids;
+    });
+
+    private readonly object clientIndexGate = new();
+    private Dictionary<string, List<uint>>? addonIdsByClientText;
+
+    /// <summary>
+    /// The English texts a piece of client-language menu text can stand for. Reading a menu entry back into
+    /// English recognises it even when the guess at its translation picked another row of the sheet.
+    /// </summary>
+    public IReadOnlyList<string> EnglishFor(string clientText)
+    {
+        if (ClientIsEnglish || string.IsNullOrWhiteSpace(clientText)) return [clientText];
+        try
+        {
+            Dictionary<string, List<uint>> index;
+            lock (clientIndexGate) index = addonIdsByClientText ??= BuildClientTextIndex();
+            if (!index.TryGetValue(clientText.Trim(), out var ids)) return Array.Empty<string>();
+            var en = data.GetExcelSheet<Addon>(ClientLanguage.English)!;
+            return ids.Select(id => en.TryGetRow(id, out var r) ? r.Text.ExtractText() : null).OfType<string>().Distinct().ToList();
+        }
+        catch (Exception ex)
+        {
+            log.Warning(ex, "Could not read '{Text}' back into English", clientText);
+            return Array.Empty<string>();
+        }
+    }
+
+    private Dictionary<string, List<uint>> BuildClientTextIndex()
+    {
+        var index = new Dictionary<string, List<uint>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var row in data.GetExcelSheet<Addon>()!)
+        {
+            var t = row.Text.ExtractText().Trim();
+            if (t.Length == 0) continue;
+            if (!index.TryGetValue(t, out var list)) index[t] = list = new List<uint>();
+            list.Add(row.RowId);
+        }
+        return index;
+    }
+
+    /// <summary>
+    /// How to recognise a menu entry from an English fragment ("Quit", "your inventory"). On an English client
+    /// the fragment itself; elsewhere its translation, or any entry whose English original contains it.
+    /// </summary>
+    public Func<string, bool> MenuMatcher(string englishFragment)
+    {
+        if (string.IsNullOrWhiteSpace(englishFragment)) return _ => false;
+        if (ClientIsEnglish) return entry => entry.Contains(englishFragment, StringComparison.OrdinalIgnoreCase);
+        var local = LocalizeMenuText(englishFragment);
+        return entry => entry.Contains(local, StringComparison.OrdinalIgnoreCase)
+                        || EnglishFor(entry).Any(en => en.Contains(englishFragment, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>Whether a menu fragment has a translation on this client. Always true in English.</summary>
+    public bool CanTranslateMenuText(string englishFragment) =>
+        ClientIsEnglish || !string.Equals(LocalizeMenuText(englishFragment), englishFragment, StringComparison.OrdinalIgnoreCase);
+
+    private static readonly System.Text.RegularExpressions.Regex GrammarMarks = new(@"\[[^\]]{1,4}\]", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    /// <summary>
+    /// The names a confirmation may use for an item, in the client's language: its name, and the singular
+    /// and plural forms the game builds sentences from. German and French prompts inflect the name, and the
+    /// English plural endings Gleam relied on before do nothing for them.
+    /// </summary>
+    public IReadOnlyList<string> PromptNames(uint itemId)
+    {
+        var names = new List<string>();
+        try
+        {
+            if (!items.TryGetRow(itemId, out var row)) return names;
+            void Add(string s)
+            {
+                s = GrammarMarks.Replace(s, string.Empty).Trim();
+                if (s.Length > 0 && !names.Contains(s, StringComparer.OrdinalIgnoreCase)) names.Add(s);
+            }
+            Add(row.Name.ExtractText());
+            Add(row.Singular.ExtractText());
+            Add(row.Plural.ExtractText());
+        }
+        catch (Exception ex)
+        {
+            log.Warning(ex, "Could not read the names of item {Item}", itemId);
+        }
+        return names;
+    }
+
     /// <summary>Text of an Addon sheet row in the client language, or null.</summary>
     public string? AddonText(uint rowId)
     {

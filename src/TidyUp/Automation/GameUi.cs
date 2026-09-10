@@ -89,14 +89,14 @@ public static unsafe class GameUi
         return list;
     }
 
-    /// <summary>Picks the first entry containing the text. Returns the index chosen, or -1.</summary>
-    public static int SelectStringChoose(string containing)
+    /// <summary>Picks the first entry the test accepts. Returns the index chosen, or -1.</summary>
+    public static int SelectStringChoose(Func<string, bool> matches)
     {
         if (!TryOpenMenu(out var addon, out _)) return -1;
         var entries = SelectStringEntries();
         for (var i = 0; i < entries.Count; i++)
         {
-            if (!entries[i].Contains(containing, StringComparison.OrdinalIgnoreCase)) continue;
+            if (!matches(entries[i])) continue;
             return addon->FireCallbackInt(i) ? i : -1;
         }
         return -1;

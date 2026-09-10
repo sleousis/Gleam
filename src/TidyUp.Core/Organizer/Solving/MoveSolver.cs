@@ -14,8 +14,11 @@ public enum MoveLeg
     RelayIn,
 }
 
-/// <summary>One physical move the executor will perform. Relayed moves share a <see cref="MoveId"/> across their two legs.</summary>
-public sealed record MoveOp(Guid MoveId, ScannedItem Item, ItemInfo Info, StorageId From, StorageId To, MoveLeg Leg, uint PreferredPage, int Pass)
+/// <summary>
+/// One physical move the executor will perform. Relayed moves share a <see cref="MoveId"/> across their two legs.
+/// <see cref="RuleName"/> is the layout rule that asked for it, kept for the move history.
+/// </summary>
+public sealed record MoveOp(Guid MoveId, ScannedItem Item, ItemInfo Info, StorageId From, StorageId To, MoveLeg Leg, uint PreferredPage, int Pass, string RuleName = "")
 {
     /// <summary>The storage that must be open for this leg (saddlebag or a retainer), or null when bags and armoury suffice.</summary>
     public StorageId? RequiresOpen =>
@@ -152,12 +155,13 @@ public static class MoveSolver
         foreach (var (p, to, page) in pending)
         {
             var id = Guid.NewGuid();
+            var rule = p.Rule?.Name ?? string.Empty;
             if (p.Current.Kind.IsAlwaysLoaded() || to.Kind.IsAlwaysLoaded())
-                ops.Add(new MoveOp(id, p.Item, p.Info, p.Current, to, MoveLeg.Direct, page, 1));
+                ops.Add(new MoveOp(id, p.Item, p.Info, p.Current, to, MoveLeg.Direct, page, 1, rule));
             else
             {
-                ops.Add(new MoveOp(id, p.Item, p.Info, p.Current, BagsId, MoveLeg.RelayOut, 0, 1));
-                ops.Add(new MoveOp(id, p.Item, p.Info, BagsId, to, MoveLeg.RelayIn, page, 1));
+                ops.Add(new MoveOp(id, p.Item, p.Info, p.Current, BagsId, MoveLeg.RelayOut, 0, 1, rule));
+                ops.Add(new MoveOp(id, p.Item, p.Info, BagsId, to, MoveLeg.RelayIn, page, 1, rule));
             }
         }
 

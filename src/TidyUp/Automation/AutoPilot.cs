@@ -69,12 +69,27 @@ public sealed partial class AutoPilot : IDisposable
     private AutomationSettings S => config.Automation;
 
     /// <summary>
-    /// What stops a hands-free run from starting at all. Only vnavmesh: without it Gleam cannot walk a step.
-    /// Lifestream used to be here too, which disabled the default "sell to vendors" run for anyone without
-    /// it, even standing beside a merchant. Now each leg that needs a teleport checks for it and, without
-    /// it, leaves that leg's items waiting while the rest of the run carries on.
+    /// What stops a hands-free run from starting at all: vnavmesh missing, because without it Gleam cannot
+    /// walk a step, or a game patch this build has not been checked against. Lifestream used to be here too,
+    /// which disabled the default "sell to vendors" run for anyone without it, even standing beside a
+    /// merchant. Now each leg that needs a teleport checks for it and, without it, leaves that leg's items
+    /// waiting while the rest of the run carries on.
     /// </summary>
-    public string? MissingDependency() => nav.IsInstalled ? null : "the vnavmesh plugin is not installed";
+    public string? MissingDependency() =>
+        !nav.IsInstalled ? "the vnavmesh plugin is not installed"
+        : !GameVersionGuard.AllowsUnattended(config) ? GameVersionGuard.HeldReason
+        : null;
+
+    /// <summary>True when the one thing holding hands-free back is a patch nobody has checked Gleam against yet.</summary>
+    public bool HeldByPatch => nav.IsInstalled && !GameVersionGuard.AllowsUnattended(config);
+
+    /// <summary>The player's go-ahead to run hands-free on this patch. The next patch asks again.</summary>
+    public void GoAheadOnThisPatch()
+    {
+        GameVersionGuard.AcceptCurrent(config);
+        config.Save(PluginServices.PluginInterface);
+        log.Information("Hands-free allowed on game version {Version} by the player", GameVersionGuard.Current() ?? "unknown");
+    }
 
     /// <summary>Whether a leg may teleport somewhere else.</summary>
     private bool CanTravel => S.TravelToInn && travel.IsInstalled;
@@ -435,7 +450,7 @@ public sealed partial class AutoPilot : IDisposable
                     break;
                 case "menu":
                     Status = "Leaving the retainer menu";
-                    var chosen = await framework.RunOnFrameworkThread(() => GameUi.SelectStringChoose(db.LocalizeMenuText(S.QuitMenuText))).ConfigureAwait(false);
+                    var chosen = await framework.RunOnFrameworkThread(() => GameUi.SelectStringChoose(db.MenuMatcher(S.QuitMenuText))).ConfigureAwait(false);
                     if (chosen < 0) await framework.RunOnFrameworkThread(() => GameUi.Close("SelectString")).ConfigureAwait(false);
                     else await AnswerLeavePromptAsync(ct).ConfigureAwait(false);
                     await Task.Delay(800, ct).ConfigureAwait(false);
@@ -471,8 +486,8 @@ public sealed partial class AutoPilot : IDisposable
 
         // Market listings: first what is in the bags (shared across retainers, each takes what it has room for),
         // then what this retainer holds itself.
-        if (listings.Count > 0) await MarketStepAsync(name, db.LocalizeMenuText(S.SellFromBagsMenuText), listings, ct).ConfigureAwait(false);
-        if (ownListings.Count > 0) await MarketStepAsync(name, db.LocalizeMenuText(S.SellFromRetainerMenuText), ownListings, ct).ConfigureAwait(false);
+        if (listings.Count > 0) await MarketStepAsync(name, S.SellFromBagsMenuText, listings, ct).ConfigureAwait(false);
+        if (ownListings.Count > 0) await MarketStepAsync(name, S.SellFromRetainerMenuText, ownListings, ct).ConfigureAwait(false);
 
         await LeaveRetainerAsync(name, ct).ConfigureAwait(false);
     }
@@ -514,7 +529,7 @@ public sealed partial class AutoPilot : IDisposable
     {
         await Step($"Opening {name}'s inventory", async () =>
         {
-            await ChooseMenu(db.LocalizeMenuText(S.EntrustMenuText), ct).ConfigureAwait(false);
+            await ChooseMenu(S.EntrustMenuText, ct).ConfigureAwait(false);
             try
             {
                 await WaitUntil(() => GameUi.AnyVisible("InventoryRetainer", "InventoryRetainerLarge") && GameInventoryScanner.IsRetainerOpen(id),
@@ -559,7 +574,7 @@ public sealed partial class AutoPilot : IDisposable
     {
         await Step($"Leaving {name}", async () =>
         {
-            await ChooseMenu(db.LocalizeMenuText(S.QuitMenuText), ct).ConfigureAwait(false);
+            await ChooseMenu(S.QuitMenuText, ct).ConfigureAwait(false);
             await AnswerLeavePromptAsync(ct).ConfigureAwait(false);
             await WaitForMenu(() => GameUi.IsVisible("RetainerList") && !GameUi.SelectStringReady(), StepTimeout, "the retainer list", ct).ConfigureAwait(false);
             await Task.Delay(500, ct).ConfigureAwait(false);
@@ -567,7 +582,7 @@ public sealed partial class AutoPilot : IDisposable
     }
 
     /// <summary>Opens one of the retainer's sell lists, lists as many rows as there are free market slots, closes it.</summary>
-    private async Task MarketStepAsync(string name, string menuText, List<QueuedAction> rows, CancellationToken ct)
+    private async Task MarketStepAsync(string name, string menuFragment, List<QueuedAction> rows, CancellationToken ct)
     {
         var free = await OnFramework(FreeMarketSlots).ConfigureAwait(false);
         if (free <= 0)
@@ -577,7 +592,7 @@ public sealed partial class AutoPilot : IDisposable
         }
         await Step($"Opening {name}'s market listings", async () =>
         {
-            await ChooseMenu(menuText, ct).ConfigureAwait(false);
+            await ChooseMenu(menuFragment, ct).ConfigureAwait(false);
             await WaitForMenu(() => GameUi.IsVisible("RetainerSellList"), StepTimeout, $"{name}'s sell list", ct).ConfigureAwait(false);
             await Task.Delay(800, ct).ConfigureAwait(false);
         }, ct);
@@ -662,7 +677,7 @@ public sealed partial class AutoPilot : IDisposable
         {
             await Step("Opening the shop", async () =>
             {
-                await ChooseMenu(db.LocalizeMenuText(S.VendorMenuText), ct).ConfigureAwait(false);
+                await ChooseMenu(S.VendorMenuText, ct).ConfigureAwait(false);
                 await WaitForMenu(() => GameUi.IsVisible("Shop"), StepTimeout, "the shop window", ct).ConfigureAwait(false);
             }, ct);
         }
@@ -711,7 +726,7 @@ public sealed partial class AutoPilot : IDisposable
         await WalkToAndInteractAsync(db.LocalizeNpcName(S.PersonnelOfficerName), "SelectString", ct, orMenu: true).ConfigureAwait(false);
         await Step("Opening supply missions", async () =>
         {
-            await ChooseMenu(db.LocalizeMenuText(S.GcSupplyMenuText), ct).ConfigureAwait(false);
+            await ChooseMenu(S.GcSupplyMenuText, ct).ConfigureAwait(false);
             await WaitForMenu(() => GameUi.IsVisible("GrandCompanySupplyList"), StepTimeout, "the supply window", ct).ConfigureAwait(false);
             await Task.Delay(800, ct).ConfigureAwait(false);
             var ints = S.ExpertDeliveryTabCallback.Split(',').Select(s => int.TryParse(s.Trim(), out var v) ? v : 0).ToList();
@@ -884,7 +899,11 @@ public sealed partial class AutoPilot : IDisposable
         return list;
     }
 
-    private async Task ChooseMenu(string text, CancellationToken ct)
+    /// <summary>
+    /// Chooses the menu entry an English fragment names ("Quit", "your inventory"). On other clients the entry
+    /// is recognised by its translation, or by reading the entries back into English.
+    /// </summary>
+    private async Task ChooseMenu(string englishFragment, CancellationToken ct)
     {
         IReadOnlyList<string> entries = Array.Empty<string>();
         for (var attempt = 0; attempt < 8; attempt++)
@@ -893,11 +912,16 @@ public sealed partial class AutoPilot : IDisposable
             if (entries.Count > 0) break;
             await Task.Delay(400, ct).ConfigureAwait(false);
         }
-        var chosen = await framework.RunOnFrameworkThread(() => GameUi.SelectStringChoose(text)).ConfigureAwait(false);
+        var matches = db.MenuMatcher(englishFragment);
+        var chosen = await framework.RunOnFrameworkThread(() => GameUi.SelectStringChoose(matches)).ConfigureAwait(false);
         if (chosen < 0)
+        {
+            var shown = db.LocalizeMenuText(englishFragment);
+            log.Debug("Menu had no '{Fragment}' ({Shown}). Offered: {Entries}", englishFragment, shown, string.Join(" | ", entries));
             throw new AutoPilotException(entries.Count == 0
-                ? $"the menu stayed empty, so '{text}' could not be chosen"
-                : $"the menu had no '{text}' option");
+                ? $"the menu stayed empty, so '{shown}' could not be chosen"
+                : $"the menu had no '{shown}' option");
+        }
         await Task.Delay(400, ct).ConfigureAwait(false);
     }
 

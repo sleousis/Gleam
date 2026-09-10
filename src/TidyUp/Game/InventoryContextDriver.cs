@@ -22,7 +22,7 @@ public sealed class InventoryContextDriver
     private readonly IFramework framework;
     private readonly ItemDatabase db;
     private readonly IPluginLog log;
-    private readonly Dictionary<string, uint?> labelIds = new(StringComparer.OrdinalIgnoreCase);
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, (HashSet<uint> Ids, HashSet<string> Texts)> labels = new(StringComparer.OrdinalIgnoreCase);
 
     public InventoryContextDriver(IFramework framework, ItemDatabase db, IPluginLog log)
     {
@@ -33,12 +33,35 @@ public sealed class InventoryContextDriver
 
     public string? LastFailure { get; private set; }
 
-    public uint? LabelId(string englishLabel)
+    /// <summary>
+    /// Every way an English label can appear in a menu: each Addon row that carries that English text, and
+    /// each of those rows' text on this client. Entries are matched by id first, which does not depend on
+    /// the language at all.
+    /// </summary>
+    private (HashSet<uint> Ids, HashSet<string> Texts) Label(string englishLabel) => labels.GetOrAdd(englishLabel, en =>
     {
-        if (!labelIds.TryGetValue(englishLabel, out var id))
-            labelIds[englishLabel] = id = db.AddonRowIdForEnglishText(englishLabel);
-        return id;
+        var ids = db.AddonRowIdsForEnglishText(en).ToHashSet();
+        var texts = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { en };
+        foreach (var id in ids)
+            if (db.AddonText(id) is { Length: > 0 } t) texts.Add(t);
+        return (ids, texts);
+    });
+
+    /// <summary>Whether a menu entry is the one an English label names, on any client.</summary>
+    public bool Matches(ContextEntry entry, string englishLabel)
+    {
+        var (ids, texts) = Label(englishLabel);
+        return (entry.LabelId != 0 && ids.Contains(entry.LabelId)) || texts.Contains(entry.Text);
     }
+
+    /// <summary>How many sheet rows carry the label, for the self-test. Zero means Gleam cannot recognise it.</summary>
+    public int KnownIds(string englishLabel) => Label(englishLabel).Ids.Count;
+
+    /// <summary>The label as the player reads it on this client, for messages.</summary>
+    public string Display(string englishLabel) =>
+        Label(englishLabel).Texts.FirstOrDefault(t => !string.Equals(t, englishLabel, StringComparison.OrdinalIgnoreCase)) is { } local && db.Language != Dalamud.Game.ClientLanguage.English
+            ? local
+            : englishLabel;
 
     /// <summary>Opens the menu for the slot, reads its entries, and closes it again. Framework thread.</summary>
     public unsafe IReadOnlyList<ContextEntry> ReadEntries(SlotRef slot)
@@ -84,8 +107,7 @@ public sealed class InventoryContextDriver
     public async Task<bool> InvokeAsync(SlotRef slot, string englishLabel, CancellationToken ct)
     {
         LastFailure = null;
-        var wanted = LabelId(englishLabel);
-        var index = await framework.RunOnFrameworkThread(() => OpenAndFind(slot, englishLabel, wanted)).ConfigureAwait(false);
+        var index = await framework.RunOnFrameworkThread(() => OpenAndFind(slot, englishLabel)).ConfigureAwait(false);
         if (index < 0) return false;
 
         // The ContextMenu addon is created on the following frame; select the entry once it is up.
@@ -100,7 +122,7 @@ public sealed class InventoryContextDriver
         return false;
     }
 
-    private unsafe int OpenAndFind(SlotRef slot, string englishLabel, uint? wantedLabelId)
+    private unsafe int OpenAndFind(SlotRef slot, string englishLabel)
     {
         var agent = AgentModule.Instance()->GetAgentInventoryContext();
         if (agent == null) { LastFailure = "the item's menu did not open"; return -1; }
@@ -113,24 +135,23 @@ public sealed class InventoryContextDriver
             return -1;
         }
 
-        var match = entries.FirstOrDefault(e =>
-            (wantedLabelId is { } id && e.LabelId == id) ||
-            string.Equals(e.Text, englishLabel, StringComparison.OrdinalIgnoreCase));
+        var match = entries.FirstOrDefault(e => Matches(e, englishLabel));
         if (match is null)
         {
-            var offered = string.Join(" | ", entries.Select(e => e.Text.Length > 0 ? e.Text : e.LabelId.ToString()));
-            // Naming the missing menu entry helps nobody. Say what to do instead.
-            var atBell = entries.Any(e => e.Text.Contains("Retainer", StringComparison.OrdinalIgnoreCase));
+            var offered = string.Join(" | ", entries.Select(e => e.Text.Length > 0 ? $"{e.Text} ({e.LabelId})" : e.LabelId.ToString()));
+            // Naming the missing menu entry helps nobody. Say what to do instead. Whether a retainer is open is
+            // read from the game, not from the word "Retainer" in the menu, which only works in English.
+            var atBell = GameInventoryScanner.ActiveRetainer().Id != 0;
             log.Debug("Menu for {Slot} had no '{Label}'. Offered: {Offered}", slot, englishLabel, offered);
             LastFailure = atBell
                 ? "the game hides that option while a retainer is open"
-                : $"the game did not offer '{englishLabel}' for it";
+                : $"the game did not offer '{Display(englishLabel)}' for it";
             CloseMenu();
             return -1;
         }
         if (match.Disabled)
         {
-            LastFailure = $"'{englishLabel}' is greyed out for this item";
+            LastFailure = $"'{Display(englishLabel)}' is greyed out for this item";
             CloseMenu();
             return -1;
         }

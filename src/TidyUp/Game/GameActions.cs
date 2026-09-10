@@ -112,6 +112,7 @@ public sealed class GameActions : IGameActions
         if (unitPrice <= 0) { LastFailure = "no market price known"; return false; }
         if (!AddonDriver.IsAddonVisible("RetainerSellList")) { LastFailure = "the retainer's sell list is not open"; return false; }
         var before = scanner.ReadSlot(slot)?.Quantity ?? quantity;
+        var listedBefore = await framework.RunOnFrameworkThread(Native.OccupiedMarketSlots).ConfigureAwait(false);
 
         var opened = await context.InvokeAsync(slot, config.Callbacks.PutUpForSaleLabel, ct).ConfigureAwait(false);
         if (!opened) { LastFailure = context.LastFailure; return false; }
@@ -134,7 +135,8 @@ public sealed class GameActions : IGameActions
         while (DateTime.UtcNow < deadline)
         {
             var live = scanner.ReadSlot(slot);
-            if (live is null || live.ItemId != itemId || live.Quantity <= before - quantity) return true;
+            if (live is null || live.ItemId != itemId || live.Quantity <= before - quantity)
+                return await ListedAtAsync(itemId, price, listedBefore, ct).ConfigureAwait(false);
             await Task.Delay(100, ct).ConfigureAwait(false);
         }
 
@@ -143,12 +145,42 @@ public sealed class GameActions : IGameActions
         return false;
     }
 
+    /// <summary>
+    /// Reads the new listing back and compares its price with the one typed in. The sell window takes the
+    /// price as keystrokes would, and nothing ever looked at what the market board actually shows. A listing
+    /// at the wrong price is reported as failed, which stops the run from listing anything else the same way.
+    /// A listing that cannot be read back is let through: the item did go up for sale.
+    /// </summary>
+    private async Task<bool> ListedAtAsync(uint itemId, int expected, IReadOnlySet<int> listedBefore, CancellationToken ct)
+    {
+        for (var attempt = 0; attempt < 20; attempt++)
+        {
+            var listing = await framework.RunOnFrameworkThread(() => Native.NewListing(listedBefore, itemId)).ConfigureAwait(false);
+            if (listing is { Price: > 0 } l)
+            {
+                if (l.Price == (ulong)expected) return true;
+                LastFailure = $"it went up for sale at {l.Price:N0} gil instead of {expected:N0}. Check the retainer's sell list";
+                log.Warning("Listing of {Item} shows {Actual} gil, expected {Expected}", itemId, l.Price, expected);
+                return false;
+            }
+            await Task.Delay(100, ct).ConfigureAwait(false);
+        }
+        log.Debug("Listing of {Item} could not be read back; its price was not checked", itemId);
+        return true;
+    }
+
+    /// <summary>
+    /// The names a confirmation may use for the item, in the client's language. Null only for an item the
+    /// game data does not know, which is never proposed.
+    /// </summary>
+    private IReadOnlyList<string>? Names(uint itemId) => db.PromptNames(itemId) is { Count: > 0 } names ? names : null;
+
     // ---------- discard ----------
 
     public Task<bool> DiscardAsync(SlotRef slot, uint itemId, CancellationToken ct) =>
         RunAndAwaitRemoval(slot, itemId, ct,
             () => framework.RunOnFrameworkThread(() => Native.Discard(slot)),
-            expectDialog: ("SelectYesno", config.Callbacks.YesNoConfirm, db.Get(itemId)?.Name));
+            expectDialog: ("SelectYesno", config.Callbacks.YesNoConfirm, Names(itemId)));
 
     // ---------- dresser ----------
 
@@ -291,7 +323,7 @@ public sealed class GameActions : IGameActions
                 if (!ok) LastFailure = context.LastFailure;
                 return ok;
             },
-            expectDialog: ("SelectYesno", config.Callbacks.YesNoConfirm, db.Get(itemId)?.Name), dialogOptional: true);
+            expectDialog: ("SelectYesno", config.Callbacks.YesNoConfirm, Names(itemId)), dialogOptional: true);
     }
 
     private Task<bool> RetainerBuysAsync(SlotRef slot, uint itemId, CancellationToken ct) =>
@@ -302,7 +334,7 @@ public sealed class GameActions : IGameActions
                 if (!ok) LastFailure = context.LastFailure;
                 return ok;
             },
-            expectDialog: ("SelectYesno", config.Callbacks.YesNoConfirm, db.Get(itemId)?.Name), dialogOptional: true);
+            expectDialog: ("SelectYesno", config.Callbacks.YesNoConfirm, Names(itemId)), dialogOptional: true);
 
     private async Task<bool> EntrustThenRetainerBuysAsync(SlotRef slot, uint itemId, CancellationToken ct)
     {
@@ -341,8 +373,15 @@ public sealed class GameActions : IGameActions
             e => (uint)e.Item.ContainerType == slot.ContainerId && e.Item.InventorySlot == (uint)slot.Slot, ct);
         var dialog = dialogs.ExpectAsync("GrandCompanySupplyReward", config.Callbacks.ExpertDeliveryConfirm, null, Timeout, ct);
         if (dialog.IsCompleted && !dialog.Result) { LastFailure = dialogs.LastRejection; return false; }
-        var selected = await framework.RunOnFrameworkThread(() => Native.SelectExpertDelivery(itemId, config.Callbacks.ExpertDeliverySelect)).ConfigureAwait(false);
-        if (!selected) { dialogs.Disarm(); LastFailure = "the item is not on the Expert Delivery list"; return false; }
+        var selected = await framework.RunOnFrameworkThread(() => Native.SelectExpertDelivery(slot, itemId, config.Callbacks.ExpertDeliverySelect)).ConfigureAwait(false);
+        if (selected != Native.DeliveryPick.Selected)
+        {
+            dialogs.Disarm();
+            LastFailure = selected == Native.DeliveryPick.OtherCopyOnly
+                ? "the list only offers another copy of it, so nothing was turned in"
+                : "the item is not on the Expert Delivery list";
+            return false;
+        }
         var confirmed = await dialog.ConfigureAwait(false);
         if (!confirmed) { LastFailure = dialogs.LastRejection ?? "the delivery confirmation did not open"; return false; }
         if (await removed.ConfigureAwait(false) is null) { LastFailure = "the delivery was confirmed but the item stayed in your bags"; return false; }
@@ -359,7 +398,7 @@ public sealed class GameActions : IGameActions
     // ---------- plumbing ----------
 
     private async Task<bool> RunAndAwaitRemoval(SlotRef slot, uint expectedItemId, CancellationToken ct, Func<Task<bool>> start,
-        (string Addon, int Callback, string? Expect)? expectDialog, bool dialogOptional = false)
+        (string Addon, int Callback, IReadOnlyList<string>? Expect)? expectDialog, bool dialogOptional = false)
     {
         LastFailure = null;
         // Once the request may reach the server the item is gone or it is not, and Stop cannot change that.
@@ -513,21 +552,60 @@ public sealed class GameActions : IGameActions
             return mm->RestorePrismBoxItem((uint)prismBoxIndex);
         }
 
-        public static bool SelectExpertDelivery(uint itemId, int selectCallback)
+        public enum DeliveryPick { NotListed, OtherCopyOnly, Selected }
+
+        /// <summary>
+        /// Picks the list row for this exact piece, by the container and slot the list reports for it. The first
+        /// row with the same item id could be a different copy: one with materia, or one the player kept back.
+        /// </summary>
+        public static DeliveryPick SelectExpertDelivery(SlotRef slot, uint itemId, int selectCallback)
         {
             var agent = AgentModule.Instance()->GetAgentGrandCompanySupply();
             var addon = AddonDriver.GetAddon("GrandCompanySupplyList");
-            if (agent == null || addon == null || !addon->IsVisible || agent->ItemArray == null) return false;
+            if (agent == null || addon == null || !addon->IsVisible || agent->ItemArray == null) return DeliveryPick.NotListed;
+            var otherCopy = false;
             for (var i = 0; i < agent->NumItems; i++)
             {
                 var entry = agent->ItemArray[i];
                 if (entry.ItemId != itemId || !entry.IsTurnInAvailable) continue;
+                if ((uint)entry.Inventory != slot.ContainerId || entry.Slot != slot.Slot) { otherCopy = true; continue; }
                 var values = stackalloc AtkValue[2];
                 values[0].SetInt(selectCallback);
                 values[1].SetInt(entry.Position);
-                return addon->FireCallback(2, values, false);
+                return addon->FireCallback(2, values, false) ? DeliveryPick.Selected : DeliveryPick.NotListed;
             }
-            return false;
+            return otherCopy ? DeliveryPick.OtherCopyOnly : DeliveryPick.NotListed;
+        }
+
+        /// <summary>Which of the active retainer's market slots hold a listing.</summary>
+        public static IReadOnlySet<int> OccupiedMarketSlots()
+        {
+            var taken = new HashSet<int>();
+            var im = InventoryManager.Instance();
+            var market = im == null ? null : im->GetInventoryContainer(InventoryType.RetainerMarket);
+            if (market == null || !market->IsLoaded) return taken;
+            for (var i = 0; i < market->Size; i++)
+            {
+                var item = market->GetInventorySlot(i);
+                if (item != null && item->ItemId != 0) taken.Add(i);
+            }
+            return taken;
+        }
+
+        /// <summary>The listing that appeared since <paramref name="before"/> for this item, with its unit price.</summary>
+        public static (int Slot, ulong Price)? NewListing(IReadOnlySet<int> before, uint itemId)
+        {
+            var im = InventoryManager.Instance();
+            var market = im == null ? null : im->GetInventoryContainer(InventoryType.RetainerMarket);
+            if (market == null || !market->IsLoaded) return null;
+            for (var i = 0; i < market->Size; i++)
+            {
+                if (before.Contains(i)) continue;
+                var item = market->GetInventorySlot(i);
+                if (item == null || item->ItemId != itemId) continue;
+                return (i, im->GetRetainerMarketPrice((short)i));
+            }
+            return null;
         }
 
         public static bool Desynth(SlotRef slot)

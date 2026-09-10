@@ -5,11 +5,13 @@ things only the release knows: where to download the zip, where the icon lives, 
 Dalamud expects a JSON array, even for one plugin.
 
     python tools/make-repo-json.py --manifest src/TidyUp/bin/Release/TidyUp/TidyUp.json \
-        --tag v1.0.0 --repo sleousis/Gleam --out repo.json
+        --tag v1.0.0 --repo sleousis/Gleam --changelog CHANGELOG.md --out repo.json
+
+The version's section of CHANGELOG.md becomes the changelog Dalamud shows beside the update. With
+--notes-out the same section is also written on its own, for the GitHub release page.
 """
 import argparse
 import json
-import os
 import time
 
 ASSET = "Gleam.zip"
@@ -21,8 +23,12 @@ def main():
     ap.add_argument("--tag", required=True, help="the release tag, e.g. v1.0.0")
     ap.add_argument("--repo", required=True, help="owner/name on GitHub")
     ap.add_argument("--branch", default="main", help="branch the icon is served from")
-    ap.add_argument("--out", required=True)
+    ap.add_argument("--changelog", help="CHANGELOG.md with one '## <version>' section per release")
+    ap.add_argument("--notes-out", help="write only this version's changelog section to this file")
+    ap.add_argument("--out", help="the repository file to write")
     args = ap.parse_args()
+    if not args.out and not args.notes_out:
+        ap.error("give --out, --notes-out, or both")
 
     with open(args.manifest, encoding="utf-8") as f:
         plugin = json.load(f)
@@ -41,15 +47,36 @@ def main():
     plugin["DownloadCount"] = 0
     plugin["LastUpdate"] = int(time.time())
 
-    changelog = os.environ.get("GLEAM_CHANGELOG", "").strip()
+    changelog = section(args.changelog, plugin["AssemblyVersion"]) if args.changelog else ""
     if changelog:
         plugin["Changelog"] = changelog
 
-    with open(args.out, "w", encoding="utf-8", newline="\n") as f:
-        json.dump([plugin], f, indent=2, ensure_ascii=False)
-        f.write("\n")
+    if args.notes_out:
+        with open(args.notes_out, "w", encoding="utf-8", newline="\n") as f:
+            f.write(changelog + "\n")
+        print(f"wrote {args.notes_out} ({len(changelog.splitlines())} lines)")
 
-    print(f"wrote {args.out} for {plugin['Name']} {plugin['AssemblyVersion']} -> {download}")
+    if args.out:
+        with open(args.out, "w", encoding="utf-8", newline="\n") as f:
+            json.dump([plugin], f, indent=2, ensure_ascii=False)
+            f.write("\n")
+        print(f"wrote {args.out} for {plugin['Name']} {plugin['AssemblyVersion']} -> {download}")
+
+
+def section(path, version):
+    """The text under '## <version>', matching 0.9.5 as well as 0.9.5.0. Empty when there is none."""
+    wanted = {version, ".".join(version.split(".")[:3])}
+    body, inside = [], False
+    with open(path, encoding="utf-8") as f:
+        for line in f.read().splitlines():
+            if line.startswith("## "):
+                if inside:
+                    break
+                inside = line[3:].strip() in wanted
+                continue
+            if inside:
+                body.append(line)
+    return "\n".join(body).strip()
 
 
 if __name__ == "__main__":

@@ -250,6 +250,12 @@ public sealed class Configuration : IPluginConfiguration
     /// </summary>
     public Dictionary<ulong, string> KnownRetainerNames { get; set; } = new();
 
+    /// <summary>
+    /// A game version the player chose to go hands-free on before this build of Gleam was checked against it.
+    /// Covers that one patch only: the next one is held back again.
+    /// </summary>
+    public string? AcceptedGameVersion { get; set; }
+
     /// <summary>Glamour plate item ids seen the last time the dresser was open, per character, so the dresser rule has data before plates reload.</summary>
     public Dictionary<ulong, List<uint>> LastKnownPlateItems { get; set; } = new();
 

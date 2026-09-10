@@ -61,9 +61,14 @@ public sealed class DebugWindow : StyledWindow
         if (Volatile.Read(ref running) > 0) Interlocked.Decrement(ref running);
     }
 
+    /// <summary>Set by the plugin.</summary>
+    public Services.SelfTest? SelfTest { get; set; }
+    public Action? CopyReport { get; set; }
+
     public override void Draw()
     {
-        Ui.HintWrapped("These act on real items. Point them at junk. Run each once before trusting a full clean.");
+        DrawHealth();
+        Ui.HintWrapped("The tools below act on real items. Point them at junk. Run each once before trusting a full clean.");
 
         Ui.Section("Target");
         var w = 100 * Ui.Scale;
@@ -193,6 +198,38 @@ public sealed class DebugWindow : StyledWindow
                 using (ImRaii.PushColor(ImGuiCol.Text, Ui.Mix(ImGui.GetStyle().Colors[(int)ImGuiCol.Text], Ui.AccentSoft, fresh)))
                     ImGui.TextWrapped(lines[i]);
             else ImGui.TextWrapped(lines[i]);
+        }
+    }
+
+    /// <summary>
+    /// The safe half of the window: the self-test, which touches nothing, and the report for a bug. First,
+    /// because after a patch the question is "what can Gleam no longer find", not "can it discard this".
+    /// </summary>
+    private void DrawHealth()
+    {
+        Ui.Section("Health");
+        using (ImRaii.Disabled(SelfTest is null))
+        {
+            if (Ui.Button("Run the self-test") && SelfTest is { } test)
+                RunAsync(async _ => { await test.RunAsync(); return $"self-test: {test.Summary()}"; });
+        }
+        Ui.Tooltip("Checks that Gleam can find every menu entry, NPC, object and place it uses, without touching an item. It opens and closes one bag item's menu.");
+        ImGui.SameLine();
+        if (Ui.Button("Copy a bug report")) CopyReport?.Invoke();
+        Ui.Tooltip("Versions, settings, recent failures and the last self-test, ready to paste into a bug report. No character or retainer names.");
+
+        if (SelfTest is not { LastAt: { } at } t) return;
+        if (!ImGui.CollapsingHeader($"Last self-test, {at:HH:mm}: {t.Summary()}###selftest")) return;
+        foreach (var line in t.Last)
+        {
+            var (mark, color) = line.Result switch
+            {
+                Services.SelfTestResult.Pass => ("ok", Ui.Ok),
+                Services.SelfTestResult.Warn => ("look", Ui.Warn),
+                Services.SelfTestResult.Fail => ("failed", Ui.Danger),
+                _ => ("note", Ui.Muted),
+            };
+            Ui.TextColoredWrapped(color, $"{mark}  {line.Area}: {line.Detail}");
         }
     }
 

@@ -1,0 +1,43 @@
+name: Something is not working
+description: A run stopped, skipped something, or did something you did not expect.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reporting this. Two commands in game make a report much quicker to fix:
+
+        1. `/gleam selftest` checks that Gleam can still find every menu, NPC and place it uses. It does not touch any item.
+        2. `/gleam report` (or **Copy a bug report** in Settings) copies versions, settings, recent failures and the self-test result. Paste it below. It contains no character or retainer names.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What Gleam did, or where it stopped. Include the message in chat or on screen if there was one.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+  - type: textarea
+    id: steps
+    attributes:
+      label: How can it be reproduced?
+      placeholder: |
+        1. Tick three items in the saddlebag, set to "Sell on vendors"
+        2. Press Clean
+        3. The run stops at "Opening the saddlebag"
+  - type: textarea
+    id: report
+    attributes:
+      label: The report from /gleam report
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Dalamud log lines (optional)
+      description: Open `/xllog`, type Gleam in the filter box and copy the lines from around the problem.
+      render: text

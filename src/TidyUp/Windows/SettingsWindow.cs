@@ -46,6 +46,9 @@ public sealed partial class SettingsWindow
 
     /// <summary>Set by the plugin so the Automation section can show dependency status.</summary>
     public Automation.AutoPilot? Pilot { get; set; }
+
+    /// <summary>Set by the plugin: puts the bug report on the clipboard.</summary>
+    public Action? CopyReport { get; set; }
     public VnavmeshIpc? Nav { get; set; }
     public LifestreamIpc? Travel { get; set; }
     public AutoRetainerIpc? AutoRetainer { get; set; }
@@ -245,11 +248,16 @@ public sealed partial class SettingsWindow
         if (Ui.Check("Hold still", ref still)) { config.ReduceMotion = still; Ui.Reduced = still; dirty = true; }
         Ui.Tooltip("Turns off the fading, sliding and counting. Everything still works, it just arrives at once.");
 
-        var link = "Something is not working";
-        var linkWidth = ImGui.CalcTextSize(link, false, 0).X + ImGui.GetStyle().FramePadding.X * 2;
-        Ui.RightAlignOrWrap(linkWidth, 260f * Ui.Scale);
+        const string report = "Copy a bug report";
+        const string link = "Something is not working";
+        var style = ImGui.GetStyle();
+        var linksWidth = ImGui.CalcTextSize(report, false, 0).X + ImGui.CalcTextSize(link, false, 0).X + style.FramePadding.X * 4 + style.ItemSpacing.X;
+        Ui.RightAlignOrWrap(linksWidth, 260f * Ui.Scale);
+        if (Ui.LinkButton(report)) CopyReport?.Invoke();
+        Ui.Tooltip("Puts versions, settings, recent failures and the last self-test on your clipboard, ready to paste into a bug report. It holds no character or retainer names.");
+        ImGui.SameLine();
         if (Ui.LinkButton(link)) openDebug();
-        Ui.Tooltip("Opens the log of what Gleam tried. Only needed when a step keeps failing after a game update.");
+        Ui.Tooltip("Opens the self-test and the log of what Gleam tried. Useful when a step keeps failing after a game update.");
     }
 
     /// <summary>
@@ -281,6 +289,18 @@ public sealed partial class SettingsWindow
                     Ui.TextColored(Ui.Warn, "Install Lifestream to let Gleam travel.");
                     Ui.HintWrapped("Without it, start a run in an inn and Gleam manages from there.");
                 }
+            }
+
+            // A patch this build was not checked on holds hands-free back until the player decides. Asked of
+            // the game version itself, not of the pilot: cleaning after ventures is held back too, and it
+            // needs no vnavmesh, so someone without it must still be able to go ahead.
+            if (Pilot is not null && !Game.GameVersionGuard.AllowsUnattended(config))
+            {
+                Ui.Gap(0.4f);
+                Ui.TextColored(Ui.Warn, "Hands-free is paused for this game patch.");
+                Ui.HintWrapped($"The game was updated after this version of Gleam was checked: it was checked on {Game.GameVersionGuard.CheckedAgainst}, and you are on {Game.GameVersionGuard.Current()}. Runs you start by hand still work. An update to Gleam lifts the pause, or you can go ahead now.");
+                if (Ui.LinkButton("Go ahead on this patch")) Pilot.GoAheadOnThisPatch();
+                Ui.Tooltip(Ui.PatchGoAheadHint);
             }
 
             // Shown whenever it is on: it cleans without asking, so it is never tucked away behind advanced mode.

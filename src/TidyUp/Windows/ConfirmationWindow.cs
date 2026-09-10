@@ -1233,7 +1233,13 @@ public sealed class ConfirmationWindow : StyledWindow
         if (blocked is not null)
         {
             Ui.Gap(0.2f);
-            Ui.TextColored(Ui.Danger, $"Gleam cannot travel: {blocked}. Open Settings to see what it needs.");
+            if (Pilot is { HeldByPatch: true })
+            {
+                Ui.TextColoredWrapped(Ui.Warn, "Hands-free is paused: the game has been patched since this version of Gleam was checked.");
+                if (Ui.LinkButton("Go ahead on this patch")) Pilot.GoAheadOnThisPatch();
+                Ui.Tooltip(Ui.PatchGoAheadHint);
+            }
+            else Ui.TextColored(Ui.Danger, $"Gleam cannot travel: {blocked}. Open Settings to see what it needs.");
         }
         var shownCap = (int)Ui.Count("capItems", cap.Items);
         var items = $"{shownCap} item{(shownCap == 1 ? "" : "s")}";

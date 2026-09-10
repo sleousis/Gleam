@@ -58,6 +58,12 @@ jobs:
             exit 1
           fi
           echo "tag v$tag matches version $ver"
+          # Dalamud shows the changelog beside the update; a release without one says nothing about itself.
+          short=$(echo "$ver" | cut -d. -f1-3)
+          if ! grep -qE "^## ($short|$ver)[[:space:]]*$" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md has no '## $short' section"
+            exit 1
+          fi
 
       - name: Test
         run: dotnet test tests/TidyUp.Core.Tests/TidyUp.Core.Tests.csproj -c Release --nologo
@@ -83,11 +89,22 @@ jobs:
           }
           Write-Host "zip contains every file the plugin opens at runtime"
 
+      - name: Write the release notes
+        shell: bash
+        run: |
+          python tools/make-repo-json.py \
+            --manifest src/TidyUp/bin/Release/TidyUp/TidyUp.json \
+            --tag "${{ steps.tag.outputs.name }}" \
+            --repo "${{ github.repository }}" \
+            --changelog CHANGELOG.md \
+            --notes-out release-notes.md
+
       - name: Publish the release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.tag.outputs.name }}
           name: Gleam ${{ steps.tag.outputs.name }}
+          body_path: release-notes.md
           generate_release_notes: true
           files: Gleam.zip
 
@@ -104,6 +121,7 @@ jobs:
             --manifest src/TidyUp/bin/Release/TidyUp/TidyUp.json \
             --tag "${{ steps.tag.outputs.name }}" \
             --repo "${{ github.repository }}" \
+            --changelog CHANGELOG.md \
             --out repo.json
           if git diff --quiet -- repo.json; then
             echo "repository file already points at this release"

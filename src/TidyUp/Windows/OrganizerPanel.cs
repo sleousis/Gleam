@@ -1048,7 +1048,15 @@ public sealed class OrganizerPanel
         // Only a preview of the layout as it is now can be run.
         var feasible = r is not null && r.Report.Feasible && r.Moves.Count > 0 && !Rethinking && organizer.IsCurrentFresh;
         var canRun = feasible && blocked is null;
-        if (blocked is not null)
+        if (blocked is not null && Pilot is { HeldByPatch: true })
+        {
+            ImGui.SameLine();
+            Ui.TextColored(Ui.Warn, "Hands-free is paused for this game patch.");
+            ImGui.SameLine();
+            if (Ui.LinkButton("Go ahead on this patch")) Pilot.GoAheadOnThisPatch();
+            Ui.Tooltip(Ui.PatchGoAheadHint);
+        }
+        else if (blocked is not null)
         {
             ImGui.SameLine();
             Ui.TextColored(Ui.Danger, $"Gleam cannot travel: {blocked}.");
