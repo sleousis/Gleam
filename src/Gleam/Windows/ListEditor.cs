@@ -1,0 +1,108 @@
+using System.Numerics;
+using Dalamud.Bindings.ImGui;
+using Dalamud.Interface.Utility.Raii;
+using Gleam.Core.Lists;
+using Gleam.Core.Model;
+using Gleam.Game;
+using Gleam.Services;
+
+namespace Gleam.Windows;
+
+/// <summary>Search-and-add editor for one item list. Entries show icon, name, scope; extras live behind hover.</summary>
+internal sealed class ListEditor
+{
+    private readonly ItemDatabase db;
+    private readonly IconCache icons;
+    private readonly Func<ItemList> list;
+    private readonly string title;
+    private readonly string help;
+    private readonly Func<ulong> characterId;
+    private readonly Action markDirty;
+
+    private string search = string.Empty;
+    private List<ItemInfo> results = new();
+    private bool addForThisCharacter;
+
+    public ListEditor(ItemDatabase db, IconCache icons, Func<ItemList> list, string title, string help, Func<ulong> characterId, Action markDirty)
+    {
+        this.db = db;
+        this.icons = icons;
+        this.list = list;
+        this.title = title;
+        this.help = help;
+        this.characterId = characterId;
+        this.markDirty = markDirty;
+    }
+
+    public void Draw()
+    {
+        Ui.Ask(title, help);
+
+        ImGui.SetNextItemWidth(240 * Ui.Scale);
+        if (Ui.InputText($"##s{title}", "Add an item…", ref search, 64))
+            results = search.Length >= 2 ? db.Search(search, 30).ToList() : new List<ItemInfo>();
+        ImGui.SameLine();
+        Ui.Check($"This character only##{title}", ref addForThisCharacter);
+
+        if (results.Count > 0)
+        {
+            // The panel eases to the height the matches need, rather than snapping taller on every keystroke.
+            var want = Math.Min(results.Count, 6) * 28 * Ui.Scale;
+            using var appear = Ui.FoldFade($"results:{title}");
+            using var child = ImRaii.Child($"##r{title}", new Vector2(0, Ui.Smooth($"resh:{title}", want, 20f)), true, ImGuiWindowFlags.None);
+            foreach (var r in results)
+            {
+                var tex = icons.Get(r.IconId, false);
+                if (!tex.IsNull) { Ui.ImageRounded(tex, new Vector2(20 * Ui.Scale, 20 * Ui.Scale), 3 * Ui.Scale, $"icon:{r.IconId}"); ImGui.SameLine(); }
+                if (ImGui.Selectable($"{r.Name}##add{r.ItemId}", false, ImGuiSelectableFlags.None, Vector2.Zero))
+                {
+                    list().Add(r.ItemId, addForThisCharacter ? characterId() : null);
+                    markDirty();
+                    results.Clear();
+                    search = string.Empty;
+                    break;
+                }
+            }
+        }
+
+        var entries = list().Entries;
+        if (entries.Count == 0) { Ui.Hint("Empty."); return; }
+
+        using var table = ImRaii.Table($"##t{title}", 4, ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingFixedFit | ImGuiTableFlags.NoSavedSettings | ImGuiTableFlags.PadOuterX);
+        if (!table) return;
+        ImGui.TableSetupColumn("##icon", ImGuiTableColumnFlags.WidthFixed, 28 * Ui.Scale, 0);
+        ImGui.TableSetupColumn("##item", ImGuiTableColumnFlags.WidthStretch, 4f, 0);
+        ImGui.TableSetupColumn("##hq", ImGuiTableColumnFlags.WidthFixed, 90 * Ui.Scale, 0);
+        ImGui.TableSetupColumn("##rm", ImGuiTableColumnFlags.WidthFixed, 70 * Ui.Scale, 0);
+
+        foreach (var e in entries.ToList())
+        {
+            var info = db.Get(e.ItemId);
+            using var id = ImRaii.PushId($"{title}{e.ItemId}{e.CharacterId}");
+
+            // A removed row shrinks out of its place first; the real removal happens once it has gone.
+            var left = Ui.Leaving(Key(e));
+            if (left <= 0f) { entries.Remove(e); markDirty(); continue; }
+            using var leaving = left < 1f ? Ui.LeavingScope(left) : null;
+
+            ImGui.TableNextRow(ImGuiTableRowFlags.None, 28 * Ui.Scale * left);
+            ImGui.TableNextColumn();
+            if (info is not null) { var tex = icons.Get(info.IconId, false); if (!tex.IsNull) Ui.ImageRounded(tex, new Vector2(22 * Ui.Scale, 22 * Ui.Scale), 4 * Ui.Scale, $"icon:{info.IconId}"); }
+            ImGui.TableNextColumn();
+            ImGui.AlignTextToFramePadding();
+            Ui.Text(info?.Name ?? $"item {e.ItemId}");
+            ImGui.SameLine();
+            // A raw content id means nothing to a player; which character it was is the only part that matters.
+            Ui.Hint(e.CharacterId is null ? "account" : e.CharacterId == characterId() ? "this character" : "another character");
+            if (!string.IsNullOrEmpty(e.Note)) Ui.Tooltip(e.Note);
+            ImGui.TableNextColumn();
+            var hq = e.IncludeHq;
+            if (Ui.Check("HQ too", ref hq)) { e.IncludeHq = hq; markDirty(); }
+            ImGui.TableNextColumn();
+            if (Ui.LinkButton("Remove")) Ui.Leave(Key(e));
+        }
+    }
+
+    /// <summary>Identifies one row across frames, so a row on its way out is still the same row.</summary>
+    private string Key(ItemListEntry e) => $"le:{title}:{e.ItemId}:{e.CharacterId}";
+}

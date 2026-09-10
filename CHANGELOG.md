@@ -3,6 +3,12 @@
 Each release's section is shown in Dalamud's plugin installer and on the GitHub release page. The release
 workflow refuses a tag whose version has no section here.
 
+## 0.10.0
+
+- The old working name, TidyUp, is gone from everything, including the name Dalamud uses to track the plugin. Because of that, Dalamud treats this version as a new plugin. Install Gleam from the list, then remove the old copy, version 0.9.x. Your settings, layouts and history come across the first time the new copy starts.
+- Layouts exported from earlier versions still import.
+- The hidden /tidyup command is gone. Use /gleam or /gl.
+
 ## 0.9.5
 
 - Gleam can now run hands-free on Japanese, German and French game clients as well as English ones. It matches item-menu entries by every text id the game uses for them. It recognises NPC menu entries by reading them back into English. It accepts a sale or discard prompt when the prompt uses the item's inflected name.

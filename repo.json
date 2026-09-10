@@ -24,7 +24,7 @@
     "LoadSync": false,
     "CanUnloadAsync": false,
     "LoadPriority": 0,
-    "IconUrl": "https://raw.githubusercontent.com/sleousis/Gleam/main/src/TidyUp/images/icon.png",
+    "IconUrl": "https://raw.githubusercontent.com/sleousis/Gleam/main/src/Gleam/images/icon.png",
     "Punchline": "Cleans and organizes your inventory, and walks there itself. Needs vnavmesh, plus Lifestream to travel.",
     "AcceptsFeedback": true,
     "DownloadLinkInstall": "https://github.com/sleousis/Gleam/releases/download/v0.9.5/Gleam.zip",

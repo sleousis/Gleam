@@ -1,4 +1,4 @@
-# Tidy Up — Inventory Organizer: integration plan
+# Gleam — Inventory Organizer: integration plan
 
 Status: Phases 1–3 complete (2026-09-08). Steps 1–13 of §2.7 are committed; step 14's in-game verification is listed below.
 
@@ -19,8 +19,8 @@ Constraint honoured throughout: the discard feature keeps its behaviour; the org
 
 | Concern | Where | Notes |
 |---|---|---|
-| Live containers | `src/TidyUp/Game/GameInventoryScanner.cs` | Reads `InventoryManager` natively, page by page (`GameContainerIds.*Pages`). Reports "loaded" per container. Retainer pages are only considered open once `RetainerPage1.IsLoaded` and the active retainer id matches. Dresser via `MirageManager`. Framework thread only. |
-| Closed containers | `src/TidyUp/Integrations/AllaganToolsSource.cs` → `Core/Integrations/OfflineInventory.cs` | Allagan Tools IPC (`GetCharacterItems` as `ulong[]` records). `AllaganItemRecord.Parse` decodes container/slot/item/qty/flags/materia/stains/retainerId. |
+| Live containers | `src/Gleam/Game/GameInventoryScanner.cs` | Reads `InventoryManager` natively, page by page (`GameContainerIds.*Pages`). Reports "loaded" per container. Retainer pages are only considered open once `RetainerPage1.IsLoaded` and the active retainer id matches. Dresser via `MirageManager`. Framework thread only. |
+| Closed containers | `src/Gleam/Integrations/AllaganToolsSource.cs` → `Core/Integrations/OfflineInventory.cs` | Allagan Tools IPC (`GetCharacterItems` as `ulong[]` records). `AllaganItemRecord.Parse` decodes container/slot/item/qty/flags/materia/stains/retainerId. |
 | Folding live + cached | `RunCoordinator.OfflineItems` | Live always wins per (kind, owner). Retainers appear as their own cache entries; folded into the owner's plan. |
 | Item identity | `Core/Model/ScannedItem.cs`, `SlotRef.cs` | `SlotRef(Kind, ContainerId, Slot, OwnerId)`; `ScannedItem(ItemId base, Quantity, IsHq, IsCollectable, Materia[], Stain0/1, Spiritbond)`. Materia is only read for equipment (stackables reuse those bytes). |
 | Static item facts | `Game/ItemDatabase.cs` → `Core/Model/ItemInfo.cs` | `UiCategory`, `LevelEquip`, `ItemLevel`, `ClassJobCategoryId`, `IsEquipment`, `IsUnique`, `IsUntradable`, `StackSize`, `IsMarketable`, `IsUsable`. Cached per id. |
@@ -78,7 +78,7 @@ This engine answers *"should this leave the game?"*. It is destructive-by-design
 ### 2.1 Module layout
 
 ```
-src/TidyUp.Core/
+src/Gleam.Core/
   Organizer/
     Model/
       Destination.cs          # Bags | Armoury | Saddlebag | Retainer(id) | KeepWherever
@@ -102,7 +102,7 @@ src/TidyUp.Core/
   Merging/
     StackMergePlanner.cs      # unchanged
 
-src/TidyUp/
+src/Gleam/
   Services/
     InventorySnapshotService.cs   # NEW: extracted from RunCoordinator (scan + offline fold + context)
     OrganizerCoordinator.cs       # NEW: snapshot → solve → preview → execute; pending/resume
@@ -114,11 +114,11 @@ src/TidyUp/
   Windows/
     OrganizerWindow.cs        # rules editor + preview + run
     OrganizerRuleEditor.cs
-tests/TidyUp.Core.Tests/
+tests/Gleam.Core.Tests/
     OrganizerSolverTests.cs, OrganizerRuleTests.cs, MoveExecutorTests.cs
 ```
 
-Everything in `Core/Organizer` is pure and unit-testable; game access stays in `src/TidyUp/Game`.
+Everything in `Core/Organizer` is pure and unit-testable; game access stays in `src/Gleam/Game`.
 
 ### 2.2 Rule / plan data model
 
@@ -194,7 +194,7 @@ All of this is pure and gets tests: headroom accounting, feasibility report text
 
 **Shared core (refactor, behaviour-preserving):** extract from `ExecutionEngine` a generic `ExecutionCore<TOp, TResult>` with hooks: `IsAvailable(op)`, `Execute(op)`, `Park(op, reason)`, rate limit, consecutive-failure abort, cancellation. `ExecutionEngine` becomes a thin adapter. Existing engine tests pass unchanged.
 
-**`IMoveActions` (game surface, `src/TidyUp/Game/MoveActions.cs`):**
+**`IMoveActions` (game surface, `src/Gleam/Game/MoveActions.cs`):**
 
 ```csharp
 bool IsOpen(ContainerKind kind, ulong ownerId);               // reuse GameActions.IsContainerAvailable
@@ -240,7 +240,7 @@ Task<MoveOutcome> MoveAsync(SlotRef from, SlotRef to, uint itemId, int qty, Canc
 9. **Solver relays and ordering**: relay legs, waves, staging reserve, multi-pass. Simulation tests proving the bag never overflows.
 10. **`MoveExecutor` + `OrganizerCoordinator`**: batches, parking, resume on container open, history file. FakeMoveActions tests.
 11. **`OrganizerWindow`**: rules editor.
-12. **`OrganizerWindow`**: preview (end-state cards, move table, feasibility, Organize button). Command `/tidyup organize`, title-bar button on the main window.
+12. **`OrganizerWindow`**: preview (end-state cards, move table, feasibility, Organize button). Command `/gleam organize`, title-bar button on the main window.
 13. **Hands-free organizer legs** in `AutoPilot.Organizer.cs`: container-keyed sessions, reusing bell/saddlebag steps.
 14. **Polish**: plain-language messages, memory/notes, in-game verification pass.
 
@@ -255,7 +255,7 @@ Steps 1–5 are pure refactors and infrastructure; nothing user-visible changes 
 3. **Splitting:** whole stacks only in v1. A stack that cannot fit after merge headroom stays and is reported.
 4. **Armoury:** a destination in v1; equipment goes to its slot page (needs the equip-slot mapping in item data).
 5. **Never touch:** means never discard or sell; moving is allowed, and a rule may target the list explicitly.
-6. **UI:** a separate organizer window in the same style, opened from a main-window title-bar button and `/tidyup organize`.
+6. **UI:** a separate organizer window in the same style, opened from a main-window title-bar button and `/gleam organize`.
 7. **Feasibility:** the Run button stays disabled while any container would overflow; the preview names the container and the shortfall.
 8. **Relays:** retainer-to-retainer and retainer-to-saddlebag moves relay through the bags in waves sized to a staging reserve; extra passes are shown in the preview.
 
@@ -271,8 +271,8 @@ Steps 1–5 are pure refactors and infrastructure; nothing user-visible changes 
 
 1. **Bag highlighting** (`BagHighlighter`): with the review open, ticked items glow gold in Inventory / InventoryLarge / InventoryExpansion, the retainer inventory and the saddlebag; with the organizer preview open, items to move glow blue. Check the tint follows the game's sort order (display position, not raw slot), survives tab switches, and clears when the window closes. Not yet covered: the armoury chest.
 2. **Keep N in the bags** on an organizer rule: whole stacks only; smallest stacks stay first; one oversized stack stays.
-3. **Export / Import** in the organizer plan bar: text starts with `TIDYUP1:`; retainers the importer does not own become "any retainer".
+3. **Export / Import** in the organizer plan bar: text starts with `GLEAM1:` (layouts shared before the rename start with `TIDYUP1:` and still import); retainers the importer does not own become "any retainer".
 4. **List in stacks of N** (Settings, market board preset): each piece is one listing; when a retainer's slots run out the remainder is reported as "partly listed" and waits.
 5. **Leave stacks of N or more alone** (Settings → More → What counts as junk, default 200): such rows show as hand-pick with the reason; 0 turns it off.
 6. **Protected items**: Ultimate tokens, the special earrings, Ceruleum Tank and Magitek Repair Materials (curated.json) plus Ultimate weapons recognised by shape are never listed.
-7. **After ventures** (Settings): with AutoRetainer, after each retainer's ventures Tidy Up discards default-ticked bag rows and prints one chat line; it always hands the turn back.
+7. **After ventures** (Settings): with AutoRetainer, after each retainer's ventures Gleam discards default-ticked bag rows and prints one chat line; it always hands the turn back.
