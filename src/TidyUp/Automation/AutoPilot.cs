@@ -358,7 +358,7 @@ public sealed partial class AutoPilot : IDisposable
         await EnsureRetainerListAsync(ct).ConfigureAwait(false);
 
         // The list appears before the server has filled it; selecting too early is silently ignored.
-        await WaitUntil(RetainerListReady, StepTimeout, "the retainer list to fill", ct).ConfigureAwait(false);
+        await WaitForMenu(RetainerListReady, StepTimeout, "the retainer list to fill", ct).ConfigureAwait(false);
         await Task.Delay(1200, ct).ConfigureAwait(false);
 
         listingFailure = null;
@@ -467,7 +467,7 @@ public sealed partial class AutoPilot : IDisposable
     {
         await Step($"Opening {name}", async () =>
         {
-            await WaitUntil(() => GameUi.IsVisible("RetainerList") && !GameUi.SelectStringReady(), StepTimeout, "the retainer list", ct).ConfigureAwait(false);
+            await WaitForMenu(() => GameUi.IsVisible("RetainerList") && !GameUi.SelectStringReady(), StepTimeout, "the retainer list", ct).ConfigureAwait(false);
             await Task.Delay(1000, ct).ConfigureAwait(false);
             for (var attempt = 0; attempt < 4; attempt++)
             {
@@ -482,7 +482,7 @@ public sealed partial class AutoPilot : IDisposable
                 await framework.RunOnFrameworkThread(() => GameUi.RetainerListSelect(S.RetainerListSelect, index)).ConfigureAwait(false);
                 try
                 {
-                    await WaitUntil(() => GameUi.SelectStringReady(), TimeSpan.FromSeconds(6), $"{name}'s menu", ct).ConfigureAwait(false);
+                    await WaitForMenu(() => GameUi.SelectStringReady(), TimeSpan.FromSeconds(6), $"{name}'s menu", ct).ConfigureAwait(false);
                     return;
                 }
                 catch (AutoPilotException) when (attempt < 3)
@@ -518,7 +518,7 @@ public sealed partial class AutoPilot : IDisposable
     private async Task CloseRetainerInventoryAsync(string name, CancellationToken ct)
     {
         await framework.RunOnFrameworkThread(() => { GameUi.Close("InventoryRetainer"); GameUi.Close("InventoryRetainerLarge"); }).ConfigureAwait(false);
-        await WaitUntil(() => GameUi.SelectStringReady(), StepTimeout, $"{name}'s menu", ct).ConfigureAwait(false);
+        await WaitForMenu(() => GameUi.SelectStringReady(), StepTimeout, $"{name}'s menu", ct).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -546,7 +546,7 @@ public sealed partial class AutoPilot : IDisposable
         {
             await ChooseMenu(db.LocalizeMenuText(S.QuitMenuText), ct).ConfigureAwait(false);
             await AnswerLeavePromptAsync(ct).ConfigureAwait(false);
-            await WaitUntil(() => GameUi.IsVisible("RetainerList") && !GameUi.SelectStringReady(), StepTimeout, "the retainer list", ct).ConfigureAwait(false);
+            await WaitForMenu(() => GameUi.IsVisible("RetainerList") && !GameUi.SelectStringReady(), StepTimeout, "the retainer list", ct).ConfigureAwait(false);
             await Task.Delay(500, ct).ConfigureAwait(false);
         }, ct);
     }
@@ -563,7 +563,7 @@ public sealed partial class AutoPilot : IDisposable
         await Step($"Opening {name}'s market listings", async () =>
         {
             await ChooseMenu(menuText, ct).ConfigureAwait(false);
-            await WaitUntil(() => GameUi.IsVisible("RetainerSellList"), StepTimeout, $"{name}'s sell list", ct).ConfigureAwait(false);
+            await WaitForMenu(() => GameUi.IsVisible("RetainerSellList"), StepTimeout, $"{name}'s sell list", ct).ConfigureAwait(false);
             await Task.Delay(800, ct).ConfigureAwait(false);
         }, ct);
 
@@ -582,7 +582,7 @@ public sealed partial class AutoPilot : IDisposable
         }
 
         await framework.RunOnFrameworkThread(() => { GameUi.Close("RetainerSell"); GameUi.Close("RetainerSellList"); }).ConfigureAwait(false);
-        await WaitUntil(() => GameUi.SelectStringReady(), StepTimeout, $"{name}'s menu", ct).ConfigureAwait(false);
+        await WaitForMenu(() => GameUi.SelectStringReady(), StepTimeout, $"{name}'s menu", ct).ConfigureAwait(false);
         await Task.Delay(400, ct).ConfigureAwait(false);
     }
 
@@ -642,7 +642,7 @@ public sealed partial class AutoPilot : IDisposable
             await Step("Opening the shop", async () =>
             {
                 await ChooseMenu(db.LocalizeMenuText(S.VendorMenuText), ct).ConfigureAwait(false);
-                await WaitUntil(() => GameUi.IsVisible("Shop"), StepTimeout, "the shop window", ct).ConfigureAwait(false);
+                await WaitForMenu(() => GameUi.IsVisible("Shop"), StepTimeout, "the shop window", ct).ConfigureAwait(false);
             }, ct);
         }
         await Task.Delay(600, ct).ConfigureAwait(false);
@@ -690,7 +690,7 @@ public sealed partial class AutoPilot : IDisposable
         await Step("Opening supply missions", async () =>
         {
             await ChooseMenu(db.LocalizeMenuText(S.GcSupplyMenuText), ct).ConfigureAwait(false);
-            await WaitUntil(() => GameUi.IsVisible("GrandCompanySupplyList"), StepTimeout, "the supply window", ct).ConfigureAwait(false);
+            await WaitForMenu(() => GameUi.IsVisible("GrandCompanySupplyList"), StepTimeout, "the supply window", ct).ConfigureAwait(false);
             await Task.Delay(800, ct).ConfigureAwait(false);
             var ints = S.ExpertDeliveryTabCallback.Split(',').Select(s => int.TryParse(s.Trim(), out var v) ? v : 0).ToList();
             await framework.RunOnFrameworkThread(() => GameUi.FireInts("GrandCompanySupplyList", ints)).ConfigureAwait(false);
@@ -751,7 +751,7 @@ public sealed partial class AutoPilot : IDisposable
                 await framework.RunOnFrameworkThread(() => GameUi.Interact(target)).ConfigureAwait(false);
                 try
                 {
-                    await WaitUntil(() => GameUi.IsVisible(expectAddon) || (orMenu && GameUi.SelectStringReady()), TimeSpan.FromSeconds(6), $"the {objectName.ToLowerInvariant()} to respond", ct).ConfigureAwait(false);
+                    await WaitForMenu(() => GameUi.IsVisible(expectAddon) || (orMenu && GameUi.SelectStringReady()), TimeSpan.FromSeconds(6), $"the {objectName.ToLowerInvariant()} to respond", ct).ConfigureAwait(false);
                     return;
                 }
                 catch (AutoPilotException) when (attempt < 2) { }
@@ -880,6 +880,26 @@ public sealed partial class AutoPilot : IDisposable
         log.Information("AutoPilot: {Status}", status);
         await body().ConfigureAwait(false);
     }
+
+    /// <summary>
+    /// Waits for a window Gleam has just asked an NPC for, dismissing any talk bubble standing in the way.
+    ///
+    /// Retainers, merchants and Grand Company officers all say something before their window opens. Gleam
+    /// waited for the window alone, so a greeting left a run sitting on "Opening &lt;retainer&gt;" until it timed
+    /// out. This is only used while waiting on something Gleam itself started, never on a bubble that was
+    /// already on screen when the run began.
+    /// </summary>
+    private Task WaitForMenu(Func<bool> cond, TimeSpan timeout, string what, CancellationToken ct) =>
+        WaitUntil(() =>
+        {
+            if (cond()) return true;
+            // Never click through a cutscene. Those use the same talk bubble, and skipping someone's story
+            // would be unforgivable for an inventory plugin.
+            if (!condition[ConditionFlag.WatchingCutscene] && !condition[ConditionFlag.WatchingCutscene78]
+                && !condition[ConditionFlag.OccupiedInCutSceneEvent])
+                GameUi.AdvanceTalk();
+            return false;
+        }, timeout, what, ct);
 
     private async Task WaitUntil(Func<bool> cond, TimeSpan timeout, string what, CancellationToken ct)
     {

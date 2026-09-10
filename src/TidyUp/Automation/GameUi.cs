@@ -30,6 +30,18 @@ public static unsafe class GameUi
 
     public static void ExecuteMainCommand(uint id) => UIModule.Instance()->ExecuteMainCommand(id);
 
+    /// <summary>
+    /// Clicks through an NPC's talk bubble, the way pressing the confirm key would. A retainer greets you
+    /// before its menu appears, and that greeting waits for a click for ever: nothing behind it opens until
+    /// it is dismissed. Returns false when there is no bubble, which is the usual case.
+    /// </summary>
+    public static bool AdvanceTalk()
+    {
+        var a = AddonDriver.GetAddon("Talk");
+        if (a == null || !a->IsVisible) return false;
+        return a->FireCallbackInt(0);
+    }
+
     public static bool Interact(IGameObject obj)
     {
         var target = TargetSystem.Instance();

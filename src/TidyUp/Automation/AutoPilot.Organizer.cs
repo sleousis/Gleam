@@ -139,7 +139,7 @@ public sealed partial class AutoPilot
                     var inInn = await Leg("inn", () => TravelToInnAsync(ct), ct).ConfigureAwait(false);
                     if (!inInn) { movesPending += ops.Count; continue; }
                     await EnsureRetainerListAsync(ct).ConfigureAwait(false);
-                    await WaitUntil(RetainerListReady, StepTimeout, "the retainer list to fill", ct).ConfigureAwait(false);
+                    await WaitForMenu(RetainerListReady, StepTimeout, "the retainer list to fill", ct).ConfigureAwait(false);
                     await Task.Delay(1200, ct).ConfigureAwait(false);
                     atBell = true;
                 }
