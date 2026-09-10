@@ -26,10 +26,10 @@ Optional:
 AutoRetainer lets Gleam discard junk after each retainer's ventures.
 Allagan Tools shows retainer contents without summoning them.
 Market prices come from Universalis and need an internet connection.</Description>
-    <RepoUrl>https://github.com/savvasleousis/TidyUp</RepoUrl>
+    <RepoUrl>https://github.com/sleousis/Gleam</RepoUrl>
     <!-- Shown beside the plugin in Dalamud's installer. Served from the repository itself so there is no
          second place to keep it in step. -->
-    <IconUrl>https://raw.githubusercontent.com/savvasleousis/TidyUp/main/src/TidyUp/images/icon.png</IconUrl>
+    <IconUrl>https://raw.githubusercontent.com/sleousis/Gleam/main/src/TidyUp/images/icon.png</IconUrl>
     <Tags>inventory;cleanup;discard;organize;sort;retainer;saddlebag;market board;glamour;qol</Tags>
     <RootNamespace>TidyUp</RootNamespace>
     <AssemblyName>TidyUp</AssemblyName>

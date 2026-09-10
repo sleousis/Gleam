@@ -6,7 +6,7 @@
     "AssemblyVersion": "0.9.0.0",
     "Description": "Gleam cleans and organizes your inventory, and does the walking itself.\n\nClean: it finds junk in your bags, armoury chest, saddlebag, retainers and glamour dresser and shows it in one list. You choose whether to sell on the market board, sell to vendors or discard, then press one button.\n\nOrganize: layouts move the items you keep to where you want them. For example, materia to the saddlebag, spare gear to a retainer and gear-set pieces to the armoury chest.\n\nNothing is changed until you press the button. Items that will be cleaned or moved are highlighted in the game's bag windows. Gleam then opens the saddlebag, travels to an inn for your retainers and the dresser, and visits your Grand Company when something is to be turned in.\n\nCommands: /gleam or /gl. Sub-commands: organize, history, settings, stop.\n\nPlugins Gleam needs:\nvnavmesh walks your character from place to place. Gleam needs it.\nLifestream teleports between aetherytes and into inns. Without it, start a run while you are already in an inn.\n\nOptional:\nAutoRetainer lets Gleam discard junk after each retainer's ventures.\nAllagan Tools shows retainer contents without summoning them.\nMarket prices come from Universalis and need an internet connection.",
     "ApplicableVersion": "any",
-    "RepoUrl": "https://github.com/savvasleousis/TidyUp",
+    "RepoUrl": "https://github.com/sleousis/Gleam",
     "Tags": [
       "inventory",
       "cleanup",
@@ -24,15 +24,15 @@
     "LoadSync": false,
     "CanUnloadAsync": false,
     "LoadPriority": 0,
-    "IconUrl": "https://raw.githubusercontent.com/savvasleousis/TidyUp/main/src/TidyUp/images/icon.png",
+    "IconUrl": "https://raw.githubusercontent.com/sleousis/Gleam/main/src/TidyUp/images/icon.png",
     "Punchline": "Cleans and organizes your inventory, and walks there itself. Needs vnavmesh, plus Lifestream to travel.",
     "AcceptsFeedback": true,
-    "DownloadLinkInstall": "https://github.com/savvasleousis/TidyUp/releases/download/v0.9.0/Gleam.zip",
-    "DownloadLinkUpdate": "https://github.com/savvasleousis/TidyUp/releases/download/v0.9.0/Gleam.zip",
-    "DownloadLinkTesting": "https://github.com/savvasleousis/TidyUp/releases/download/v0.9.0/Gleam.zip",
+    "DownloadLinkInstall": "https://github.com/sleousis/Gleam/releases/download/v0.9.0/Gleam.zip",
+    "DownloadLinkUpdate": "https://github.com/sleousis/Gleam/releases/download/v0.9.0/Gleam.zip",
+    "DownloadLinkTesting": "https://github.com/sleousis/Gleam/releases/download/v0.9.0/Gleam.zip",
     "IsHide": false,
     "IsTestingExclusive": false,
     "DownloadCount": 0,
-    "LastUpdate": 1788998765
+    "LastUpdate": 1788999466
   }
 ]
