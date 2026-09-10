@@ -33,9 +33,13 @@ public sealed record Destination
     public static Destination AnyRetainer => new() { Kind = DestinationKind.Retainer };
     public static Destination RetainerNamed(ulong id) => new() { Kind = DestinationKind.Retainer, RetainerId = id };
 
+    // Computed, so never written to the settings file: the loader fills objects in place, and a computed
+    // value written out has already cost data once.
+    [System.Runtime.Serialization.IgnoreDataMember]
     public bool IsAnyRetainer => Kind == DestinationKind.Retainer && RetainerId == 0;
 
     /// <summary>The storage this destination names, or null for Stay and for "any retainer" (resolved by the solver).</summary>
+    [System.Runtime.Serialization.IgnoreDataMember]
     public StorageId? Storage => Kind switch
     {
         DestinationKind.Bags => new StorageId(ContainerKind.Inventory),
@@ -70,6 +74,7 @@ public sealed class OrganizerPredicate
     public bool? OnNeverTouchList { get; set; }
     public HashSet<uint>? ItemIds { get; set; }
 
+    [System.Runtime.Serialization.IgnoreDataMember]
     public bool IsEmpty =>
         Tags is null or { Count: 0 } && UiCategories is null or { Count: 0 } && MinItemLevel is null && MaxItemLevel is null
         && MinEquipLevel is null && MaxEquipLevel is null && ForJobsPlayed is null && InGearset is null && IsHq is null && HasMateria is null
@@ -199,7 +204,6 @@ public sealed class OrganizerPlan
         Rules =
         {
             new OrganizerRule { Name = "Materia to the saddlebag", When = new OrganizerPredicate { Tags = [ItemTag.Materia] }, Then = Destination.Saddlebag },
-            new OrganizerRule { Name = "Crystals to the saddlebag", When = new OrganizerPredicate { Tags = [ItemTag.Crystals] }, Then = Destination.Saddlebag },
             new OrganizerRule { Name = "Consumables in the bags", When = new OrganizerPredicate { Tags = [ItemTag.Consumables] }, Then = Destination.Bags },
             new OrganizerRule { Name = "Gear set pieces in the armoury", When = new OrganizerPredicate { Tags = [ItemTag.Gear], InGearset = true }, Then = Destination.Armoury },
             new OrganizerRule { Name = "Other gear to a retainer", When = new OrganizerPredicate { Tags = [ItemTag.Gear], InGearset = false }, Then = Destination.AnyRetainer },

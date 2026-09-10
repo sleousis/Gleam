@@ -70,7 +70,8 @@ public static class MoveSolver
         var pending = new List<(Placement P, StorageId To, uint Page)>();
         var retainers = sim.Keys.Where(k => k.Kind == ContainerKind.Retainer).OrderBy(k => k.OwnerId).ToList();
         var chosen = new HashSet<StorageId>();   // "any retainer" keeps picking the same one: fewer bells to visit
-        foreach (var p in desired.Placements.Where(p => p.WantsMove))
+        // Named retainers claim their space before "any retainer" chooses, so the two never pick the same room.
+        foreach (var p in desired.Placements.Where(p => p.WantsMove).OrderBy(p => p.Destination.IsAnyRetainer ? 1 : 0))
         {
             StorageId? to = p.Destination.Storage;
             if (p.Destination.IsAnyRetainer)
@@ -81,6 +82,8 @@ public static class MoveSolver
                     .Where(r => sim[r].Fits(p.Item.ItemId, p.Item.IsHq, p.Item.Quantity, p.Info.StackSize, plan.MergeStacksAtDestination))
                     .OrderByDescending(r => sim[r].Headroom(p.Item.ItemId, p.Item.IsHq) > 0)
                     .ThenByDescending(r => chosen.Contains(r))
+                    // A retainer never looked inside is only assumed empty; one Gleam has actually read is a safer bet.
+                    .ThenByDescending(r => sim[r].SizesAreLive)
                     .ThenByDescending(r => sim[r].Free)
                     .Select(r => (StorageId?)r)
                     .FirstOrDefault();
@@ -95,7 +98,9 @@ public static class MoveSolver
             var page = to.Value.Kind == ContainerKind.Armoury ? p.Info.ArmouryPage : 0u;
             if (!sim.ContainsKey(to.Value)) sim[to.Value] = NewSpace(to.Value);
             // Reserve the space now so later "any retainer" choices see it taken.
-            if (p.Destination.IsAnyRetainer) sim[to.Value].Accept(p.Item.ItemId, p.Item.IsHq, p.Item.Quantity, p.Info.StackSize, plan.MergeStacksAtDestination);
+            // Only what fits is reserved. A full named retainer must surface as a shortfall below, not throw here.
+            if (to.Value.Kind == ContainerKind.Retainer && sim[to.Value].Fits(p.Item.ItemId, p.Item.IsHq, p.Item.Quantity, p.Info.StackSize, plan.MergeStacksAtDestination))
+                sim[to.Value].Accept(p.Item.ItemId, p.Item.IsHq, p.Item.Quantity, p.Info.StackSize, plan.MergeStacksAtDestination);
             pending.Add((p, to.Value, page));
         }
 
@@ -104,9 +109,11 @@ public static class MoveSolver
         foreach (var (p, to, _) in pending)
             if (check.TryGetValue(p.Current, out var src)) src.Release(p.Item, p.Info);
         var needed = new Dictionary<StorageId, int>();
+        var armouryPages = new Dictionary<uint, int>();
         var topRule = new Dictionary<StorageId, Dictionary<string, int>>();
-        foreach (var (p, to, _) in pending.OrderBy(x => x.To.ToString()))
+        foreach (var (p, to, page) in pending.OrderBy(x => x.To.ToString()))
         {
+            if (to.Kind == ContainerKind.Armoury && page != 0) armouryPages[page] = armouryPages.GetValueOrDefault(page) + 1;
             if (!check.ContainsKey(to)) check[to] = NewSpace(to);
             var space = check[to];
             var slots = space.SlotsNeeded(p.Item.ItemId, p.Item.IsHq, p.Item.Quantity, p.Info.StackSize, plan.MergeStacksAtDestination);
@@ -123,6 +130,21 @@ public static class MoveSolver
             free += pending.Where(x => x.P.Current == to).Count(); // slots the storage itself gives up
             if (n > free)
                 result.Report.Shortfalls.Add(new Shortfall(to, n, free, topRule[to].OrderByDescending(kv => kv.Value).First().Key));
+        }
+
+        // The armoury takes each piece only on its own page, so a full body page is full whatever room the other
+        // pages have. Pooling them used to say it fits, and the move then waited forever with nowhere to land.
+        var armouryId = new StorageId(ContainerKind.Armoury);
+        if (armouryPages.Count > 0 && spaces.TryGetValue(armouryId, out var armoury) && !result.Report.Shortfalls.Any(s => s.Storage == armouryId))
+        {
+            foreach (var (page, count) in armouryPages)
+            {
+                var free = armoury.FreeOnPage(page) + pending.Count(x => x.P.Current == armouryId && x.P.Item.Slot.ContainerId == page);
+                if (count <= free) continue;
+                var blame = topRule.TryGetValue(armouryId, out var rules) ? rules.OrderByDescending(kv => kv.Value).First().Key : "gear";
+                result.Report.Shortfalls.Add(new Shortfall(armouryId, count, free, blame));
+                break;
+            }
         }
 
         // 3. Legs. Anything touching the bags or armoury is direct; everything else relays through the bags.

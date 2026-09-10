@@ -118,9 +118,11 @@ public class OrganizerModelTests
         Assert.Equal(DestinationKind.Saddlebag, back.Rules[0].Then.Kind);
         Assert.Equal(10, back.Rules[0].When.MinItemLevel);
         Assert.Contains(ItemTag.Materia, back.Rules[0].When.Tags!);
-        Assert.Equal(DestinationKind.Retainer, back.Rules[4].Then.Kind);
-        Assert.True(back.Rules[4].Then.IsAnyRetainer);
-        Assert.False(back.Rules[4].When.InGearset);
+        // Found by name, not position: the starter layout's rules change over time.
+        var otherGear = back.Rules.Single(r => r.Name == "Other gear to a retainer");
+        Assert.Equal(DestinationKind.Retainer, otherGear.Then.Kind);
+        Assert.True(otherGear.Then.IsAnyRetainer);
+        Assert.False(otherGear.When.InGearset);
         Assert.Contains(0xBEEFul, back.RetainersInScope);
 
         var clone = plan.Clone();

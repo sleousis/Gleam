@@ -16,6 +16,10 @@ public enum HardBlockReason
     IrreplaceableUntradeable,
     /// <summary>On the curated list of things that can never be regained (Ultimate tokens and weapons, the special earrings). Never shown, never touched.</summary>
     Protected,
+    /// <summary>The gear sets could not be read, so any piece of gear might belong to one.</summary>
+    GearsetsUnknown,
+    /// <summary>The glamour plates have not been read yet, so any dresser item might be on one.</summary>
+    PlatesUnknown,
 }
 
 public static class HardBlocks
@@ -26,7 +30,8 @@ public static class HardBlocks
     /// item by hand, with the reason shown as a warning.
     /// </summary>
     public static bool IsImmovable(HardBlockReason reason) =>
-        reason is HardBlockReason.Indisposable or HardBlockReason.InGearset or HardBlockReason.InGlamourPlate or HardBlockReason.Protected or HardBlockReason.Currency;
+        reason is HardBlockReason.Indisposable or HardBlockReason.InGearset or HardBlockReason.InGlamourPlate or HardBlockReason.Protected or HardBlockReason.Currency
+            or HardBlockReason.GearsetsUnknown or HardBlockReason.PlatesUnknown;
 
     /// <summary>Ultimate weapons by shape rather than by id: blue rarity with three materia slots, outside the Bozjan relic range.</summary>
     public static bool IsUltimateWeapon(ItemInfo info) =>
@@ -55,6 +60,15 @@ public static class HardBlocks
         if (item.Slot.Kind != ContainerKind.GlamourDresser && info.IsEquipment && ctx.GearsetItemIds.Contains(info.ItemId))
             return HardBlockReason.InGearset;
 
+        // When the gear sets could not be read, any piece of gear might be in one. An empty set used to mean
+        // "in none", so every gear set piece lost its protection on a bad read.
+        if (item.Slot.Kind != ContainerKind.GlamourDresser && info.IsEquipment && !ctx.GearsetsKnown)
+            return HardBlockReason.GearsetsUnknown;
+
+        // Until the plates have been read, any dresser item might be on one.
+        if (item.Slot.Kind == ContainerKind.GlamourDresser && !ctx.PlatesLoaded)
+            return HardBlockReason.PlatesUnknown;
+
         // Plates reference dresser items; restoring one silently breaks the plate.
         if (item.Slot.Kind == ContainerKind.GlamourDresser && ctx.PlateItemIds.Contains(info.ItemId))
             return HardBlockReason.InGlamourPlate;
@@ -72,6 +86,8 @@ public static class HardBlocks
         HardBlockReason.Currency => "Currency",
         HardBlockReason.IrreplaceableUntradeable => "Untradeable with no vendor value. Cannot be bought back",
         HardBlockReason.Protected => "Can never be regained. Gleam never touches it",
+        HardBlockReason.GearsetsUnknown => "Your gear sets could not be read, so Gleam leaves all gear alone this time",
+        HardBlockReason.PlatesUnknown => "Open the glamour dresser once so Gleam can see which pieces your plates use",
         _ => string.Empty,
     };
 }

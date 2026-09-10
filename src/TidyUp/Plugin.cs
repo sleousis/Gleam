@@ -73,9 +73,15 @@ public sealed class Plugin : IDalamudPlugin
         this.chat = chat;
         PluginServices.Init(pi, data);
 
-        config = pi.GetPluginConfig() as Configuration ?? new Configuration();
+        config = LoadConfig(pi, log, chat);
         Windows.Ui.Reduced = config.ReduceMotion;
-        void Save() => config.Save(pi);
+        // Saves from background work raced the settings page over the same objects. Every save goes through
+        // the game's own thread, where the page also draws.
+        void Save()
+        {
+            if (framework.IsInFrameworkUpdateThread) config.Save(pi);
+            else _ = framework.RunOnFrameworkThread(() => config.Save(pi));
+        }
         if (config.Migrate()) Save();
 
         db = new ItemDatabase(data, log) { Curated = LoadCurated(pi, log) };
@@ -98,7 +104,7 @@ public sealed class Plugin : IDalamudPlugin
         var icons = new IconCache(textures, Path.Combine(pi.AssemblyLocation.Directory?.FullName ?? ".", "images"));
         debugWindow = new DebugWindow(framework, actions, mover, scanner, contextDriver, db, allagan, market, player, config);
         settingsWindow = new SettingsWindow(config, player, db, icons, allagan, coordinator, () => debugWindow.IsOpen = true);
-        historyWindow = new HistoryWindow(runLog, db, icons);
+        historyWindow = new HistoryWindow(runLog, moveLog, db, icons);
         organizerPanel = new OrganizerPanel(organizer, config, db, icons, Save);
         // One window with four pages. Only troubleshooting, which almost nobody opens, stays separate.
         confirmWindow = new ConfirmationWindow(coordinator, icons, db, config, gamepad)
@@ -159,12 +165,14 @@ public sealed class Plugin : IDalamudPlugin
 
         dtr = new DtrEntry(dtrBar, toast, framework, () => confirmWindow.Show(confirmWindow.HomePage))
         {
-            CleanableCount = () => coordinator.LastCleanableCount,
+            // No junk count for someone who has turned clearing junk off.
+            CleanableCount = () => config.UseClean ? coordinator.LastCleanableCount : 0,
             OpenOrganize = () => confirmWindow.Show(Ui.AppMode.Organize),
         };
         dutyNudge = new DutyNudge(dutyState, framework, coordinator.CountCleanableAsync,
             count => toast.ShowNormal($"Gleam: {count} item{(count == 1 ? "" : "s")} could be cleaned. /gleam to review."));
 
+        coordinator.IsOrganizing = () => organizer.IsRunning;
         config.Saved += ApplyProfileToServices;
         ApplyProfileToServices();
 
@@ -192,8 +200,38 @@ public sealed class Plugin : IDalamudPlugin
         var profile = coordinator.EffectiveProfile;
         dtr.Enabled = profile.ShowDtrEntry;
         dtr.NudgePercent = profile.FullnessNudgePercent;
-        dutyNudge.Enabled = profile.PostDutyNudge;
+        // Each half's nudges and shortcuts follow whether that half is turned on.
+        dutyNudge.Enabled = profile.PostDutyNudge && config.UseClean;
+        dtr.OpenOrganize = config.UseOrganize ? () => confirmWindow.Show(Ui.AppMode.Organize) : null;
         allagan.Enabled = config.UseAllaganTools;
+    }
+
+    /// <summary>
+    /// Settings that cannot be read are copied aside before anything else happens. Otherwise the first save
+    /// writes fresh defaults over the damaged file, and every list and layout in it is gone for good.
+    /// </summary>
+    private static Configuration LoadConfig(IDalamudPluginInterface pi, IPluginLog log, IChatGui chat)
+    {
+        Configuration? loaded = null;
+        try { loaded = pi.GetPluginConfig() as Configuration; }
+        catch (Exception ex) { log.Error(ex, "Gleam's settings could not be read"); }
+        if (loaded is not null) return loaded;
+
+        try
+        {
+            var file = pi.ConfigFile;
+            if (file.Exists && file.Length > 0)
+            {
+                var backup = file.FullName + $".unreadable-{DateTime.Now:yyyyMMdd-HHmmss}";
+                file.CopyTo(backup, overwrite: false);
+                chat.PrintError($"Gleam could not read its settings and started fresh. The old file was kept as {Path.GetFileName(backup)}.", "Gleam");
+            }
+        }
+        catch (Exception ex)
+        {
+            log.Warning(ex, "Could not keep a copy of the unreadable settings");
+        }
+        return new Configuration();
     }
 
     private static CuratedData LoadCurated(IDalamudPluginInterface pi, IPluginLog log)
@@ -224,6 +262,12 @@ public sealed class Plugin : IDalamudPlugin
                 break;
             case "organize":
             case "organise":
+                if (!config.UseOrganize)
+                {
+                    chat.Print("Putting things away is turned off. Turn it on under Settings.", "Gleam");
+                    confirmWindow.Show(Ui.AppMode.Settings);
+                    break;
+                }
                 if (confirmWindow.IsOpen && confirmWindow.Mode == Ui.AppMode.Organize) confirmWindow.IsOpen = false;
                 else confirmWindow.Show(Ui.AppMode.Organize);
                 break;
@@ -249,17 +293,29 @@ public sealed class Plugin : IDalamudPlugin
                 organizer.CancelRun();
                 if (!wasRunning) chat.Print("Nothing is running.", "Gleam");
                 break;
-            default:
+            case "":
                 if (confirmWindow.IsOpen) confirmWindow.IsOpen = false;
                 else confirmWindow.Show(confirmWindow.HomePage);
+                break;
+            default:
+                // An unknown word used to toggle the window, so a typo closed it. It says what exists instead.
+                chat.Print("Try /gleam, /gleam organize, /gleam history, /gleam settings, /gleam scan or /gleam stop.", "Gleam");
                 break;
         }
     }
 
     private readonly IFramework framework;
 
-    private void OnLogout(int type, int code) { coordinator.OnLogout(); organizer.OnLogout(); }
-    private void OnLogin() => framework.RunOnTick(() => { Greet(); _ = coordinator.RefreshPlanAsync(false); }, delay: TimeSpan.FromSeconds(8));
+    private void OnLogout(int type, int code)
+    {
+        // Nothing carries on into the next character: not a run, not its retainers, not its bag count.
+        if (pilot.IsRunning) pilot.Stop();
+        coordinator.OnLogout();
+        organizer.OnLogout();
+        Game.RetainerDirectory.ForgetLive();
+        dtr.Reset();
+    }
+    private void OnLogin() => framework.RunOnTick(() => { if (disposed) return; Greet(); _ = coordinator.RefreshPlanAsync(false); }, delay: TimeSpan.FromSeconds(8));
 
     /// <summary>Said once, ever: how to open it and that nothing happens without a click.</summary>
     private void Greet()
@@ -282,8 +338,11 @@ public sealed class Plugin : IDalamudPlugin
 
     private void OpenConfig() => confirmWindow.Show(Ui.AppMode.Settings);
 
+    private bool disposed;
+
     public void Dispose()
     {
+        disposed = true;
         pi.UiBuilder.Draw -= DrawUi;
         pi.UiBuilder.OpenMainUi -= OpenMain;
         pi.UiBuilder.OpenConfigUi -= OpenConfig;

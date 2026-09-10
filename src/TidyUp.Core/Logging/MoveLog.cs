@@ -72,24 +72,26 @@ public sealed class JsonLinesLog<T> where T : class
     private async Task<List<T>> LoadAsync()
     {
         if (cache is not null) return cache;
-        cache = new List<T>();
-        if (!storage.Exists(path)) return cache;
+        // Nothing is cached until the file has actually been read. A read that threw used to leave an
+        // empty list cached, and the next append wrote that empty list over the whole history.
+        var loaded = new List<T>();
+        if (!storage.Exists(path)) return cache = loaded;
         var text = await storage.ReadAsync(path).ConfigureAwait(false);
-        if (string.IsNullOrWhiteSpace(text)) return cache;
+        if (string.IsNullOrWhiteSpace(text)) return cache = loaded;
         foreach (var line in text.Split('\n'))
         {
             if (string.IsNullOrWhiteSpace(line)) continue;
             try
             {
                 var e = JsonSerializer.Deserialize<T>(line, JsonOptions);
-                if (e is not null) cache.Add(e);
+                if (e is not null) loaded.Add(e);
             }
             catch (JsonException)
             {
                 // A corrupt line must never take the whole history with it.
             }
         }
-        return cache;
+        return cache = loaded;
     }
 }
 

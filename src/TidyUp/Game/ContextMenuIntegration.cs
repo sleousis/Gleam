@@ -77,6 +77,8 @@ public sealed class ContextMenuIntegration : IDisposable
                     chat.Print(isProtected ? $"{name} is back to normal. Gleam decides." : $"{name} will never be listed.", "Gleam");
                 },
             });
+            // Only offered while Gleam clears junk for this player at all; undoing it is always possible.
+            if (config.UseClean || isAlways)
             entries.Add(new MenuItem
             {
                 Name = isAlways ? "Stop treating it as junk" : "Treat it as junk, always",

@@ -31,9 +31,10 @@ public sealed class DresserZeroPlatesRule : IRule
             Item = item, Info = info,
             Action = ActionKind.Discard,
             Alternatives = info.VendorPrice > 0 ? [ActionKind.VendorSell] : [],
-            Confidence = Confidence.High,
+            // Suggested, never ticked for you: plenty of players keep glamour in the dresser without a plate.
+            Confidence = Confidence.Low,
             RuleId = Id,
-            Reason = "Not in any glamour plate",
+            Reason = "On no glamour plate. Left unticked, since many keep glamour without one",
             ValueGil = 0,
             // The restore step is expected, not a reason to uncheck: only real warnings should.
             Warnings = warnings.Count > 1 ? warnings.Skip(1).ToList() : [],

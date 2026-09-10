@@ -176,6 +176,8 @@ public sealed class OrganizerPanel
         {
             dirty = false;
             save();
+            // Whatever preview is on screen was built from the layout before this change.
+            organizer.LayoutChanged();
             previewDueAt = ImGui.GetTime() + 0.35;
         }
         if (previewDueAt > 0 && ImGui.GetTime() >= previewDueAt && !organizer.IsPreviewing)
@@ -430,7 +432,6 @@ public sealed class OrganizerPanel
     private static readonly (string Name, string Question, OrganizerPredicate When, Destination Default)[] QuickQuestions =
     [
         ("Materia", "Materia", new OrganizerPredicate { Tags = [ItemTag.Materia] }, Destination.Saddlebag),
-        ("Crystals", "Crystals and shards", new OrganizerPredicate { Tags = [ItemTag.Crystals] }, Destination.Saddlebag),
         ("Gear you are not using", "Gear that is not in a gear set", new OrganizerPredicate { Tags = [ItemTag.Gear], InGearset = false }, Destination.AnyRetainer),
         ("Gear in a gear set", "Gear that is in a gear set", new OrganizerPredicate { Tags = [ItemTag.Gear], InGearset = true }, Destination.Armoury),
         ("Housing items", "Housing items", new OrganizerPredicate { Tags = [ItemTag.Housing] }, Destination.AnyRetainer),
@@ -474,9 +475,14 @@ public sealed class OrganizerPanel
             if (dest.Kind == DestinationKind.Stay) { if (rule is not null) plan.Rules.Remove(rule); }
             else if (rule is null)
             {
+                // Question rules are broad defaults, so they sit together and below the player's own, more
+                // specific rules. First match wins: a default placed on top would stop those ever matching.
                 var order = QuickQuestions.Select(q => q.Name).ToList();
-                var at = plan.Rules.Count(r => order.IndexOf(r.Name) is var i && i >= 0 && i < order.IndexOf(name));
-                plan.Rules.Insert(Math.Min(at, plan.Rules.Count), new OrganizerRule { Name = name, When = Clone(when), Then = dest });
+                var mine = order.IndexOf(name);
+                var after = plan.Rules.FindLastIndex(r => order.IndexOf(r.Name) is var i && i >= 0 && i < mine);
+                var before = plan.Rules.FindIndex(r => order.IndexOf(r.Name) is var i && i > mine);
+                var at = after >= 0 ? after + 1 : before >= 0 ? before : plan.Rules.Count;
+                plan.Rules.Insert(at, new OrganizerRule { Name = name, When = Clone(when), Then = dest });
             }
             else rule.Then = dest;
             dirty = true;
@@ -646,7 +652,7 @@ public sealed class OrganizerPanel
             if (Ui.InputInt("Bag slots kept free while moving", ref reserve)) { plan.BagStagingReserve = Math.Clamp(reserve, 0, 100); dirty = true; }
             Ui.Tooltip("Items going from one retainer to another pass through your bags. This many bag slots stay free while they do.");
 
-            var retainers = organizer.RetainerNames;
+            var retainers = organizer.CurrentRetainers;
             if (retainers.Count > 0)
             {
                 Ui.Gap(0.3f);
@@ -811,7 +817,8 @@ public sealed class OrganizerPanel
         options.Add((Destination.Armoury, "Armoury chest"));
         options.Add((Destination.Saddlebag, "Chocobo saddlebag"));
         options.Add((Destination.AnyRetainer, "Any retainer with room"));
-        foreach (var (rid, rname) in organizer.RetainerNames.OrderBy(kv => kv.Value)) options.Add((Destination.RetainerNamed(rid), $"Retainer: {rname}"));
+        // This character's retainers. Another character's still shows, by name, when a layout already names it.
+        foreach (var (rid, rname) in organizer.CurrentRetainers.OrderBy(kv => kv.Value)) options.Add((Destination.RetainerNamed(rid), $"Retainer: {rname}"));
         var current = value;
         var idx = options.FindIndex(o => o.D == current);
         // A layout can name a retainer this character does not have: another character's, or a dismissed one.
@@ -961,6 +968,7 @@ public sealed class OrganizerPanel
     /// </summary>
     private float MoveRowAlpha(int index)
     {
+        if (Ui.Reduced) return 1f;
         var elapsed = ImGui.GetTime() - moveStaggerAt - Math.Min(index, 12) * 0.011;
         return Ui.EaseOut((float)Math.Clamp(elapsed / 0.16, 0, 1));
     }
@@ -1037,7 +1045,8 @@ public sealed class OrganizerPanel
         var needsTravel = r is not null && r.StoragesToOpen.Any(s => !organizer.IsOpen(s));
         var handsFree = Pilot is not null && config.Automation.Enabled && needsTravel;
         var blocked = handsFree ? Pilot?.MissingDependency() : null;
-        var feasible = r is not null && r.Report.Feasible && r.Moves.Count > 0 && !Rethinking;
+        // Only a preview of the layout as it is now can be run.
+        var feasible = r is not null && r.Report.Feasible && r.Moves.Count > 0 && !Rethinking && organizer.IsCurrentFresh;
         var canRun = feasible && blocked is null;
         if (blocked is not null)
         {

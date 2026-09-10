@@ -1,6 +1,7 @@
 using Newtonsoft.Json;
 using TidyUp.Core.Lists;
 using TidyUp.Core.Model;
+using TidyUp.Core.Organizer.Model;
 using TidyUp.Core.Rules;
 
 namespace TidyUp.Core.Tests;
@@ -74,5 +75,15 @@ public class ConfigLoadTests
         Assert.True(loaded.IsAutoOpen(ContainerKind.Retainer));
         Assert.Equal([42ul], loaded.ExcludedRetainerIds);
         Assert.Equal(7, loaded.LargeStackGuard);
+    }
+
+    [Fact]
+    public void Computed_properties_are_never_written_into_the_settings_file()
+    {
+        // A computed value written out is filled back in place on load; one such value doubled every rule.
+        var destination = JsonConvert.SerializeObject(Destination.RetainerNamed(5), Dalamud);
+        Assert.DoesNotContain("\"Storage\"", destination);
+        Assert.DoesNotContain("\"IsAnyRetainer\"", destination);
+        Assert.DoesNotContain("\"IsEmpty\"", JsonConvert.SerializeObject(new OrganizerPredicate(), Dalamud));
     }
 }
