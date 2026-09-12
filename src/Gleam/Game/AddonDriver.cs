@@ -211,7 +211,8 @@ public sealed unsafe class AddonDriver : IDisposable
         {
             foreach (var v in new Dalamud.Game.NativeWrapper.AtkUnitBasePtr((nint)addon).AtkValues)
             {
-                value = v.GetValue() as string;
+                // Whatever type Dalamud boxes the text in, its text is what matters.
+                value = v.GetValue()?.ToString();
                 break;
             }
         }
@@ -222,6 +223,72 @@ public sealed unsafe class AddonDriver : IDisposable
         var parts = new[] { ReadYesNoPrompt(addon), value }.Where(s => !string.IsNullOrWhiteSpace(s)).ToList();
         return parts.Count == 0 ? null : string.Join(" ", parts);
     }
+
+    /// <summary>
+    /// For "/gleam probe yesno": every way of reading the open yes/no, and with <paramref name="answer"/> whether
+    /// pressing Yes works. It answers only a question that mentions buyback. Framework thread only.
+    /// </summary>
+    public static IReadOnlyList<string> ProbeYesNo(bool answer, int yesCallback, Func<string, bool> recognised)
+    {
+        var lines = new List<string>();
+        var addon = GetAddon("SelectYesno");
+        if (addon == null)
+        {
+            lines.Add("No yes/no window exists.");
+            return lines;
+        }
+        lines.Add($"Yes/no window: visible {addon->IsVisible}, ready {addon->IsReady}, {addon->AtkValuesCount} values.");
+        var texts = new List<string>();
+        var node = ReadYesNoPrompt(addon);
+        if (node is not null) texts.Add(node);
+        lines.Add($"Text node: {Quote(node)}");
+        try
+        {
+            var i = 0;
+            foreach (var v in new Dalamud.Game.NativeWrapper.AtkUnitBasePtr((nint)addon).AtkValues)
+            {
+                if (i >= 3) break;
+                string type;
+                string? text;
+                try
+                {
+                    var value = v.GetValue();
+                    type = value?.GetType().Name ?? "null";
+                    text = value?.ToString();
+                }
+                catch (Exception ex)
+                {
+                    type = ex.GetType().Name;
+                    text = null;
+                }
+                if (text is not null) texts.Add(text);
+                lines.Add($"Value {i}: {type} {Quote(text)}");
+                i++;
+            }
+        }
+        catch (Exception ex)
+        {
+            lines.Add($"Values could not be read: {ex.GetType().Name}: {ex.Message}");
+        }
+        var read = YesNoPromptText();
+        lines.Add($"Gleam reads {Quote(read)}, which {(read is not null && recognised(read) ? "is" : "is not")} the buyback question.");
+        if (answer)
+        {
+            if (!texts.Any(t => Normalize(t).Contains("buyback", StringComparison.Ordinal)))
+            {
+                lines.Add("Not answered: nothing read from it mentions buyback.");
+            }
+            else
+            {
+                var values = stackalloc AtkValue[1];
+                values[0].SetInt(yesCallback);
+                lines.Add($"Pressed Yes: the game's callback returned {addon->FireCallback(1, values, false)}.");
+            }
+        }
+        return lines;
+    }
+
+    private static string Quote(string? s) => s is null ? "(nothing)" : $"\"{(s.Length > 120 ? s[..120] + "..." : s)}\"";
 
     public static bool IsAddonVisible(string name)
     {

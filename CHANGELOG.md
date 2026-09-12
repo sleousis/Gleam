@@ -3,6 +3,11 @@
 Each release's section is shown in Dalamud's plugin installer and on the GitHub release page. The release
 workflow refuses a tag whose version has no section here.
 
+## 0.11.7
+
+- Another way of reading the retainer's "no buyback once recalled" question, which 0.11.5 still missed in game.
+- New `/gleam probe yesno` shows what Gleam reads from a yes/no question on screen, to help pin down problems like this one. `/gleam probe yesno answer` also presses Yes, but only on the buyback question.
+
 ## 0.11.6
 
 - No more paying for a teleport to the merchant town when you are already in it. Gleam looks for a merchant where you are, and says so if none is in sight.
