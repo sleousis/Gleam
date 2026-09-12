@@ -546,6 +546,7 @@ public sealed class Plugin : IDalamudPlugin
         dutyNudge.Dispose();
         dtr.Dispose();
         stats.Dispose();
+        Ui.ResetMotion();
         Windows.Charts.BigFont?.Dispose();
         Windows.Charts.BigFont = null;
         contextMenu.Dispose();

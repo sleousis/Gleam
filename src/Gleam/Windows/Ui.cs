@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Runtime.InteropServices;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface;
 using Dalamud.Interface.Colors;
@@ -204,19 +205,68 @@ internal static class Ui
     /// </summary>
     public static bool Reduced { get; set; }
 
-    private static readonly Dictionary<string, float> motion = new();
+    // The stores below are keyed by strings built per row and per control, so every entry carries the time it
+    // was last asked for, and Tick drops the ones nothing has asked for in a while. Losing an idle entry is
+    // harmless: an eased value starts at its target, and an appearance starts over after 0.3 s anyway.
+    private const double IdleAfter = 2.0;
+    // An icon that has been away this long fades up again when it comes back, as if it had just loaded.
+    private const double IconIdleAfter = 30.0;
+    private static double lastSweep;
+
+    private static readonly Dictionary<string, (float Value, double Used)> motion = new();
     private static readonly Dictionary<string, (double First, double Last)> appear = new();
-    private static readonly Dictionary<string, bool> hoverLast = new();
+    private static readonly Dictionary<string, (bool Hovered, double Used)> hoverLast = new();
+
+    /// <summary>
+    /// Called by every Gleam window once a frame. About once a second it forgets motion state that nothing
+    /// has drawn for a couple of seconds, so rows scrolled past and pages left behind do not pile up.
+    /// </summary>
+    public static void Tick()
+    {
+        var now = ImGui.GetTime();
+        if (now - lastSweep < 1.0) return;
+        lastSweep = now;
+        var idle = now - IdleAfter;
+        // Removing while enumerating is allowed for Dictionary since .NET Core 3.
+        foreach (var (k, v) in motion) if (v.Used < idle) motion.Remove(k);
+        foreach (var (k, v) in appear) if (v.Last < idle) appear.Remove(k);
+        foreach (var (k, v) in hoverLast) if (v.Used < idle) hoverLast.Remove(k);
+        foreach (var (k, v) in counts) if (v.Used < idle) counts.Remove(k);
+        foreach (var (k, v) in pillColors) if (v.Used < idle) pillColors.Remove(k);
+        foreach (var (k, v) in swaps) if (v.Used < idle) swaps.Remove(k);
+        foreach (var (k, v) in tipAppear) if (v.Last < idle) tipAppear.Remove(k);
+        foreach (var (k, v) in progressAnim) if (v.At < idle) progressAnim.Remove(k);
+        foreach (var (k, v) in iconArrived) if (v.Used < now - IconIdleAfter) iconArrived.Remove(k);
+        Charts.Sweep(now, IdleAfter);
+    }
+
+    /// <summary>Forgets every eased value and appearance: the window has closed or the plugin is unloading.</summary>
+    public static void ResetMotion()
+    {
+        motion.Clear();
+        appear.Clear();
+        hoverLast.Clear();
+        counts.Clear();
+        pillColors.Clear();
+        swaps.Clear();
+        tipAppear.Clear();
+        progressAnim.Clear();
+        progressPulse.Clear();
+        iconArrived.Clear();
+        Charts.Reset();
+    }
 
     /// <summary>A value that follows <paramref name="target"/> with an exponential ease; higher speed settles sooner.</summary>
     public static float Smooth(string id, float target, float speed = 12f)
     {
-        if (Reduced) { motion[id] = target; return target; }
+        var now = ImGui.GetTime();
+        ref var slot = ref CollectionsMarshal.GetValueRefOrAddDefault(motion, id, out var existed);
+        if (Reduced || !existed) { slot = (target, now); return target; }
         var dt = Math.Clamp(ImGui.GetIO().DeltaTime, 0f, 0.1f);
-        if (!motion.TryGetValue(id, out var v)) v = target;
+        var v = slot.Value;
         v += (target - v) * (1f - MathF.Exp(-speed * dt));
         if (MathF.Abs(v - target) < 0.001f) v = target;
-        motion[id] = v;
+        slot = (v, now);
         return v;
     }
 
@@ -231,27 +281,29 @@ internal static class Ui
     }
 
     /// <summary>Seeds an eased value, so the next <see cref="Smooth"/> starts there and settles from it.</summary>
-    public static void SetMotion(string id, float value) { if (!Reduced) motion[id] = value; }
+    public static void SetMotion(string id, float value) { if (!Reduced) motion[id] = (value, ImGui.GetTime()); }
 
     public static float EaseOut(float t) => 1f - (1f - t) * (1f - t);
 
     /// <summary>Hover state of the last frame, eased. Call <see cref="RecordHover"/> right after the item.</summary>
-    public static float Hover(string id) => Smooth("hover:" + id, hoverLast.GetValueOrDefault(id) ? 1f : 0f, 16f);
-    public static void RecordHover(string id) => hoverLast[id] = ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled);
+    public static float Hover(string id) => Smooth("hover:" + id, hoverLast.TryGetValue(id, out var h) && h.Hovered ? 1f : 0f, 16f);
+    public static void RecordHover(string id) => hoverLast[id] = (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled), ImGui.GetTime());
 
     public static Vector4 Mix(Vector4 a, Vector4 b, float t) => a + (b - a) * Math.Clamp(t, 0f, 1f);
 
-    private static readonly Dictionary<string, double> counts = new();
+    private static readonly Dictionary<string, (double Value, double Used)> counts = new();
 
     /// <summary>A number that counts to its target instead of jumping. Doubles, so gil totals stay exact.</summary>
     public static long Count(string id, long target, float speed = 9f)
     {
-        if (Reduced) { counts[id] = target; return target; }
+        var now = ImGui.GetTime();
+        ref var slot = ref CollectionsMarshal.GetValueRefOrAddDefault(counts, id, out var existed);
+        if (Reduced || !existed) { slot = (target, now); return target; }
         var dt = Math.Clamp(ImGui.GetIO().DeltaTime, 0f, 0.1f);
-        if (!counts.TryGetValue(id, out var v)) v = target;
+        var v = slot.Value;
         v += (target - v) * (1 - Math.Exp(-speed * dt));
         if (Math.Abs(target - v) < 0.5) v = target;
-        counts[id] = v;
+        slot = (v, now);
         return (long)Math.Round(v);
     }
 
@@ -319,7 +371,7 @@ internal static class Ui
         ImRaii.PushStyle(ImGuiStyleVar.Alpha, ImGui.GetStyle().Alpha * left)
             .Push(ImGuiStyleVar.ItemSpacing, new Vector2(ImGui.GetStyle().ItemSpacing.X, ImGui.GetStyle().ItemSpacing.Y * left));
 
-    private static readonly Dictionary<string, (string Text, double At)> swaps = new();
+    private static readonly Dictionary<string, (string Text, double At, double Used)> swaps = new();
 
     /// <summary>
     /// A line of text that changes while you are reading it. The new wording fades up from just below the
@@ -328,7 +380,9 @@ internal static class Ui
     public static void TextSwap(string id, string text, Vector4? color = null)
     {
         var now = ImGui.GetTime();
-        if (!swaps.TryGetValue(id, out var last) || last.Text != text) swaps[id] = last = (text, now);
+        ref var last = ref CollectionsMarshal.GetValueRefOrAddDefault(swaps, id, out var existed);
+        if (!existed || last.Text != text) last = (text, now, now);
+        else last.Used = now;
         var a = Reduced ? 1f : EaseOut((float)Math.Clamp((now - last.At) / 0.18, 0, 1));
         var y = ImGui.GetCursorPosY();
         if (a < 1f) ImGui.SetCursorPosY(y + (1f - a) * 4f * Scale);
@@ -397,13 +451,38 @@ internal static class Ui
         return clicked;
     }
 
+    private static readonly Dictionary<ulong, (double First, double Last)> tipAppear = new();
+
+    /// <summary>
+    /// The fade of a tooltip coming up, as <see cref="Appear"/> does it, keyed without building a string.
+    /// </summary>
+    private static float TipAppear(ulong key)
+    {
+        if (Reduced) return 1f;
+        var now = ImGui.GetTime();
+        ref var t = ref CollectionsMarshal.GetValueRefOrAddDefault(tipAppear, key, out var existed);
+        if (!existed || now - t.Last > 0.3) t = (now, now);
+        else t.Last = now;
+        return EaseOut((float)Math.Clamp((now - t.First) / 0.14, 0, 1));
+    }
+
     public static IDisposable RichTooltip(float width = 340f)
     {
-        var min = ImGui.GetItemRectMin();
+        // Keyed by the item's ImGui id, so the fade survives the list scrolling under a still mouse and a long
+        // list no longer leaves an entry behind for every screen position. Plain text has no id; there the
+        // position stands in, as it always did.
+        var itemId = ImGuiP.GetItemID();
+        ulong key;
+        if (itemId != 0) key = itemId;
+        else
+        {
+            var min = ImGui.GetItemRectMin();
+            key = (1UL << 62) | (uint)HashCode.Combine((int)MathF.Round(min.X), (int)MathF.Round(min.Y));
+        }
         var style = ImRaii.PushStyle(ImGuiStyleVar.WindowPadding, new Vector2(14f * Scale, 12f * Scale))
             .Push(ImGuiStyleVar.ItemSpacing, new Vector2(8f * Scale, 5f * Scale))
             .Push(ImGuiStyleVar.WindowRounding, 8f * Scale)
-            .Push(ImGuiStyleVar.Alpha, Appear($"rtip:{min.X:F0},{min.Y:F0}", 0.14f));
+            .Push(ImGuiStyleVar.Alpha, TipAppear(key));
         ImGui.SetNextWindowSize(new Vector2(width * Scale, 0));
         ImGui.BeginTooltip();
         return new TooltipScope(style);
@@ -681,13 +760,16 @@ internal static class Ui
         dl.AddText(new Vector2(pos.X + 8f * Scale + iconW + 5f * Scale, y + 1f * Scale), ImGui.GetColorU32(color), text);
     }
 
-    private static readonly Dictionary<string, Vector4> pillColors = new();
+    private static readonly Dictionary<string, (Vector4 Color, double Used)> pillColors = new();
 
     private static Vector4 PillColor(string id, Vector4 target)
     {
-        if (Reduced || !pillColors.TryGetValue(id, out var shown)) return pillColors[id] = target;
+        var now = ImGui.GetTime();
+        ref var slot = ref CollectionsMarshal.GetValueRefOrAddDefault(pillColors, id, out var existed);
+        if (Reduced || !existed) { slot = (target, now); return target; }
         var dt = Math.Clamp(ImGui.GetIO().DeltaTime, 0f, 0.1f);
-        return pillColors[id] = Mix(shown, target, 1f - MathF.Exp(-9f * dt));
+        slot = (Mix(slot.Color, target, 1f - MathF.Exp(-9f * dt)), now);
+        return slot.Color;
     }
 
     /// <summary>Width a pill occupies, for laying out a row that has to reserve room for one.</summary>
@@ -762,12 +844,7 @@ internal static class Ui
         ImGui.Dummy(new Vector2(box, box));
         if (tex.IsNull) return;
 
-        var a = 1f;
-        if (key is not null && !Reduced)
-        {
-            if (!iconArrived.TryGetValue(key, out var at)) iconArrived[key] = at = ImGui.GetTime();
-            a = EaseOut((float)Math.Clamp((ImGui.GetTime() - at) / 0.22, 0, 1));
-        }
+        var a = key is not null && !Reduced ? IconArrival(key) : 1f;
         var grow = box * 0.11f * Math.Clamp(lift, 0f, 1f);
         var min = pos - new Vector2(grow / 2, grow / 2);
         var max = min + new Vector2(box + grow, box + grow);
@@ -775,7 +852,17 @@ internal static class Ui
         ImGui.GetWindowDrawList().AddImageRounded(tex, min, max, Vector2.Zero, Vector2.One, tint, rounding);
     }
 
-    private static readonly Dictionary<string, double> iconArrived = new();
+    private static readonly Dictionary<string, (double At, double Used)> iconArrived = new();
+
+    /// <summary>How far an icon has faded up since it was first drawn under this key, 0 to 1.</summary>
+    private static float IconArrival(string key)
+    {
+        var now = ImGui.GetTime();
+        ref var slot = ref CollectionsMarshal.GetValueRefOrAddDefault(iconArrived, key, out var existed);
+        if (!existed) slot.At = now;
+        slot.Used = now;
+        return EaseOut((float)Math.Clamp((now - slot.At) / 0.22, 0, 1));
+    }
 
     /// <param name="key">
     /// Item icons load off the main thread, so without this they snap in one at a time as a list scrolls.
@@ -787,12 +874,7 @@ internal static class Ui
         ImGui.Dummy(size);
         if (tex.IsNull) return;
 
-        var a = 1f;
-        if (key is not null && !Reduced)
-        {
-            if (!iconArrived.TryGetValue(key, out var at)) iconArrived[key] = at = ImGui.GetTime();
-            a = EaseOut((float)Math.Clamp((ImGui.GetTime() - at) / 0.22, 0, 1));
-        }
+        var a = key is not null && !Reduced ? IconArrival(key) : 1f;
         // Draw-list calls ignore the style alpha, so a fading row would keep its icons at full strength.
         var tint = ImGui.GetColorU32(new Vector4(1, 1, 1, ImGui.GetStyle().Alpha * a));
         ImGui.GetWindowDrawList().AddImageRounded(tex, pos, pos + size, Vector2.Zero, Vector2.One, tint, rounding);
@@ -1232,7 +1314,8 @@ internal static class Ui
     public static void Tooltip(string text)
     {
         if (string.IsNullOrEmpty(text) || !ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled)) return;
-        using var a = ImRaii.PushStyle(ImGuiStyleVar.Alpha, Appear("tip:" + text, 0.14f));
+        // Keyed by the wording, as before, but without building a string for it on every hovered frame.
+        using var a = ImRaii.PushStyle(ImGuiStyleVar.Alpha, TipAppear((2UL << 62) | (uint)text.GetHashCode()));
         using var t = ImRaii.Tooltip();
         using var w = ImRaii.TextWrapPos(380f * Scale);
         ImGui.TextUnformatted(text);

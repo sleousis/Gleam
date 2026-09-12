@@ -35,6 +35,7 @@ public abstract class StyledWindow : Window
 
     public override void PreDraw()
     {
+        Ui.Tick();
         style = Ui.PushWindowStyle();
         // Windows fade up over a quarter second instead of popping.
         var t = (float)Math.Clamp((ImGui.GetTime() - openedAt) / 0.24, 0, 1);
