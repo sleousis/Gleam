@@ -197,11 +197,30 @@ public sealed unsafe class AddonDriver : IDisposable
         }
     }
 
-    /// <summary>The question a visible yes/no prompt asks, or null when none is up. Framework thread only.</summary>
+    /// <summary>
+    /// The question a visible yes/no prompt asks, or null when none is up. Framework thread only. Both places the
+    /// game keeps it are read: the text node, and the addon's first value. In 0.11.3 only the node was read, and
+    /// it did not yet hold the retainer's leave question when that appeared, so the question went unrecognised.
+    /// </summary>
     public static string? YesNoPromptText()
     {
         var addon = GetAddon("SelectYesno");
-        return addon == null || !addon->IsVisible ? null : ReadYesNoPrompt(addon);
+        if (addon == null || !addon->IsVisible) return null;
+        string? value = null;
+        try
+        {
+            foreach (var v in new Dalamud.Game.NativeWrapper.AtkUnitBasePtr((nint)addon).AtkValues)
+            {
+                value = v.GetValue() as string;
+                break;
+            }
+        }
+        catch
+        {
+            // the text node below is the fallback
+        }
+        var parts = new[] { ReadYesNoPrompt(addon), value }.Where(s => !string.IsNullOrWhiteSpace(s)).ToList();
+        return parts.Count == 0 ? null : string.Join(" ", parts);
     }
 
     public static bool IsAddonVisible(string name)

@@ -3,6 +3,11 @@
 Each release's section is shown in Dalamud's plugin installer and on the GitHub release page. The release
 workflow refuses a tag whose version has no section here.
 
+## 0.11.5
+
+- The retainer's "no buyback once recalled" question is recognised again. 0.11.3 read it from a part of the window that was still empty when it appeared, so a trip stopped at the first retainer that had sold something and left the question open.
+- If that question is still open when a trip ends, Gleam answers it and dismisses the retainer. Any other question is left for you.
+
 ## 0.11.4
 
 - A Stop pressed while a retainer is still greeting you now dismisses that retainer too. After a trip Gleam clicks through the retainer's greeting (never a cutscene), chooses Quit, and keeps going until you have left the bell.
