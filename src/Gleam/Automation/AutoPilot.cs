@@ -834,14 +834,19 @@ public sealed partial class AutoPilot : IDisposable
     /// <summary>Selling needs a real merchant: find the named NPC nearby, open its shop, sell from the bags.</summary>
     private async Task VendorAsync(List<QueuedAction> sells, CancellationToken ct)
     {
-        var npc = await OnFramework(FindVendor).ConfigureAwait(false);
-        if (npc is null && !CanTravel && S.TravelToInn)
+        // A merchant a few steps away can still be streaming in, so look for a while before deciding there is none.
+        var npc = await FindVendorSoonAsync(TimeSpan.FromSeconds(5), ct).ConfigureAwait(false);
+        var town = db.LocalizePlaceName(S.VendorAetheryte);
+        // Already in the merchant town, a teleport there costs gil and lands in the same zone. It used to happen
+        // on every run started near a merchant it had not spotted yet.
+        var inTown = await OnFramework(() => db.IsZoneOfAetheryte(clientState.TerritoryType, S.VendorAetheryte)).ConfigureAwait(false);
+        if (npc is null && !CanTravel && S.TravelToInn && !inTown)
         {
             var why = "no merchant nearby, and without Lifestream Gleam cannot travel to one";
             tally.Pending[why] = tally.Pending.GetValueOrDefault(why) + sells.Count;
             return;
         }
-        if (npc is null && CanTravel && !string.IsNullOrWhiteSpace(db.LocalizePlaceName(S.VendorAetheryte)))
+        if (npc is null && CanTravel && !inTown && !string.IsNullOrWhiteSpace(town))
         {
             await Step($"Teleporting to {db.LocalizePlaceName(S.VendorAetheryte)} for a merchant", async () =>
             {
@@ -856,13 +861,13 @@ public sealed partial class AutoPilot : IDisposable
                     TimeSpan.FromSeconds(20), "the town to load", ct).ConfigureAwait(false);
                 await Task.Delay(1500, ct).ConfigureAwait(false);
             }, ct);
-            npc = await OnFramework(FindVendor).ConfigureAwait(false);
+            npc = await FindVendorSoonAsync(TimeSpan.FromSeconds(10), ct).ConfigureAwait(false);
         }
         if (npc is null)
         {
             var nearby = await OnFramework(NearbyObjectNames).ConfigureAwait(false);
             log.Debug("No merchant near {Place}; nearby: {Nearby}", S.VendorAetheryte, string.Join(", ", nearby.Take(8)));
-            var reason = $"no merchant found near {db.LocalizePlaceName(S.VendorAetheryte)}";
+            var reason = inTown ? $"no merchant in sight in {town}. Stand near one and run again" : $"no merchant found near {town}";
             tally.Pending[reason] = tally.Pending.GetValueOrDefault(reason) + sells.Count;
             return;
         }
@@ -881,6 +886,18 @@ public sealed partial class AutoPilot : IDisposable
         await framework.RunOnFrameworkThread(() => GameUi.Close("Shop")).ConfigureAwait(false);
     }
 
+    /// <summary>Looks for a merchant until one is in sight or the time is up. NPCs stream in over a few seconds.</summary>
+    private async Task<IGameObject?> FindVendorSoonAsync(TimeSpan within, CancellationToken ct)
+    {
+        var deadline = DateTime.UtcNow + within;
+        while (true)
+        {
+            var npc = await OnFramework(FindVendor).ConfigureAwait(false);
+            if (npc is not null || DateTime.UtcNow >= deadline) return npc;
+            await Task.Delay(500, ct).ConfigureAwait(false);
+        }
+    }
+
     /// <summary>Expert Delivery: teleport to the Grand Company's city, reach the HQ, talk to the personnel officer.</summary>
     private async Task GrandCompanyAsync(List<QueuedAction> seals, CancellationToken ct)
     {
@@ -895,7 +912,9 @@ public sealed partial class AutoPilot : IDisposable
             if (!S.GcCityAetheryte.TryGetValue(gc, out var city) || string.IsNullOrEmpty(city))
                 throw new AutoPilotException("no destination is set for your Grand Company's city");
 
-            await Step($"Teleporting to {city}", async () =>
+            // Already in the city, the teleport would land in the same zone and wait for a zone change that never comes.
+            var inCity = await OnFramework(() => db.IsZoneOfAetheryte(clientState.TerritoryType, city)).ConfigureAwait(false);
+            if (!inCity) await Step($"Teleporting to {city}", async () =>
             {
                 var before = clientState.TerritoryType;
                 if (!travel.Execute(db.LocalizePlaceName(city))) throw new AutoPilotException("the teleport did not start");
@@ -966,6 +985,12 @@ public sealed partial class AutoPilot : IDisposable
     private async Task WalkToAndInteractAsync(string objectName, string expectAddon, CancellationToken ct, bool orMenu = false)
     {
         var target = await OnFramework(() => FindNearest(objectName)).ConfigureAwait(false);
+        // Bells, dressers and NPCs stream in after a zone loads; one look used to fail for something a few steps away.
+        for (var look = 0; target is null && look < 10; look++)
+        {
+            await Task.Delay(500, ct).ConfigureAwait(false);
+            target = await OnFramework(() => FindNearest(objectName)).ConfigureAwait(false);
+        }
         if (target is null)
         {
             var nearby = await OnFramework(NearbyObjectNames).ConfigureAwait(false);

@@ -342,6 +342,35 @@ public sealed class ItemDatabase
     });
 
     /// <summary>An aetheryte or area name in the client language.</summary>
+    private readonly ConcurrentDictionary<string, IReadOnlySet<uint>> aetheryteZones = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Whether a zone is the one the named aetheryte stands in. The name is English, as the settings keep it.
+    /// A teleport to the zone you are already in costs gil, lands in the same zone, and then waits for a zone
+    /// change that never comes; asking this first skips it.
+    /// </summary>
+    public bool IsZoneOfAetheryte(uint territoryId, string englishAetheryte)
+    {
+        if (territoryId == 0 || string.IsNullOrWhiteSpace(englishAetheryte)) return false;
+        var zones = aetheryteZones.GetOrAdd(englishAetheryte, name =>
+        {
+            var set = new HashSet<uint>();
+            try
+            {
+                foreach (var row in data.GetExcelSheet<Aetheryte>(ClientLanguage.English)!)
+                    if (row.IsAetheryte && row.Territory.RowId != 0
+                        && string.Equals(row.PlaceName.ValueNullable?.Name.ExtractText(), name, StringComparison.OrdinalIgnoreCase))
+                        set.Add(row.Territory.RowId);
+            }
+            catch (Exception ex)
+            {
+                log.Warning(ex, "Could not find the zone of the aetheryte {Name}", name);
+            }
+            return set;
+        });
+        return zones.Contains(territoryId);
+    }
+
     public string LocalizePlaceName(string english) => Localize("place", english, () =>
     {
         var en = data.GetExcelSheet<PlaceName>(ClientLanguage.English)!;

@@ -3,6 +3,12 @@
 Each release's section is shown in Dalamud's plugin installer and on the GitHub release page. The release
 workflow refuses a tag whose version has no section here.
 
+## 0.11.6
+
+- No more paying for a teleport to the merchant town when you are already in it. Gleam looks for a merchant where you are, and says so if none is in sight.
+- A merchant, bell, dresser or officer that is still loading in when Gleam arrives is now found. Gleam looks for several seconds instead of once; a trip used to give up with "no merchant found" while one stood a few steps away.
+- The same for your Grand Company's city: when you are already there, Gleam skips the teleport and takes the aethernet to the headquarters.
+
 ## 0.11.5
 
 - The retainer's "no buyback once recalled" question is recognised again. 0.11.3 read it from a part of the window that was still empty when it appeared, so a trip stopped at the first retainer that had sold something and left the question open.
