@@ -5,7 +5,6 @@ using Dalamud.Plugin.Services;
 using Lumina.Excel.Sheets;
 using Gleam.Core.Execution;
 using Gleam.Core.Model;
-using Gleam.Core.Settings;
 using Gleam.Core.Stats;
 using Gleam.Game;
 using Gleam.Integrations;
@@ -121,7 +120,7 @@ public sealed partial class AutoPilot : IDisposable
 
         var queue = coordinator.BuildQueueFromPlan(r => true);
         if (queue.Count == 0) { Nothing("Nothing is ticked"); return; }
-        reviewed = coordinator.CurrentPlan.AllRows.Select(Seen).ToHashSet();
+        reviewed = Core.Planning.UnattendedSelection.Reviewed(coordinator.CurrentPlan.AllRows);
         coordinator.NoteDecisions();
 
         Mode = PilotMode.Clean;
@@ -135,13 +134,9 @@ public sealed partial class AutoPilot : IDisposable
         BeginTrip();
         try
         {
-            var here = queue.Where(q => q.Kind.IsAlwaysLoaded() && q.Action is not ActionKind.VendorSell and not ActionKind.ExpertDelivery and not ActionKind.MarketList).ToList();
-            var listings = queue.Where(q => q.Kind.IsAlwaysLoaded() && q.Action == ActionKind.MarketList).ToList();
-            var sells = queue.Where(q => q.Kind.IsAlwaysLoaded() && q.Action == ActionKind.VendorSell).ToList();
-            var seals = queue.Where(q => q.Kind.IsAlwaysLoaded() && q.Action == ActionKind.ExpertDelivery).ToList();
-            var saddle = queue.Where(q => q.Kind == ContainerKind.Saddlebag).ToList();
-            var retainers = queue.Where(q => q.Kind == ContainerKind.Retainer).GroupBy(q => q.Slot.OwnerId).ToDictionary(g => g.Key, g => g.ToList());
-            var dresser = queue.Where(q => q.Kind == ContainerKind.GlamourDresser).ToList();
+            var trip = Core.Planning.TripPartition.Of(queue);
+            var (here, listings, sells, seals) = (trip.Here, trip.Listings, trip.Sells, trip.Seals);
+            var (saddle, retainers, dresser) = (trip.Saddlebag, trip.Retainers, trip.Dresser);
 
             coordinator.SuppressChatSummary = true;
             tally.Clear();
@@ -153,10 +148,10 @@ public sealed partial class AutoPilot : IDisposable
             if (here.Count > 0) await Leg("bags", () => Step("Cleaning your bags and armoury chest", () => Execute(here), ct), ct);
 
             // Go only where the ticked rows are, unless the user asked to sweep everything.
-            var sweep = S.VisitContainersWithoutRows && S.UnseenRows != UnseenRowsMode.Skip;
-            if (S.OpenSaddlebag && (saddle.Count > 0 || sweep)) await Leg("saddlebag", () => SaddlebagAsync(saddle, ct), ct);
+            var sweep = Core.Planning.TripPartition.Sweeps(S.VisitContainersWithoutRows, S.UnseenRows);
+            if (trip.GoesToSaddlebag(S.OpenSaddlebag, sweep)) await Leg("saddlebag", () => SaddlebagAsync(saddle, ct), ct);
 
-            var needsInn = (S.VisitRetainers && (retainers.Count > 0 || listings.Count > 0 || sweep)) || (S.VisitDresser && (dresser.Count > 0 || sweep));
+            var needsInn = trip.NeedsInn(S.VisitRetainers, S.VisitDresser, sweep);
             if (needsInn)
             {
                 var inInn = await Leg("inn", () => TravelToInnAsync(ct), ct);
@@ -168,14 +163,15 @@ public sealed partial class AutoPilot : IDisposable
             }
 
             // Items pulled out of retainers (for materia, a vendor, or seals) finish from the bags, retainer closed.
-            var broughtBack = coordinator.PendingActions.Where(p => p.Kind.IsAlwaysLoaded() && p.BroughtHome).ToList();
+            var broughtBack = Core.Planning.TripPartition.BroughtBack(coordinator.PendingActions);
             if (broughtBack.Count > 0)
             {
                 coordinator.PendingActions.RemoveAll(broughtBack.Contains);
                 await LeaveBellAsync(ct).ConfigureAwait(false);
-                sells.AddRange(broughtBack.Where(b => b.Action == ActionKind.VendorSell));
-                seals.AddRange(broughtBack.Where(b => b.Action == ActionKind.ExpertDelivery));
-                var here2 = broughtBack.Where(b => b.Action is not ActionKind.VendorSell and not ActionKind.ExpertDelivery and not ActionKind.MarketList).ToList();
+                var back = Core.Planning.TripPartition.SplitBroughtBack(broughtBack);
+                sells.AddRange(back.Sells);
+                seals.AddRange(back.Seals);
+                var here2 = back.Here;
                 if (here2.Count > 0) await Leg("items brought back", () => Step("Finishing items brought back from retainers", () => Execute(here2), ct), ct);
             }
 
@@ -490,7 +486,7 @@ public sealed partial class AutoPilot : IDisposable
 
     private async Task RetainersAsync(Dictionary<ulong, List<QueuedAction>> byRetainer, List<QueuedAction> listings, List<QueuedAction> sells, CancellationToken ct)
     {
-        var sweep = S.VisitContainersWithoutRows && S.UnseenRows != UnseenRowsMode.Skip;
+        var sweep = Core.Planning.TripPartition.Sweeps(S.VisitContainersWithoutRows, S.UnseenRows);
         if (byRetainer.Count == 0 && listings.Count == 0 && sells.Count == 0 && !sweep) return;
         await EnsureRetainerListAsync(ct).ConfigureAwait(false);
 
@@ -575,8 +571,7 @@ public sealed partial class AutoPilot : IDisposable
 
     private async Task OneRetainerAsync(int index, ulong id, string name, List<QueuedAction> allRows, List<QueuedAction> listings, List<QueuedAction> sells, CancellationToken ct)
     {
-        var rows = allRows.Where(r => r.Action != ActionKind.MarketList).ToList();
-        var ownListings = allRows.Where(r => r.Action == ActionKind.MarketList).ToList();
+        var (rows, ownListings) = Core.Planning.TripPartition.SplitRetainer(allRows);
 
         await SummonRetainerAsync(index, name, ct).ConfigureAwait(false);
         await OpenRetainerInventoryAsync(id, name, ct).ConfigureAwait(false);
@@ -823,7 +818,7 @@ public sealed partial class AutoPilot : IDisposable
     private async Task DresserAsync(List<QueuedAction> rows, CancellationToken ct)
     {
         // The dresser is never cached, so its rows only exist if it was open during the scan.
-        if (rows.Count == 0 && !(S.VisitContainersWithoutRows && S.UnseenRows != UnseenRowsMode.Skip)) return;
+        if (rows.Count == 0 && !Core.Planning.TripPartition.Sweeps(S.VisitContainersWithoutRows, S.UnseenRows)) return;
         await WalkToAndInteractAsync(db.LocalizeObjectName(S.DresserObjectName), "MiragePrismPrismBox", ct).ConfigureAwait(false);
         await WaitUntil(GameInventoryScanner.IsDresserLoaded, StepTimeout, "the dresser to load", ct).ConfigureAwait(false);
         await Task.Delay(800, ct).ConfigureAwait(false);
@@ -960,16 +955,14 @@ public sealed partial class AutoPilot : IDisposable
     /// </summary>
     private async Task HandleUnseen(ContainerKind kind, string what, CancellationToken ct)
     {
-        if (S.UnseenRows != UnseenRowsMode.Clean) return;
+        if (!Core.Planning.UnattendedSelection.CleansUnseen(S.UnseenRows)) return;
         await coordinator.RefreshPlanAsync(openWindow: false, focus: kind).ConfigureAwait(false);
         var plan = coordinator.CurrentPlan;
         if (plan is null || !plan.AllRows.Any(r => r.IsExecutable)) return;
 
-        // Only items the player never saw. Anything that was in the review was already accepted or declined,
-        // and matching it again here by slot re-ticked items the player had unticked once sorting or a
-        // retainer's real slot numbers moved them.
-        // What a rule would tick on its own, never a tick carried over from some other moment.
-        var queue = coordinator.BuildQueueFromPlan(r => r.IsSuggested && r.Proposal.DefaultChecked && !coordinator.SessionSkips.Contains(r.Key) && !reviewed.Contains(Seen(r)),
+        // Only items the player never saw, and only what a rule would tick on its own, never a tick carried over
+        // from some other moment. The reasons are with UnattendedSelection.
+        var queue = coordinator.BuildQueueFromPlan(r => Core.Planning.UnattendedSelection.IsUnseenPick(r, coordinator.SessionSkips, reviewed),
             requireChecked: false);
         if (queue.Count == 0) return;
         await Step($"Cleaning {queue.Count} more item{(queue.Count == 1 ? "" : "s")} found in {what}", () => Execute(queue), ct).ConfigureAwait(false);
@@ -977,9 +970,6 @@ public sealed partial class AutoPilot : IDisposable
 
     /// <summary>Every item the review showed when the run began, by container and item rather than slot.</summary>
     private HashSet<(ContainerKind, ulong, uint, bool)> reviewed = new();
-
-    private static (ContainerKind, ulong, uint, bool) Seen(Core.Planning.PlanRow r) =>
-        (r.Item.Slot.Kind, r.Item.Slot.OwnerId, r.Item.ItemId, r.Item.IsHq);
 
     // ---------- movement & interaction ----------
 
