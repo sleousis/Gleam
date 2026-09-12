@@ -54,7 +54,8 @@ public sealed class Profile
         if (preset != PresetName.Custom) Thresholds = Presets.For(preset);
     }
 
-    public bool IsContainerEnabled(ContainerKind kind) => !ContainerEnabled.TryGetValue(kind, out var v) || v;
+    /// <summary>Whether Gleam may open this place. Bags always: everything it moves or sells passes through them.</summary>
+    public bool IsContainerEnabled(ContainerKind kind) => kind == ContainerKind.Inventory || !ContainerEnabled.TryGetValue(kind, out var v) || v;
     public bool IsAutoOpen(ContainerKind kind) => AutoOpenOnContainer.TryGetValue(kind, out var v) && v;
 
     /// <summary>Names of the properties a per-character override may replace.</summary>

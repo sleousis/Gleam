@@ -32,6 +32,7 @@ public sealed class OrganizerPanel
     private string itemSearch = string.Empty;
     private List<ItemInfo> itemResults = new();
     private bool dirty;
+    private bool savePending;
     private bool confirmDelete;
     private Guid? confirmRemove;
     private string note = string.Empty;
@@ -60,6 +61,14 @@ public sealed class OrganizerPanel
         this.db = db;
         this.icons = icons;
         this.save = save;
+    }
+
+    /// <summary>Writes a layout change still waiting, for instance when the window closes mid-edit.</summary>
+    public void SaveIfDirty()
+    {
+        if (!savePending) return;
+        savePending = false;
+        save();
     }
 
     /// <summary>Called when the panel comes into view: makes sure there is a preview to show.</summary>
@@ -187,19 +196,20 @@ public sealed class OrganizerPanel
 
     /// <summary>
     /// Any change to a layout makes what is on screen stale: a different layout, a rule added, a destination
-    /// picked, an option toggled. The change is saved at once and the preview is redone a moment later, so a
-    /// slider being dragged does not start a scan on every frame.
+    /// picked, an option toggled. The preview is redone a moment later, so a slider being dragged does not
+    /// start a scan on every frame, and the change is saved once the field is left rather than on every key.
     /// </summary>
     private void SettleChanges()
     {
         if (dirty)
         {
             dirty = false;
-            save();
+            savePending = true;
             // Whatever preview is on screen was built from the layout before this change.
             organizer.LayoutChanged();
             previewDueAt = ImGui.GetTime() + 0.35;
         }
+        if (savePending && !ImGui.IsAnyItemActive()) SaveIfDirty();
         if (previewDueAt > 0 && ImGui.GetTime() >= previewDueAt && !organizer.IsPreviewing)
         {
             previewDueAt = 0;

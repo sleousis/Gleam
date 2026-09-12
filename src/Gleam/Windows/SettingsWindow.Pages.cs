@@ -1,6 +1,7 @@
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility.Raii;
+using Gleam.Core.Lists;
 using Gleam.Core.Model;
 using Gleam.Core.Rules;
 
@@ -41,20 +42,35 @@ public sealed partial class SettingsWindow
         Ui.Hint(guard == 0 ? "or more alone (off)" : "or more alone");
     }
 
-    // ---------- Retainers ----------
+    // ---------- Where it may look ----------
 
-    private void DrawContainers()
+    /// <summary>
+    /// The places Gleam may open, then each retainer under the Retainer tick. Your bags are always in:
+    /// everything Gleam moves or sells passes through them.
+    /// </summary>
+    private void DrawPlaces()
     {
         var p = Editing;
+        Ui.HintWrapped("Gleam only opens the places ticked here. Your bags are always included, since everything passes through them. An unticked place is left completely alone.");
+        Ui.Gap(0.3f);
+        foreach (var kind in Places)
+        {
+            var on = p.IsContainerEnabled(kind);
+            if (Ui.Check($"{kind.DisplayName()}##en{kind}", ref on)) { p.ContainerEnabled[kind] = on; dirty = true; }
+            if (kind == ContainerKind.Retainer) DrawRetainers(p, on);
+        }
+    }
+
+    private void DrawRetainers(Profile p, bool retainersOn)
+    {
         // This character's retainers only: every retainer ever seen on the account used to be listed.
         var known = Game.RetainerDirectory.Current();
-        Ui.HintWrapped("An unticked retainer is left completely alone: nothing is cleaned from it and nothing is moved to it.");
-        Ui.Gap(0.3f);
-        if (known.Count == 0) { Ui.Hint("No retainers yet. They appear once you are logged in on a character that has some."); return; }
+        using var indent = ImRaii.PushIndent(ImGui.GetFrameHeight() + 8 * Ui.Scale, true, true);
+        if (known.Count == 0) { Ui.Hint("Your retainers appear here once you are logged in."); return; }
         foreach (var (id, name) in known)
         {
             var included = !p.ExcludedRetainerIds.Contains(id);
-            if (Ui.Check($"{name}##ret{id}", ref included)) { if (included) p.ExcludedRetainerIds.Remove(id); else p.ExcludedRetainerIds.Add(id); dirty = true; }
+            if (Ui.Check($"{name}##ret{id}", ref included, disabled: !retainersOn)) { if (included) p.ExcludedRetainerIds.Remove(id); else p.ExcludedRetainerIds.Add(id); dirty = true; }
         }
     }
 
@@ -63,7 +79,7 @@ public sealed partial class SettingsWindow
     private void DrawNotifications()
     {
         var p = Editing;
-        Ui.HintWrapped("Gleam never acts on its own. These only decide when it mentions that there is something to do.");
+        Ui.HintWrapped("These only decide when Gleam mentions that there is something to do. None of them cleans or moves anything.");
         Ui.Gap(0.3f);
         var dtr = p.ShowDtrEntry;
         if (Ui.Check("Show bag space in the server info bar", ref dtr)) { p.ShowDtrEntry = dtr; dirty = true; }
@@ -116,14 +132,14 @@ public sealed partial class SettingsWindow
     /// </summary>
     private void DrawDiscardHelperImport()
     {
-        Ui.Hint("Discard Helper");
+        Ui.Hint("Lists from Discard Helper");
         importFound ??= FindDiscardHelperFile();
         var lists = string.IsNullOrEmpty(importFound) ? null : importLists ??= ReadDiscardHelper(importFound);
         var count = (lists?.Discard.Count ?? 0) + (lists?.Keep.Count ?? 0);
 
         if (count > 0)
         {
-            if (Ui.PrimaryButton($"Take its {count} item{(count == 1 ? "" : "s")}", 200 * Ui.Scale))
+            if (Ui.PrimaryButton($"Add its {count} item{(count == 1 ? "" : "s")} to my lists", 220 * Ui.Scale))
             {
                 var junk = lists!.Discard.Count(id => config.AlwaysDiscardList.Add(id, note: "From Discard Helper"));
                 var kept = lists.Keep.Count(id => config.ProtectList.Add(id, note: "From Discard Helper"));
@@ -138,10 +154,10 @@ public sealed partial class SettingsWindow
         }
 
         ImGui.SameLine();
-        if (Ui.LinkButton("Give it mine")) SaveForDiscardHelper();
+        if (Ui.LinkButton("Send my lists to it")) SaveForDiscardHelper();
         Ui.Tooltip("Writes your two lists to a file Discard Helper can read.");
         ImGui.SameLine();
-        if (Ui.LinkButton("Pick a file")) BrowseForDiscardHelper();
+        if (Ui.LinkButton("Choose its file")) BrowseForDiscardHelper();
         Ui.Tooltip(string.IsNullOrEmpty(importFound) ? "Find its settings file yourself." : $"Currently reading {Path.GetFileName(importFound)}.");
 
         // The result has its say and then fades, rather than sitting beside the links for the rest of the session.

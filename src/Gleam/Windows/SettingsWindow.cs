@@ -13,9 +13,9 @@ using Gleam.Services;
 namespace Gleam.Windows;
 
 /// <summary>
-/// One page. What matters is at the top: the preset and what it means, which containers, hands-free
-/// on or off, and the two lists. Everything else is a knob most people never touch and lives behind
-/// one "Advanced" fold at the bottom.
+/// One page. What matters is at the top: what Gleam is for, what happens to junk, the two lists, and what
+/// it does by itself. Everything else is a knob most people never touch and lives behind one "Fine detail"
+/// fold at the bottom.
 /// </summary>
 public sealed partial class SettingsWindow
 {
@@ -59,6 +59,9 @@ public sealed partial class SettingsWindow
         (PresetName.MarketBoard, PresetName.MarketBoard.Label()), (PresetName.Vendor, PresetName.Vendor.Label()), (PresetName.DiscardAll, PresetName.DiscardAll.Label()),
     ];
 
+    /// <summary>The places a player may take off Gleam's rounds. Bags are not one of them: everything passes through them.</summary>
+    private static readonly ContainerKind[] Places = Enum.GetValues<ContainerKind>().Where(k => k != ContainerKind.Inventory).ToArray();
+
     /// <summary>Set by the host window: the way back to the list.</summary>
     public Action? Back { get; set; }
 
@@ -76,6 +79,17 @@ public sealed partial class SettingsWindow
     }
 
     private void MarkDirty() => dirty = true;
+
+    /// <summary>
+    /// Writes a change that is still waiting. A number being typed is saved once it is left rather than on
+    /// every key, so this also runs when the window closes in case one was still being edited.
+    /// </summary>
+    public void SaveIfDirty()
+    {
+        if (!dirty) return;
+        dirty = false;
+        config.Save(PluginServices.PluginInterface);
+    }
 
     /// <summary>The profile the controls edit.</summary>
     private Profile Editing => config.Profiles.Account;
@@ -123,11 +137,8 @@ public sealed partial class SettingsWindow
 
         FileDialogs.Draw();
 
-        if (dirty)
-        {
-            dirty = false;
-            config.Save(PluginServices.PluginInterface);
-        }
+        // Not while a number is being typed or a slider dragged: that wrote the whole file on every frame.
+        if (dirty && !ImGui.IsAnyItemActive()) SaveIfDirty();
     }
 
     // ---------- the page most people see ----------
@@ -135,7 +146,7 @@ public sealed partial class SettingsWindow
     /// <summary>
     /// The page reads as a short interview: every card asks one question in plain words and explains what
     /// the answer changes. The order is the order a player thinks in. What Gleam should do, what happens to
-    /// junk, where it looks, what it needs, what it must never touch, and finally how much of this to show.
+    /// junk, what counts as junk, what it does by itself, and what it needs.
     /// </summary>
     private void DrawEssentials()
     {
@@ -177,43 +188,60 @@ public sealed partial class SettingsWindow
             }
         }
 
-        if (config.AdvancedMode)
-        using (Ui.Card("where"))
-        {
-            Ui.Ask("Where should Gleam look?", "It only ever opens the places ticked here.");
-            DrawContainerChecks(p);
-        }
-
-        DrawRequiredPlugins();
-
+        // Both lists are always here: they are the two answers to "what counts as junk" that a player gives by hand.
         using (Ui.Card("protect")) protectEditor.Draw();
-        // Shown whenever it holds anything, because what is on it is cleaned: a list that acts is never hidden.
-        if (config.AdvancedMode || config.AlwaysDiscardList.Entries.Count > 0) using (Ui.Card("always")) alwaysEditor.Draw();
+        if (config.UseClean || config.AlwaysDiscardList.Entries.Count > 0) using (Ui.Card("always")) alwaysEditor.Draw();
 
-        if (config.AdvancedMode || config.Automation.CleanAfterVentures)
-        using (Ui.Card("ventures"))
-        {
-            Ui.Ask("Should Gleam tidy up after your retainers?", "Needs the AutoRetainer plugin. It only discards, and only what the rules would tick on their own.");
-            var a = config.Automation;
-            var after = a.CleanAfterVentures;
-            if (Ui.Check("Throw away junk a finished venture leaves in my bags", ref after)) { a.CleanAfterVentures = after; dirty = true; }
-            ImGui.SameLine();
-            if (!Installed.AutoRetainer) Ui.Pill("not installed", Ui.Warn, null, "req:AutoRetainer"); else Ui.Pill("AutoRetainer", Ui.Ok, Dalamud.Interface.FontAwesomeIcon.Check, "req:AutoRetainer");
-        }
+        DrawOnItsOwn();
+        DrawRequiredPlugins();
 
         if (!config.AdvancedMode && HiddenChanges() is { Count: > 0 } hidden)
         using (Ui.Card("hidden"))
-        {
-            Ui.Ask("Some of your choices are hidden right now", $"{string.Join(". ", hidden)}. They still apply.");
-            if (Ui.LinkButton("Show every setting")) { config.AdvancedMode = true; dirty = true; }
-        }
+            Ui.Ask("Some of your choices are hidden right now", $"{string.Join(". ", hidden)}. They still apply. Tick Show me every setting below to see them.");
+    }
 
-        using (Ui.Card("finish"))
+    /// <summary>
+    /// Everything Gleam may do without a press of the button, in one place, so nobody has to hunt for why
+    /// something happened. Each line says what it does and when.
+    /// </summary>
+    private void DrawOnItsOwn()
+    {
+        var a = config.Automation;
+        using (Ui.Card("own"))
         {
-            Ui.Ask("Anything to do once a run has finished?");
+            Ui.Ask("What may Gleam do by itself?", "Everything else waits for you to press the button.");
+
+            if (config.UseClean)
+            {
+                var cleanUnseen = a.UnseenRows != UnseenRowsMode.Skip;
+                if (Ui.Check("Clean junk it only finds once it gets there", ref cleanUnseen)) { a.UnseenRows = cleanUnseen ? UnseenRowsMode.Clean : UnseenRowsMode.Skip; dirty = true; }
+                Ui.Tooltip("A retainer or the dresser only shows what it holds once it is open. On: during a hands-free trip Gleam applies the same rules there, never to anything untradeable. Off: those items wait for your next review.");
+            }
+
+            // Greyed rather than hidden when cleaning is off, so the choice is not lost from view.
+            var after = a.CleanAfterVentures && config.UseClean;
+            if (Ui.Check("Throw away junk a finished venture leaves in my bags", ref after, disabled: !config.UseClean)) { a.CleanAfterVentures = after; dirty = true; }
+            Ui.Tooltip(config.UseClean
+                ? "Needs AutoRetainer. It only discards, and only what the rules would tick on their own."
+                : "Turn on Clear out my junk to use this.");
+            ImGui.SameLine();
+            if (!Installed.AutoRetainer) Ui.Pill("not installed", Ui.Warn, null, "req:AutoRetainer"); else Ui.Pill("AutoRetainer", Ui.Ok, Dalamud.Interface.FontAwesomeIcon.Check, "req:AutoRetainer");
+
             var sortAfter = config.SortAfterRun;
             if (Ui.Check(ConfirmationWindow.SortAfterLabel, ref sortAfter)) { config.SortAfterRun = sortAfter; dirty = true; }
             Ui.Tooltip(ConfirmationWindow.SortAfterHint);
+
+            // A patch this build was not checked on holds hands-free back until the player decides. Asked of
+            // the game version itself, not of the pilot: cleaning after ventures is held back too, and it
+            // needs no vnavmesh, so someone without it must still be able to go ahead.
+            if (Pilot is not null && !Game.GameVersionGuard.AllowsUnattended(config))
+            {
+                Ui.Gap(0.4f);
+                Ui.TextColored(Ui.Warn, "Hands-free is paused for this game patch.");
+                Ui.HintWrapped($"The game was updated after this version of Gleam was checked. It was checked on {Game.GameVersionGuard.CheckedAgainst}, and you are on {Game.GameVersionGuard.Current()}. Runs you start by hand still work. An update to Gleam lifts the pause, or you can go ahead now.");
+                if (Ui.LinkButton("Go ahead on this patch")) Pilot.GoAheadOnThisPatch();
+                Ui.Tooltip(Ui.PatchGoAheadHint);
+            }
         }
     }
 
@@ -227,26 +255,10 @@ public sealed partial class SettingsWindow
         var list = new List<string>();
         var off = RuleEngine.AllRules.Count(r => !p.EnabledRules.Contains(r.Id));
         if (off > 0) list.Add($"{off} junk rule{(off == 1 ? " is" : "s are")} turned off");
-        var closed = Enum.GetValues<ContainerKind>().Count(k => !p.IsContainerEnabled(k));
+        var closed = Places.Count(k => !p.IsContainerEnabled(k));
         if (closed > 0) list.Add($"Gleam may not look in {closed} place{(closed == 1 ? "" : "s")}");
         if (p.ExcludedRetainerIds.Count > 0) list.Add($"{p.ExcludedRetainerIds.Count} retainer{(p.ExcludedRetainerIds.Count == 1 ? " is" : "s are")} left alone");
         return list;
-    }
-
-    /// <summary>The containers Gleam may open, in a row that wraps rather than running off the card.</summary>
-    private void DrawContainerChecks(Profile p)
-    {
-        var used = 0f;
-        var room = ImGui.GetContentRegionAvail().X;
-        foreach (var kind in Enum.GetValues<ContainerKind>())
-        {
-            var label = kind.DisplayName();
-            var w = Ui.CheckWidth(label);
-            if (used > 0f && used + ImGui.GetStyle().ItemSpacing.X + w <= room) { ImGui.SameLine(); used += ImGui.GetStyle().ItemSpacing.X + w; }
-            else used = w;
-            var on = p.IsContainerEnabled(kind);
-            if (Ui.Check($"{label}##en{kind}", ref on)) { p.ContainerEnabled[kind] = on; dirty = true; }
-        }
     }
 
     /// <summary>
@@ -261,7 +273,7 @@ public sealed partial class SettingsWindow
 
         ImGui.SameLine(0, 24 * Ui.Scale);
         var still = config.ReduceMotion;
-        if (Ui.Check("Hold still", ref still)) { config.ReduceMotion = still; Ui.Reduced = still; dirty = true; }
+        if (Ui.Check("Reduce motion", ref still)) { config.ReduceMotion = still; Ui.Reduced = still; dirty = true; }
         Ui.Tooltip("Turns off the fading, sliding and counting. Everything still works, it just arrives at once.");
 
         const string report = "Copy a bug report";
@@ -278,54 +290,30 @@ public sealed partial class SettingsWindow
 
     /// <summary>
     /// Gleam walks and travels by itself, so the two plugins that make that possible are requirements, not
-    /// options. This says so plainly and shows at a glance whether they are there.
+    /// options. The card appears only while one of them is missing: with both there, it has nothing to say.
     /// </summary>
     private void DrawRequiredPlugins()
     {
         var (haveNav, haveTravel, _, _) = Installed;
+        if (haveNav && haveTravel) return;
 
         using (Ui.Card("auto"))
         {
-            Ui.Ask("What Gleam needs to work", "Gleam walks to every bell, dresser, merchant and Grand Company a run needs, and vnavmesh does the walking. Lifestream lets it travel between towns; without it, Gleam does everything reachable from where you start.");
+            Ui.Ask("What Gleam needs to work", "Gleam walks to every bell, dresser, merchant and Grand Company a run needs, and vnavmesh does the walking. Lifestream lets it travel between towns. Without it, Gleam does everything reachable from where you start.");
 
             Requirement("vnavmesh", haveNav, "Walks you to the bell, the dresser and the merchant.");
             Requirement("Lifestream", haveTravel, "Teleports you between towns and into an inn.", optional: true);
 
-            if (!haveNav || !haveTravel)
+            Ui.Gap(0.4f);
+            if (!haveNav)
             {
-                Ui.Gap(0.4f);
-                if (!haveNav)
-                {
-                    Ui.TextColored(Ui.Danger, "Install vnavmesh to let a run finish.");
-                    Ui.HintWrapped("Without it Gleam only handles what you open yourself.");
-                }
-                else
-                {
-                    Ui.TextColored(Ui.Warn, "Install Lifestream to let Gleam travel.");
-                    Ui.HintWrapped("Without it, start a run in an inn and Gleam manages from there.");
-                }
+                Ui.TextColored(Ui.Danger, "Install vnavmesh to let a run finish.");
+                Ui.HintWrapped("Without it Gleam only handles what you open yourself.");
             }
-
-            // A patch this build was not checked on holds hands-free back until the player decides. Asked of
-            // the game version itself, not of the pilot: cleaning after ventures is held back too, and it
-            // needs no vnavmesh, so someone without it must still be able to go ahead.
-            if (Pilot is not null && !Game.GameVersionGuard.AllowsUnattended(config))
+            else
             {
-                Ui.Gap(0.4f);
-                Ui.TextColored(Ui.Warn, "Hands-free is paused for this game patch.");
-                Ui.HintWrapped($"The game was updated after this version of Gleam was checked: it was checked on {Game.GameVersionGuard.CheckedAgainst}, and you are on {Game.GameVersionGuard.Current()}. Runs you start by hand still work. An update to Gleam lifts the pause, or you can go ahead now.");
-                if (Ui.LinkButton("Go ahead on this patch")) Pilot.GoAheadOnThisPatch();
-                Ui.Tooltip(Ui.PatchGoAheadHint);
-            }
-
-            // Shown whenever it is on: it cleans without asking, so it is never tucked away behind advanced mode.
-            if (config.AdvancedMode || config.Automation.UnseenRows != UnseenRowsMode.Skip)
-            {
-                Ui.Gap(0.4f);
-                var a = config.Automation;
-                var cleanUnseen = a.UnseenRows != UnseenRowsMode.Skip;
-                if (Ui.Check("Also clean junk it only finds once it gets there", ref cleanUnseen)) { a.UnseenRows = cleanUnseen ? UnseenRowsMode.Clean : UnseenRowsMode.Skip; dirty = true; }
-                Ui.Tooltip("A retainer or the dresser only shows what it holds once it is open. On: Gleam applies the same rules on the spot. Off: those items wait for your next review.");
+                Ui.TextColored(Ui.Warn, "Install Lifestream to let Gleam travel.");
+                Ui.HintWrapped("Without it, start a run in an inn and Gleam manages from there.");
             }
         }
     }
@@ -359,7 +347,7 @@ public sealed partial class SettingsWindow
     {
         Ui.Gap(0.4f);
         Fold("What Gleam treats as junk", DrawRules);
-        Fold("Which retainers it may use", DrawContainers);
+        Fold("Where Gleam may look", DrawPlaces);
         Fold("When Gleam speaks up", DrawNotifications);
         Fold("Other plugins", DrawIntegrations);
     }

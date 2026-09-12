@@ -3,6 +3,60 @@
 Each release's section is shown in Dalamud's plugin installer and on the GitHub release page. The release
 workflow refuses a tag whose version has no section here.
 
+## 0.12.0
+
+A large update after a full review of Gleam. Safety first, then fixes, other languages, speed and a tidier settings page.
+
+Safety
+- Untradeable gear that no vendor sells, such as event and reward pieces, is no longer ticked for discard as obsolete gear. You can still pick it by hand.
+- Hands-free trips never discard anything untradeable in a container you did not review, and cleaning while you are away stops at the same limits as the big run warning.
+- New players start with unreviewed containers left alone on trips. If you changed this setting, your choice is kept.
+- An item with no market listings now counts as price unknown and starts unticked, instead of worth nothing. HQ items no longer take the NQ price.
+- Spare minions, mounts and the like that sell on the market board now start unticked.
+- Items you untick stay unticked after a sort moves them, also for the cleaning after ventures.
+- When you untick one of two identical stacks, a new scan keeps it unticked.
+- Selling through a retainer sells the copy you handed over, never one the retainer already had.
+- The Keep and Junk options in the item menu only change entries for this character and the whole account.
+
+Fixes
+- The Grand Company turn-in finds the personnel officer again. It never found one, on any client.
+- YesAlready and TextAdvance pause while Gleam works, and AutoRetainer keeps off the bell during a trip. A trip does not start while AutoRetainer's multi mode is on.
+- A confirmation another plugin answered first no longer counts as a failure.
+- Stop now stops at once, and also interrupts a Teleport that is being cast.
+- Discard all now only changes what happens to junk. It used to treat more things as junk as well. Profiles on the old values move over by themselves.
+- The Always clean list follows your preset.
+- With Retainer unticked, trips no longer call a retainer to sell or list for you.
+- The review opens by itself only when a container holds junk, not whenever it holds anything.
+- Turning Put my things away off also stops moves left waiting from an earlier preview.
+- Look again only merges stacks in places Gleam may look.
+- Market listings brought home from a retainer no longer vanish from the waiting list.
+
+Other languages
+- Japanese, German and French clients now find the retainer menus, the summoning bell, the buyback question, the merchant menu and the Grand Company menu by the game's own text.
+
+Speed
+- Scanning, planning and previews run off the game's main thread, and the game data Gleam needs is prepared in the background when it loads.
+- The Clean list, What Gleam did and the organize preview only draw the rows on screen, so long lists scroll smoothly on slower computers.
+- The statistics page only works out its numbers while you are looking at it.
+- Nothing on screen keeps growing in memory the longer the window stays open.
+- Settings are saved once you leave a field, not on every key you type.
+- Universalis being down no longer slows every scan.
+- Nothing keeps running after the plugin unloads.
+
+Settings
+- A new card, What may Gleam do by itself, gathers everything Gleam does without you pressing the button. Cleaning junk found on arrival, cleaning after ventures, sorting afterwards and the hold after a game patch all live there.
+- Both lists, never touch and always junk, are always on the page.
+- What Gleam needs only appears while vnavmesh or Lifestream is missing.
+- Your bags are always included. Retainers are listed under the Retainer tick, in Where Gleam may look.
+- Sort bags afterwards is now Sort afterwards, and Hold still is now Reduce motion.
+- The Discard Helper buttons say plainly what they do.
+
+Look
+- The running screens are centred, with the progress bars in the middle of the window.
+- The server info bar reads like Bags 18/140 · 3 junk, with a plain tooltip.
+- The listing in the plugin installer is rewritten, with every command listed.
+- The empty lines under the Containers and Types chips are gone.
+
 ## 0.11.8
 
 - Gleam now answers the retainer's "no buyback once recalled" question itself. Since 0.11.7 it read the question correctly, but pressed Yes in a way the game ignored; it now presses it the way a click does.
