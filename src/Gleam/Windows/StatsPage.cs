@@ -56,9 +56,10 @@ public sealed class StatsPage
     }
 
     // The action colours are the list's own, so a red bar here means what red means everywhere in Gleam.
-    private static Vector4[] ActivityColors => [Ui.Danger, Ui.Ok, Ui.Market, Ui.Info, Ui.Warn, Ui.AccentSoft];
+    private static readonly Vector4[] ActivityColors = [Ui.Danger, Ui.Ok, Ui.Market, Ui.Info, Ui.Warn, Ui.AccentSoft];
+    private static readonly Vector4[] RoomColors = [Ui.AccentSoft, Ui.Info];
 
-    private static (ContainerKind Kind, string Name, Vector4 Color)[] SourceKinds =>
+    private static readonly (ContainerKind Kind, string Name, Vector4 Color)[] SourceKinds =
     [
         (ContainerKind.Inventory, "Bags", Ui.AccentSoft),
         (ContainerKind.Armoury, "Armoury chest", Ui.Info),
@@ -111,6 +112,8 @@ public sealed class StatsPage
 
         using var body = ImRaii.Child("##statsBody", Vector2.Zero, false, ImGuiWindowFlags.None);
         if (!body) return;
+        // Every headline number on the page draws in the big font; it is taken once here, not once per number.
+        using var bigFont = Charts.HoldBigFont();
         var width = ImGui.GetContentRegionAvail().X - ImGui.GetStyle().ScrollbarSize;
         var gap = 10f * Ui.Scale;
 
@@ -160,6 +163,162 @@ public sealed class StatsPage
         Watch("listings", snap.Current.Listings);
         trackedFor = key;
         floaters.RemoveAll(f => now - f.At > 1.3);
+    }
+
+    // ---------- what the page draws from one snapshot ----------
+    // The chart inputs and most of the words come from the snapshot alone, so they are worked out once when a
+    // new snapshot arrives. They used to be rebuilt from it on every frame: a list per sparkline, an array per
+    // bar, the slices, the legs of the last trip, the labels under the bars and on the milestones.
+
+    private sealed record Tile(string Id, FontAwesomeIcon Icon, string Label, long Value, Func<long, string> Format, string? Note, Vector4 Color, List<float> Spark, string Tip);
+
+    private sealed class Derived
+    {
+        public required StatsSnapshot From { get; init; }
+        public required StatsRange Range { get; init; }
+        public required Tile[] Tiles { get; init; }
+        public required List<float[]> Activity { get; init; }
+        public required string?[] BarLabels { get; init; }
+        public required List<(float Value, Vector4 Color)> Sources { get; init; }
+        public required float SourcesTotal { get; init; }
+        public required string[] SourceCounts { get; init; }
+        public required List<(string Label, double Seconds, bool Ok)> Legs { get; init; }
+        public required List<(string Label, float Weight, Vector4 Color)> Segments { get; init; }
+        public required string TripLine { get; init; }
+        public required string SuccessLine { get; init; }
+        public required string[] MilestoneLabels { get; init; }
+        public float[]? MilestoneWidths;
+        public float MilestoneWidthsFor;
+        /// <summary>Retainer names can arrive after the snapshot does, so the ribbons are named again every few seconds.</summary>
+        public List<Charts.Ribbon>? Ribbons;
+        public float RibbonsHeight;
+        public double RibbonsAt;
+    }
+
+    private Derived? derived;
+
+    private Derived Derive(StatsSnapshot snap)
+    {
+        // The notes on the tiles name the period, so a new period is a new set of words even before new sums.
+        var range = stats.Range;
+        if (derived is { } d && ReferenceEquals(d.From, snap) && d.Range == range) return d;
+
+        var c = snap.Current;
+        var p = snap.Previous;
+        var seals = c.Seals > 0 ? $" Grand Company turn-ins brought {c.Seals:N0} seals as well." : string.Empty;
+        Func<long, string> number = static v => $"{v:N0}";
+        var tiles = new Tile[]
+        {
+            new("slots", FontAwesomeIcon.BoxOpen, "Bag slots freed", c.SlotsFreed, number, Change(c.SlotsFreed, p?.SlotsFreed), Ui.AccentSoft,
+                snap.Activity.Select(b => (float)b.Slots).ToList(),
+                "Each stack cleaned out of your bags, armoury chest, saddlebag or a retainer frees one slot." + (c.DresserFreed > 0 ? $" {c.DresserFreed:N0} more came out of the glamour dresser." : string.Empty)),
+            new("gil", FontAwesomeIcon.Coins, "Gil from sales", c.GilFromSales, number, Change(c.GilFromSales, p?.GilFromSales), Ui.Market,
+                snap.Activity.Select(b => (float)b.Gil).ToList(),
+                "Gil you actually received, from selling to a merchant or through a retainer." + seals),
+            new("listings", FontAwesomeIcon.Store, "Listed on the market", c.Listings, number, c.ListedValue > 0 ? $"asking {Charts.Short(c.ListedValue)} gil" : "asking price, not sales", Ui.AccentSoft,
+                snap.Activity.Select(b => (float)b.Listings).ToList(),
+                "Listings Gleam put up, and their total asking price. Whether they have sold is not something Gleam can see, so none of this is counted as earned."),
+            new("time", FontAwesomeIcon.Clock, "Time saved, about", c.SecondsSaved, Duration, "an estimate", Ui.AccentSoft,
+                snap.Activity.Select(b => (float)b.SecondsSaved).ToList(), TimeTip()),
+        };
+
+        var slices = SourceKinds.Select(k => ((float)snap.Sources.GetValueOrDefault(k.Kind), k.Color)).ToList();
+        var trip = snap.LastTrip;
+        var legs = trip is null ? new List<(string Label, double Seconds, bool Ok)>() : MergeLegs(trip.Legs);
+        var success = snap.SuccessRate is null ? string.Empty
+            : snap.Failed == 0
+                ? $"All {snap.Done:N0} actions in this period went through."
+                : $"{snap.Done:N0} of {snap.Done + snap.Failed:N0} actions in this period went through." + (snap.TopFailure is { } why ? $" The most common reason for the rest: {why}." : string.Empty);
+
+        return derived = new Derived
+        {
+            From = snap,
+            Range = range,
+            Tiles = tiles,
+            Activity = snap.Activity.Select(b => b.Counts.Select(n => (float)n).ToArray()).ToList(),
+            BarLabels = Enumerable.Range(0, snap.Activity.Count).Select(i => BarLabel(snap, i)).ToArray(),
+            Sources = slices,
+            SourcesTotal = slices.Sum(x => x.Item1),
+            SourceCounts = SourceKinds.Select(k => $"{snap.Sources.GetValueOrDefault(k.Kind):N0}").ToArray(),
+            Legs = legs,
+            Segments = legs.Select(l => (l.Label, (float)l.Seconds, LegColor(l.Label))).ToList(),
+            TripLine = trip is null ? string.Empty
+                : $"{trip.Teleports} teleport{(trip.Teleports == 1 ? "" : "s")} · {trip.WalkedYalms:N0} yalms walked for you · {trip.RetainersVisited} retainer{(trip.RetainersVisited == 1 ? "" : "s")}",
+            SuccessLine = success,
+            MilestoneLabels = snap.Milestones.Select(m => m.Earned ? m.Title : $"{m.Title}  {Charts.Short(m.Progress)} / {Charts.Short(m.Target)}").ToArray(),
+        };
+    }
+
+    /// <summary>The bag-room chart's lines for one snapshot at one width.</summary>
+    private sealed class RoomView
+    {
+        public required StatsSnapshot From { get; init; }
+        public required int Width { get; init; }
+        public required long Bucket { get; init; }
+        public required List<Charts.Series> Series { get; init; }
+        public required float YMax { get; init; }
+        public required List<float> Marks { get; init; }
+        /// <summary>For each point on the first line, which look it came from, so the tooltip names the right one.</summary>
+        public required int[] Index { get; init; }
+        public required string[] Legend { get; init; }
+    }
+
+    private RoomView? roomView;
+
+    private RoomView Room(StatsSnapshot snap, float width)
+    {
+        // Points sit at their share of "the period so far", which creeps on as time passes; ten seconds of
+        // creep is well under a pixel, so that is how often they are placed again.
+        var bucket = (long)(ImGui.GetTime() / 10);
+        if (roomView is { } r && ReferenceEquals(r.From, snap) && r.Width == (int)width && r.Bucket == bucket) return r;
+
+        var fromLocal = snap.From.ToDateTime(TimeOnly.MinValue);
+        var from = new DateTimeOffset(fromLocal, TimeZoneInfo.Local.GetUtcOffset(fromLocal));
+        var span = Math.Max(1.0, (DateTimeOffset.Now - from).TotalSeconds);
+        float X(DateTimeOffset at) => (float)Math.Clamp((at - from).TotalSeconds / span, 0, 1);
+
+        var bags = snap.Room.Select(p => new Vector2(X(p.At), p.BagsUsed)).ToList();
+        var saddle = snap.Room.Where(p => p.SaddleUsed is not null).Select(p => new Vector2(X(p.At), p.SaddleUsed!.Value)).ToList();
+        var bagCap = snap.Room[^1].BagsCapacity;
+        var saddleCap = snap.Room.LastOrDefault(p => p.SaddleUsed is not null)?.SaddleCapacity ?? 70;
+        // The plot is the chart's width less its axis labels. More than a point per two pixels of it only costs time.
+        var most = Math.Max(2, (int)((width - 36f * Ui.Scale) / 2f));
+        var (bagPoints, index) = Thin(bags, most);
+        var series = new List<Charts.Series> { new(bagPoints, Ui.AccentSoft, false, true) };
+        if (saddle.Count >= 2) series.Add(new Charts.Series(Thin(saddle, most).Points, Ui.Info, true, false));
+
+        return roomView = new RoomView
+        {
+            From = snap,
+            Width = (int)width,
+            Bucket = bucket,
+            Series = series,
+            YMax = Math.Max(bagCap, saddleCap),
+            Marks = snap.RunMarks.Select(X).ToList(),
+            Index = index,
+            Legend = saddle.Count >= 2 ? [$"Bags, of {bagCap}", $"Saddlebag, of {saddleCap}"] : [$"Bags, of {bagCap}"],
+        };
+    }
+
+    /// <summary>
+    /// At most <paramref name="most"/> points, one per slice of the x axis, keeping the first in each slice and
+    /// always the last. A line with fewer points than that is left exactly as it was.
+    /// </summary>
+    private static (List<Vector2> Points, int[] Index) Thin(List<Vector2> points, int most)
+    {
+        if (points.Count <= most) return (points, Enumerable.Range(0, points.Count).ToArray());
+        var kept = new List<Vector2>(most + 1);
+        var index = new List<int>(most + 1);
+        var lastSlice = -1;
+        for (var i = 0; i < points.Count; i++)
+        {
+            var slice = (int)(Math.Clamp(points[i].X, 0f, 1f) * (most - 1));
+            if (slice == lastSlice && i != points.Count - 1) continue;
+            lastSlice = slice;
+            kept.Add(points[i]);
+            index.Add(i);
+        }
+        return (kept, index.ToArray());
     }
 
     // ---------- layout: rows of panels ----------
@@ -334,23 +493,7 @@ public sealed class StatsPage
         var tileW = (width - gap * (cols - 1)) / cols;
         var tileH = 94f * Ui.Scale;
         var start = ImGui.GetCursorScreenPos();
-        var c = snap.Current;
-        var p = snap.Previous;
-        var seals = c.Seals > 0 ? $" Grand Company turn-ins brought {c.Seals:N0} seals as well." : string.Empty;
-        var tiles = new (string Id, FontAwesomeIcon Icon, string Label, long Value, Func<long, string> Format, string? Note, Vector4 Color, List<float> Spark, string Tip)[]
-        {
-            ("slots", FontAwesomeIcon.BoxOpen, "Bag slots freed", c.SlotsFreed, v => $"{v:N0}", Change(c.SlotsFreed, p?.SlotsFreed), Ui.AccentSoft,
-                snap.Activity.Select(b => (float)b.Slots).ToList(),
-                "Each stack cleaned out of your bags, armoury chest, saddlebag or a retainer frees one slot." + (c.DresserFreed > 0 ? $" {c.DresserFreed:N0} more came out of the glamour dresser." : string.Empty)),
-            ("gil", FontAwesomeIcon.Coins, "Gil from sales", c.GilFromSales, v => $"{v:N0}", Change(c.GilFromSales, p?.GilFromSales), Ui.Market,
-                snap.Activity.Select(b => (float)b.Gil).ToList(),
-                "Gil you actually received, from selling to a merchant or through a retainer." + seals),
-            ("listings", FontAwesomeIcon.Store, "Listed on the market", c.Listings, v => $"{v:N0}", c.ListedValue > 0 ? $"asking {Charts.Short(c.ListedValue)} gil" : "asking price, not sales", Ui.AccentSoft,
-                snap.Activity.Select(b => (float)b.Listings).ToList(),
-                "Listings Gleam put up, and their total asking price. Whether they have sold is not something Gleam can see, so none of this is counted as earned."),
-            ("time", FontAwesomeIcon.Clock, "Time saved, about", c.SecondsSaved, Duration, "an estimate", Ui.AccentSoft,
-                snap.Activity.Select(b => (float)b.SecondsSaved).ToList(), TimeTip()),
-        };
+        var tiles = Derive(snap).Tiles;
         for (var i = 0; i < tiles.Length; i++)
         {
             var t = tiles[i];
@@ -391,8 +534,9 @@ public sealed class StatsPage
         Charts.Sparkline($"stats:spark:{id}", spark, new Vector2(pos.X + size.X * 0.58f, max.Y - pad - 24f * Ui.Scale), new Vector2(size.X * 0.42f - pad, 24f * Ui.Scale), color);
 
         var now = ImGui.GetTime();
-        foreach (var f in floaters.Where(f => f.Tile == id))
+        foreach (var f in floaters)
         {
+            if (f.Tile != id) continue;
             var age = (float)(now - f.At);
             var alpha = age < 0.2f ? age / 0.2f : Math.Max(0f, 1f - (age - 0.2f) / 1.0f);
             var fy = pos.Y + pad + 4f * Ui.Scale - age * 16f * Ui.Scale;
@@ -428,8 +572,8 @@ public sealed class StatsPage
         var pos = ImGui.GetCursorScreenPos();
         var size = new Vector2(w, 190f * Ui.Scale);
         ImGui.Dummy(size);
-        var stacks = snap.Activity.Select(b => b.Counts.Select(n => (float)n).ToArray()).ToList();
-        var hover = Charts.StackedBars("stats:activity", stacks, ActivityColors, pos, size, i => BarLabel(snap, i));
+        var d = Derive(snap);
+        var hover = Charts.StackedBars("stats:activity", d.Activity, ActivityColors, pos, size, i => d.BarLabels[i]);
         if (hover < 0) return;
         var bucket = snap.Activity[hover];
         using (Ui.RichTooltip(230f))
@@ -463,12 +607,13 @@ public sealed class StatsPage
 
     // ---------- where it came from ----------
 
-    private static void DrawSources(StatsSnapshot snap, float w)
+    private void DrawSources(StatsSnapshot snap, float w)
     {
         Title("Where the junk came from", "stacks cleaned", w);
         var kinds = SourceKinds;
-        var slices = kinds.Select(k => ((float)snap.Sources.GetValueOrDefault(k.Kind), k.Color)).ToList();
-        var total = slices.Sum(x => x.Item1);
+        var d = Derive(snap);
+        var slices = d.Sources;
+        var total = d.SourcesTotal;
         if (total <= 0) { Ui.HintWrapped("Nothing was cleaned in this period."); return; }
 
         var radius = 56f * Ui.Scale;
@@ -486,13 +631,12 @@ public sealed class StatsPage
         var dl = ImGui.GetWindowDrawList();
         for (var i = 0; i < kinds.Length; i++)
         {
-            var count = snap.Sources.GetValueOrDefault(kinds[i].Kind);
             var row = new Vector2(keysX, y + i * lineH);
             var sq = 9f * Ui.Scale;
             var lh = ImGui.GetTextLineHeight();
             dl.AddRectFilled(row + new Vector2(0, (lh - sq) / 2), row + new Vector2(sq, (lh + sq) / 2), Charts.Col(kinds[i].Color), 2f * Ui.Scale);
             Charts.Text(row + new Vector2(sq + 7f * Ui.Scale, 0), hover == i ? Ui.Cream : Charts.Fade(Ui.Cream, 0.85f), kinds[i].Name);
-            var n = $"{count:N0}";
+            var n = d.SourceCounts[i];
             Charts.Text(new Vector2(keysX + keysW - Charts.TextWidth(n), row.Y), Ui.Muted, n);
         }
         if (!beside) ImGui.Dummy(new Vector2(w, lineH * kinds.Length + 4f * Ui.Scale));
@@ -508,7 +652,7 @@ public sealed class StatsPage
 
     // ---------- room in the bags ----------
 
-    private static void DrawRoom(StatsSnapshot snap, float w)
+    private void DrawRoom(StatsSnapshot snap, float w)
     {
         Title("Room in your bags", "used slots · dots are Gleam runs", w);
         if (snap.Room.Count < 2)
@@ -516,26 +660,15 @@ public sealed class StatsPage
             Ui.HintWrapped("Gleam notes how full your bags are every time it looks through them, from this version on. The chart fills in after a few looks.");
             return;
         }
-        var fromLocal = snap.From.ToDateTime(TimeOnly.MinValue);
-        var from = new DateTimeOffset(fromLocal, TimeZoneInfo.Local.GetUtcOffset(fromLocal));
-        var span = Math.Max(1.0, (DateTimeOffset.Now - from).TotalSeconds);
-        float X(DateTimeOffset at) => (float)Math.Clamp((at - from).TotalSeconds / span, 0, 1);
-
-        var bags = snap.Room.Select(p => new Vector2(X(p.At), p.BagsUsed)).ToList();
-        var saddle = snap.Room.Where(p => p.SaddleUsed is not null).Select(p => new Vector2(X(p.At), p.SaddleUsed!.Value)).ToList();
-        var bagCap = snap.Room[^1].BagsCapacity;
-        var saddleCap = snap.Room.LastOrDefault(p => p.SaddleUsed is not null)?.SaddleCapacity ?? 70;
-        var series = new List<Charts.Series> { new(bags, Ui.AccentSoft, false, true) };
-        if (saddle.Count >= 2) series.Add(new Charts.Series(saddle, Ui.Info, true, false));
-
         var pos = ImGui.GetCursorScreenPos();
         var size = new Vector2(w, 150f * Ui.Scale);
         ImGui.Dummy(size);
-        var hover = Charts.Lines("stats:room", series, Math.Max(bagCap, saddleCap), pos, size, snap.RunMarks.Select(X).ToList());
-        Legend(saddle.Count >= 2 ? [$"Bags, of {bagCap}", $"Saddlebag, of {saddleCap}"] : [$"Bags, of {bagCap}"], [Ui.AccentSoft, Ui.Info], w);
+        var room = Room(snap, size.X);
+        var hover = Charts.Lines("stats:room", room.Series, room.YMax, pos, size, room.Marks);
+        Legend(room.Legend, RoomColors, w);
 
         if (hover < 0) return;
-        var point = snap.Room[hover];
+        var point = snap.Room[room.Index[hover]];
         using (Ui.RichTooltip(220f))
         {
             Ui.Hint(point.At.LocalDateTime.ToString("ddd d MMM, HH:mm"));
@@ -587,12 +720,18 @@ public sealed class StatsPage
         if (flagged && OpenSettings is not null && Ui.LinkButton("Adjust a rule in Settings")) OpenSettings();
     }
 
-    private static string RuleName(string id) =>
-        RuleEngine.AllRules.FirstOrDefault(r => r.Id == id)?.Name ?? id switch
+    private static readonly Dictionary<string, string> ruleNames = new();
+
+    /// <summary>A rule's name, looked up once per rule rather than once per frame.</summary>
+    private static string RuleName(string id)
+    {
+        if (ruleNames.TryGetValue(id, out var known)) return known;
+        return ruleNames[id] = RuleEngine.AllRules.FirstOrDefault(r => r.Id == id)?.Name ?? id switch
         {
             "vendor-vs-market" => "Worth more on the market",
             _ => char.ToUpperInvariant(id.FirstOrDefault()) + id.Replace('-', ' ').Skip(1).Aggregate(string.Empty, (a, ch) => a + ch),
         };
+    }
 
     // ---------- the organizer's ribbons ----------
 
@@ -604,19 +743,27 @@ public sealed class StatsPage
             Ui.HintWrapped("Nothing was put away in this period.");
             return;
         }
-        var names = organizer.RetainerNames;
-        string Node(ContainerKind kind, ulong owner) => kind switch
+        var d = Derive(snap);
+        if (d.Ribbons is null || ImGui.GetTime() - d.RibbonsAt > 5.0)
         {
-            ContainerKind.Retainer => names.TryGetValue(owner, out var n) ? n : "A retainer",
-            ContainerKind.Inventory => "Bags",
-            ContainerKind.Armoury => "Armoury",
-            ContainerKind.Saddlebag => "Saddlebag",
-            ContainerKind.GlamourDresser => "Dresser",
-            _ => kind.ToString(),
-        };
-        var ribbons = snap.Flows.Take(8).Select(f => new Charts.Ribbon(Node(f.FromKind, f.FromOwner), Node(f.ToKind, f.ToOwner), f.Count)).ToList();
+            var names = organizer.RetainerNames;
+            string Node(ContainerKind kind, ulong owner) => kind switch
+            {
+                ContainerKind.Retainer => names.TryGetValue(owner, out var n) ? n : "A retainer",
+                ContainerKind.Inventory => "Bags",
+                ContainerKind.Armoury => "Armoury",
+                ContainerKind.Saddlebag => "Saddlebag",
+                ContainerKind.GlamourDresser => "Dresser",
+                _ => kind.ToString(),
+            };
+            var named = snap.Flows.Take(8).Select(f => new Charts.Ribbon(Node(f.FromKind, f.FromOwner), Node(f.ToKind, f.ToOwner), f.Count)).ToList();
+            d.Ribbons = named;
+            d.RibbonsHeight = Math.Max(120f, 34f * Math.Max(named.Select(r => r.To).Distinct().Count(), named.Select(r => r.From).Distinct().Count()));
+            d.RibbonsAt = ImGui.GetTime();
+        }
+        var ribbons = d.Ribbons;
         var pos = ImGui.GetCursorScreenPos();
-        var size = new Vector2(w, Math.Max(120f, 34f * Math.Max(ribbons.Select(r => r.To).Distinct().Count(), ribbons.Select(r => r.From).Distinct().Count())) * Ui.Scale);
+        var size = new Vector2(w, d.RibbonsHeight * Ui.Scale);
         ImGui.Dummy(size);
         var live = organizer.IsRunning || pilot is { IsRunning: true, Mode: Automation.PilotMode.Organize };
         var hover = Charts.Ribbons("stats:flows", ribbons, pos, size, live);
@@ -629,6 +776,7 @@ public sealed class StatsPage
     private void DrawTrip(StatsSnapshot snap, float w)
     {
         var trip = snap.LastTrip;
+        var d = Derive(snap);
         Title("The last hands-free trip", trip is null ? null : $"{Duration((long)trip.Seconds)} · {Ago(trip.At)}", w);
         if (pilot.IsRunning) Ui.TextColored(Ui.Ok, Clip($"A trip is under way: {pilot.Status}", w));
         if (trip is null)
@@ -637,16 +785,16 @@ public sealed class StatsPage
         }
         else
         {
-            var legs = MergeLegs(trip.Legs);
+            var legs = d.Legs;
             var pos = ImGui.GetCursorScreenPos();
             var size = new Vector2(w, 28f * Ui.Scale);
             ImGui.Dummy(size);
-            var hover = Charts.Segments("stats:legs", legs.Select(l => (l.Label, (float)l.Seconds, LegColor(l.Label))).ToList(), pos, size);
+            var hover = Charts.Segments("stats:legs", d.Segments, pos, size);
             if (hover >= 0)
                 using (Ui.RichTooltip(220f))
                     Ui.Text($"{legs[hover].Label}: {Duration((long)legs[hover].Seconds)}{(legs[hover].Ok ? string.Empty : ", did not finish")}");
             Ui.Gap(0.2f);
-            Ui.Hint($"{trip.Teleports} teleport{(trip.Teleports == 1 ? "" : "s")} · {trip.WalkedYalms:N0} yalms walked for you · {trip.RetainersVisited} retainer{(trip.RetainersVisited == 1 ? "" : "s")}");
+            Ui.Hint(d.TripLine);
         }
 
         Ui.Gap(0.5f);
@@ -661,10 +809,7 @@ public sealed class StatsPage
         Charts.Ring("stats:success", (float)rate, ringPos + new Vector2(r + 4f * Ui.Scale), r, 6f * Ui.Scale, Ui.Ok, Charts.Fade(Ui.Danger, 0.35f), $"{rate * 100:0.#}%");
         ImGui.SameLine();
         ImGui.BeginGroup();
-        var failed = snap.Failed == 0
-            ? $"All {snap.Done:N0} actions in this period went through."
-            : $"{snap.Done:N0} of {snap.Done + snap.Failed:N0} actions in this period went through." + (snap.TopFailure is { } why ? $" The most common reason for the rest: {why}." : string.Empty);
-        ImGui.TextWrapped(failed);
+        ImGui.TextWrapped(d.SuccessLine);
         ImGui.EndGroup();
     }
 
@@ -731,10 +876,21 @@ public sealed class StatsPage
         var x = origin.X;
         var y = origin.Y;
         var now = DateTime.UtcNow;
+        // The labels come with the snapshot; their widths are measured again only if the font size changes.
+        var d = Derive(snap);
+        var labels = d.MilestoneLabels;
+        if (d.MilestoneWidths is null || d.MilestoneWidthsFor != ImGui.GetFontSize())
+        {
+            d.MilestoneWidths = labels.Select(Charts.TextWidth).ToArray();
+            d.MilestoneWidthsFor = ImGui.GetFontSize();
+        }
+        var widths = d.MilestoneWidths;
+        var index = 0;
         foreach (var m in snap.Milestones)
         {
-            var label = m.Earned ? m.Title : $"{m.Title}  {Charts.Short(m.Progress)} / {Charts.Short(m.Target)}";
-            var bw = 12f * Ui.Scale + starW + 7f * Ui.Scale + Charts.TextWidth(label) + 12f * Ui.Scale;
+            var label = labels[index];
+            var bw = 12f * Ui.Scale + starW + 7f * Ui.Scale + widths[index] + 12f * Ui.Scale;
+            index++;
             if (x + bw > origin.X + w && x > origin.X) { x = origin.X; y += h + spacing; }
             var min = new Vector2(x, y);
             var max = min + new Vector2(bw, h);

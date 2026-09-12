@@ -175,10 +175,20 @@ internal static class Ui
         ImGui.TextUnformatted(icon.ToIconString());
     }
 
+    private static readonly Dictionary<FontAwesomeIcon, float> iconWidths = new();
+    private static float iconWidthsFor;
+
+    /// <summary>
+    /// How wide a glyph is. Measured once per glyph and icon-font size: measuring means pushing the icon font,
+    /// and pills, chips and buttons ask for their glyph's width on every frame.
+    /// </summary>
     public static float IconWidth(FontAwesomeIcon icon)
     {
+        var fontSize = UiBuilder.IconFont.FontSize;
+        if (iconWidthsFor != fontSize) { iconWidths.Clear(); iconWidthsFor = fontSize; }
+        if (iconWidths.TryGetValue(icon, out var width)) return width;
         using var f = ImRaii.PushFont(UiBuilder.IconFont);
-        return ImGui.CalcTextSize(icon.ToIconString(), false, 0).X;
+        return iconWidths[icon] = ImGui.CalcTextSize(icon.ToIconString(), false, 0).X;
     }
 
     public static void Gap(float multiple = 1f) => ImGui.Dummy(new Vector2(0, Space * multiple));
