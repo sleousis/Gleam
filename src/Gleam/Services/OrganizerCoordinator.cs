@@ -103,7 +103,7 @@ public sealed class OrganizerCoordinator : IDisposable
     {
         get
         {
-            var mine = new Dictionary<ulong, string>(Game.RetainerDirectory.Current());
+            var mine = new Dictionary<ulong, string>(Game.RetainerDirectory.Current(config));
             if (Snapshot is not null) foreach (var (id, name) in Snapshot.RetainerNames) mine[id] = name;
             return mine;
         }

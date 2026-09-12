@@ -113,21 +113,6 @@ public sealed class OrganizerPanel
         dirty = true;
     }
 
-    /// <summary>
-    /// Organizing has not had a full pass in game yet. Said once, with the worst case: it only moves things, so
-    /// nothing can be lost, but a run that stops can leave an item in the bags. Remove once it has been tested.
-    /// </summary>
-    private void DrawPreviewNote()
-    {
-        if (config.SeenOrganizerPreviewNote) return;
-        if (Ui.Banner(Ui.Warn, "Preview.", "Organizing has not had a full test in game yet. It never discards. At worst an item stays in your bags or a run stops early.", dismissLabel: "Got it"))
-        {
-            config.SeenOrganizerPreviewNote = true;
-            dirty = true;
-        }
-        Ui.Gap(0.4f);
-    }
-
     public void Draw()
     {
         if (Simple) { DrawSimple(BorrowSimpleLayout()); return; }
@@ -146,7 +131,6 @@ public sealed class OrganizerPanel
         DrawPlanBar();
         Ui.Gap(0.4f);
         WhatsNew?.Draw();
-        DrawPreviewNote();
         if (!config.SeenOrganizeIntro && plan is not null)
         {
             if (Ui.Banner(Ui.Info, "New here?", "A layout is a short list of rules: what goes where. Start with the starter layout and change it later.", dismissLabel: "Got it"))
@@ -378,7 +362,6 @@ public sealed class OrganizerPanel
         Ui.Tooltip("Looks through your bags and storage again.");
         Ui.Gap(0.4f);
         WhatsNew?.Draw();
-        DrawPreviewNote();
 
         if (Pilot is { IsRunning: true, Mode: Automation.PilotMode.Organize } || organizer.IsRunning) { DrawRunning(); return; }
         DrawBanners();
@@ -885,7 +868,9 @@ public sealed class OrganizerPanel
             string label;
             if (current.Kind != DestinationKind.Retainer) label = current.Kind.ToString();
             else if (Game.RetainerDirectory.Names(config).TryGetValue(current.RetainerId, out var known))
-                label = $"{known}  ·  not on this character";
+                // Said only when Gleam knows it. Before a summoning bell the game lists no retainers at all, and
+                // every retainer used to read as another character's.
+                label = Game.RetainerDirectory.IsSomeoneElses(config, current.RetainerId) ? $"{known}  ·  not on this character" : $"Retainer: {known}";
             else label = "A retainer Gleam has not met";
             // Only this dropdown names it, so only this dropdown gets a copy of the choices with it added.
             options = new List<(Destination D, string Label)>(options) { (current, label) };

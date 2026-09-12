@@ -64,9 +64,9 @@ public sealed partial class SettingsWindow
     private void DrawRetainers(Profile p, bool retainersOn)
     {
         // This character's retainers only: every retainer ever seen on the account used to be listed.
-        var known = Game.RetainerDirectory.Current();
+        var known = Game.RetainerDirectory.Current(config);
         using var indent = ImRaii.PushIndent(ImGui.GetFrameHeight() + 8 * Ui.Scale, true, true);
-        if (known.Count == 0) { Ui.Hint("Your retainers appear here once you are logged in."); return; }
+        if (known.Count == 0) { Ui.Hint("Your retainers appear here once you have used a summoning bell on this character."); return; }
         foreach (var (id, name) in known)
         {
             var included = !p.ExcludedRetainerIds.Contains(id);

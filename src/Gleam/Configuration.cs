@@ -246,6 +246,13 @@ public sealed class Configuration : IPluginConfiguration, IMigratableSettings
     public Dictionary<ulong, string> KnownRetainerNames { get; set; } = new();
 
     /// <summary>
+    /// Which character each retainer belongs to, by retainer id, learned whenever the game lists a character's
+    /// retainers. It does that only after a summoning bell has been used since logging in, so until then this is
+    /// how Gleam knows which of the names above are yours.
+    /// </summary>
+    public Dictionary<ulong, ulong> RetainerOwners { get; set; } = new();
+
+    /// <summary>
     /// A game version the player chose to go hands-free on before this build of Gleam was checked against it.
     /// Covers that one patch only: the next one is held back again.
     /// </summary>
@@ -253,9 +260,6 @@ public sealed class Configuration : IPluginConfiguration, IMigratableSettings
 
     /// <summary>The newest release whose "what's new" the player has put away. Null on a fresh install.</summary>
     public string? LastSeenVersion { get; set; }
-
-    /// <summary>The note that organizing is still a preview has been read.</summary>
-    public bool SeenOrganizerPreviewNote { get; set; }
 
     /// <summary>The stats page's period (0 a week, 1 a month, 2 a year, 3 all time) and whether it counts every character.</summary>
     public int StatsRange { get; set; } = 1;

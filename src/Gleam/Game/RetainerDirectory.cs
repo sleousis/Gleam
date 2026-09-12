@@ -1,3 +1,4 @@
+using Gleam.Core.Model;
 using Gleam.Services;
 
 namespace Gleam.Game;
@@ -11,6 +12,10 @@ namespace Gleam.Game;
 /// straight from the game here, and remembered in the configuration so a retainer that is not currently
 /// available -- another character's, or one you have dismissed -- still reads as a name rather than a number.
 ///
+/// The game only lists a character's retainers once a summoning bell has been used since logging in. Until then
+/// the list is empty, which made every retainer look like someone else's. So whose each retainer is gets
+/// remembered too, and stands in for the game's list until the game has one.
+///
 /// Two threads meet here: <see cref="Poll"/> runs on the game's own thread, because that is the only place
 /// game memory may be read, while a scan finishing on a background thread reports what it saw. Everything
 /// therefore goes through one lock, and readers get a copy rather than a live view.
@@ -20,6 +25,9 @@ public static class RetainerDirectory
     private static readonly object gate = new();
     private static readonly Dictionary<ulong, string> live = new();
     private static double lastLook = double.NegativeInfinity;
+
+    /// <summary>The character logged in, as last polled. 0 before login and after logout.</summary>
+    private static ulong character;
 
     /// <summary>Every retainer Gleam can name: what the game says now, over what it said before.</summary>
     public static IReadOnlyDictionary<ulong, string> Names(Configuration config)
@@ -32,10 +40,26 @@ public static class RetainerDirectory
         }
     }
 
-    /// <summary>The retainers of the character you are on, as the game lists them now. Empty until it has.</summary>
-    public static IReadOnlyDictionary<ulong, string> Current()
+    /// <summary>
+    /// The retainers of the character you are on: as the game lists them, or before it has, the ones Gleam saw
+    /// this character own. Empty only for a character whose retainers Gleam has never seen.
+    /// </summary>
+    public static IReadOnlyDictionary<ulong, string> Current(Configuration config)
     {
-        lock (gate) return new Dictionary<ulong, string>(live);
+        lock (gate) return RetainerRoster.Mine(live, config.KnownRetainerNames, config.RetainerOwners, character);
+    }
+
+    /// <summary>
+    /// Whether a retainer is known to belong to another character. Once the game lists this character's retainers,
+    /// anything not on it is someone else's or dismissed. Before then only a remembered owner decides, and a
+    /// retainer whose owner Gleam never saw is not claimed either way.
+    /// </summary>
+    public static bool IsSomeoneElses(Configuration config, ulong retainerId)
+    {
+        lock (gate)
+            return live.Count > 0
+                ? !live.ContainsKey(retainerId)
+                : RetainerRoster.BelongsToSomeoneElse(retainerId, config.RetainerOwners, character);
     }
 
     /// <summary>At logout, so the next character never inherits the last one's retainers.</summary>
@@ -44,6 +68,7 @@ public static class RetainerDirectory
         lock (gate)
         {
             live.Clear();
+            character = 0;
             lastLook = double.NegativeInfinity;
         }
     }
@@ -73,14 +98,16 @@ public static class RetainerDirectory
     }
 
     /// <summary>
-    /// Reads the game's own retainer list, at most once a second. Call it only from the game's thread. A
-    /// failure leaves the last answer in place: a name is never worth breaking a frame over.
+    /// Reads the game's own retainer list, at most once a second, and remembers that the retainers on it belong
+    /// to <paramref name="contentId"/>. Call it only from the game's thread. A failure leaves the last answer in
+    /// place: a name is never worth breaking a frame over.
     /// </summary>
-    public static bool Poll(Configuration config)
+    public static bool Poll(Configuration config, ulong contentId)
     {
         var now = Environment.TickCount64 / 1000.0;
         lock (gate)
         {
+            character = contentId;
             if (now - lastLook < 1.0) return false;
             lastLook = now;
         }
@@ -96,11 +123,21 @@ public static class RetainerDirectory
         }
         if (found.Count == 0) return false;
 
+        var owned = false;
         lock (gate)
         {
             live.Clear();
             foreach (var (id, name) in found) live[id] = name;
+            // The game's list is this character's, so the next login knows them before any bell.
+            if (contentId != 0)
+                foreach (var id in found.Keys)
+                {
+                    if (config.RetainerOwners.TryGetValue(id, out var had) && had == contentId) continue;
+                    config.RetainerOwners[id] = contentId;
+                    owned = true;
+                }
         }
-        return Learn(config, found);
+        var learned = Learn(config, found);
+        return learned || owned;
     }
 }
