@@ -64,10 +64,6 @@ public sealed class OrganizerCoordinator : IDisposable
     /// <summary>Where each relay's first leg left its stack, kept across runs so the second leg takes exactly that one.</summary>
     private readonly RelayLedger relays = new();
 
-    /// <summary>The same move, whichever solve produced it: every solve hands out fresh move ids.</summary>
-    private static bool SameMove(MoveOp a, MoveOp b) =>
-        a.Item.Slot == b.Item.Slot && a.Item.ItemId == b.Item.ItemId && a.Item.Quantity == b.Item.Quantity && a.To == b.To && a.Leg == b.Leg;
-
     /// <summary>Drops every move approved earlier for a storage that was closed. The next preview proposes afresh.</summary>
     public void ForgetPending()
     {
@@ -186,14 +182,8 @@ public sealed class OrganizerCoordinator : IDisposable
             Current = MoveSolver.Solve(desired, spaces, plan);
             builtFor = (plan.Id, layoutVersion);
 
-            // Waiting moves belong to the plan they came from. Once the layout, a rule or the storage has
-            // changed, only the ones this plan still wants are kept: the rest would carry out a layout the
-            // player has since rewritten, the next time some unrelated saddlebag or retainer opened.
-            foreach (var stale in PendingMoves.Where(p => !Current.Moves.Any(m => SameMove(m, p))).ToList())
-            {
-                PendingMoves.Remove(stale);
-                relays.Forget(stale.MoveId);
-            }
+            // Waiting moves belong to the plan they came from; only the ones this plan still wants are kept.
+            PendingMoveGate.DropStale(PendingMoves, Current.Moves, relays);
             Status = string.Empty;
         }
         catch (Exception ex)
@@ -251,9 +241,7 @@ public sealed class OrganizerCoordinator : IDisposable
             if (report.Done > 0 && !config.HasOrganizedOnce) { config.HasOrganizedOnce = true; _ = framework.RunOnFrameworkThread(() => config.Save(PluginServices.PluginInterface)); }
             PendingMoves.RemoveAll(ops.Contains);
             // Never twice, and never for whoever logs in next: matching is by item and quantity.
-            if (player.ContentId == runFor)
-                foreach (var waiting in report.Pending)
-                    if (!PendingMoves.Any(p => SameMove(p, waiting))) PendingMoves.Add(waiting);
+            if (player.ContentId == runFor) PendingMoveGate.AddWaiting(PendingMoves, report.Pending);
             Status = report.Summary();
 
             log.Information("Organize finished: {Summary}", report.Summary());
