@@ -32,6 +32,9 @@ public sealed class Plugin : IDalamudPlugin
     private const string Command = "/gleam";
     private const string ShortCommand = "/gl";
 
+    /// <summary>Whether Dalamud gave Gleam each command. It refuses one another plugin already holds.</summary>
+    private bool ownsCommand, ownsShortCommand;
+
     private readonly IDalamudPluginInterface pi;
     private readonly ICommandManager commands;
     private readonly IClientState clientState;
@@ -236,11 +239,8 @@ public sealed class Plugin : IDalamudPlugin
         clientState.Login += OnLogin;
         if (clientState.IsLoggedIn) { Greet(); WarnAboutOldCopy(); }
 
-        commands.AddHandler(Command, new CommandInfo(OnCommand)
-        {
-            HelpMessage = "Open Gleam. /gleam organize · stats · settings · history · merge · stop · selftest · report",
-        });
-        commands.AddHandler(ShortCommand, new CommandInfo(OnCommand) { HelpMessage = "Short for /gleam." });
+        ClaimCommands();
+        pi.ActivePluginsChanged += OnActivePluginsChanged;
 
         pi.UiBuilder.Draw += DrawUi;
         pi.UiBuilder.OpenMainUi += OpenMain;
@@ -368,6 +368,32 @@ public sealed class Plugin : IDalamudPlugin
         if (!pi.InstalledPlugins.Any(p => p.InternalName == LegacyNames.InternalName && p.IsLoaded)) return;
         // Both copies register /gleam and the older one usually wins it, so say where the command goes until then.
         chat.PrintError("An older Gleam from before its rename is still installed, and /gleam opens that one until it is gone. Open /xlplugins and remove the Gleam at version 0.9. Anything it saves before then comes across once it is removed.", "Gleam");
+    }
+
+    /// <summary>
+    /// Claims /gleam and /gl. Dalamud refuses a command another plugin already holds, which is what happens while
+    /// the copy from before the rename is still installed. Removing that copy used to leave neither command
+    /// working until Gleam was reloaded, so whatever was refused is claimed again whenever the plugin list changes.
+    /// </summary>
+    private void ClaimCommands()
+    {
+        if (!ownsCommand)
+            ownsCommand = commands.AddHandler(Command, new CommandInfo(OnCommand)
+            {
+                HelpMessage = "Open Gleam. /gleam organize · stats · settings · history · merge · stop · selftest · report",
+            });
+        if (!ownsShortCommand)
+            ownsShortCommand = commands.AddHandler(ShortCommand, new CommandInfo(OnCommand) { HelpMessage = "Short for /gleam." });
+        if (!ownsCommand || !ownsShortCommand)
+            log.Information("Another plugin holds {Commands}. Gleam takes it over once that plugin is unloaded",
+                string.Join(" and ", new[] { ownsCommand ? null : Command, ownsShortCommand ? null : ShortCommand }.Where(c => c is not null)));
+    }
+
+    private void OnActivePluginsChanged(IActivePluginsChangedEventArgs args)
+    {
+        if (ownsCommand && ownsShortCommand) return;
+        // The event can arrive off the game thread; commands are claimed on it, like everything else.
+        _ = framework.RunOnFrameworkThread(ClaimCommands);
     }
 
     private static CuratedData LoadCurated(IDalamudPluginInterface pi, IPluginLog log)
@@ -541,8 +567,10 @@ public sealed class Plugin : IDalamudPlugin
         clientState.Logout -= OnLogout;
         clientState.Login -= OnLogin;
         config.Saved -= ApplyProfileToServices;
-        commands.RemoveHandler(Command);
-        commands.RemoveHandler(ShortCommand);
+        pi.ActivePluginsChanged -= OnActivePluginsChanged;
+        // Only what Gleam holds: a command refused to it belongs to another plugin.
+        if (ownsCommand) commands.RemoveHandler(Command);
+        if (ownsShortCommand) commands.RemoveHandler(ShortCommand);
         windows.RemoveAllWindows();
         highlighter.Dispose();
         pause.Dispose();
