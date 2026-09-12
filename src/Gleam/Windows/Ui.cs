@@ -992,9 +992,14 @@ internal static class Ui
         private readonly float width;
         private readonly float pad;
         private readonly IDisposable id;
+        private readonly string hoverKey;
 
         public CardScope(string key)
         {
+            // Keyed on the card's own id within the window, so the same card eases its hover from frame to
+            // frame. It used to be keyed on the disposable pushed below, a new object every frame, which left
+            // a fresh entry behind for every card on every frame and never let the hover ease at all.
+            hoverKey = $"card:{ImGui.GetID(key)}";
             id = ImRaii.PushId(key);
             dl = ImGui.GetWindowDrawList();
             pad = 12f * Scale;
@@ -1019,8 +1024,7 @@ internal static class Ui
             var max = new Vector2(start.X + width, bottom);
             dl.ChannelsSetCurrent(0);
             // A card lifts a shade under the cursor: enough to say "this is one thing", not enough to distract.
-            var key = $"card:{id.GetHashCode()}:{start.Y:F0}";
-            var hv = Smooth(key, ImGui.IsMouseHoveringRect(start, max, false) ? 1f : 0f, 14f);
+            var hv = Smooth(hoverKey, ImGui.IsMouseHoveringRect(start, max, false) ? 1f : 0f, 14f);
             dl.AddRectFilled(start, max, ImGui.GetColorU32(new Vector4(1f, 1f, 1f, 0.035f + 0.022f * hv)), Rounding);
             dl.AddRect(start, max, ImGui.GetColorU32(Mix(InkLine, InkEdge, hv)), Rounding);
             dl.ChannelsMerge();
