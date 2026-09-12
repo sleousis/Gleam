@@ -499,8 +499,8 @@ public sealed class ItemDatabase
     public bool PromptIsAbout(string prompt, string englishFragment)
     {
         if (string.IsNullOrWhiteSpace(prompt) || string.IsNullOrWhiteSpace(englishFragment)) return false;
-        if (ClientIsEnglish) return prompt.Contains(englishFragment, StringComparison.OrdinalIgnoreCase);
         var flat = AddonDriver.Normalize(prompt);
+        if (ClientIsEnglish) return flat.Contains(AddonDriver.Normalize(englishFragment), StringComparison.Ordinal);
         var texts = promptTextsAbout.GetOrAdd(englishFragment, fragment =>
         {
             var found = new List<string>();

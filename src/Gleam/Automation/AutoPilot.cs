@@ -678,7 +678,7 @@ public sealed partial class AutoPilot : IDisposable
                     return;
                 }
                 // The text can lag the window by a frame; only a question that stays unrecognised is someone else's.
-                if (++unknown >= 5)
+                if (++unknown >= 10)
                     throw new AutoPilotException("the game asked a question Gleam does not answer while leaving the retainer. Answer it, then run again");
             }
             else if (await OnFramework(() => GameUi.IsVisible("RetainerList") && !GameUi.SelectStringReady()).ConfigureAwait(false)) return;
@@ -714,6 +714,7 @@ public sealed partial class AutoPilot : IDisposable
                 var state = await OnFramework(() =>
                     !condition[ConditionFlag.OccupiedSummoningBell] ? "done"
                     : GameUi.AnyVisible("RetainerSell", "RetainerSellList", "InventoryRetainer", "InventoryRetainerLarge") ? "inventory"
+                    : GameUi.IsVisible("SelectYesno") ? "yesno"
                     : GameUi.IsVisible("Talk") ? "talk"
                     : GameUi.SelectStringReady() && GameInventoryScanner.ActiveRetainer().Id != 0 ? "menu"
                     : GameInventoryScanner.ActiveRetainer().Id != 0 ? "between"
@@ -727,6 +728,10 @@ public sealed partial class AutoPilot : IDisposable
                             GameUi.Close("RetainerSell"); GameUi.Close("RetainerSellList");
                             GameUi.Close("InventoryRetainer"); GameUi.Close("InventoryRetainerLarge");
                         }).ConfigureAwait(false);
+                        break;
+                    case "yesno":
+                        // The leave question is answered; anything else is the player's, and ends the tidy-up here.
+                        if (!await AnswerBuybackPromptAsync().ConfigureAwait(false)) attempt = 8;
                         break;
                     case "talk":
                         // Never click through a cutscene: those use the same bubble.
