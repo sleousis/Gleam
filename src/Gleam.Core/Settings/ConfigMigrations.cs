@@ -11,7 +11,7 @@ namespace Gleam.Core.Settings;
 public static class ConfigMigrations
 {
     /// <summary>Bump when <see cref="Migrate"/> gains a step. New configs start here and skip the chain.</summary>
-    public const int CurrentVersion = 17;
+    public const int CurrentVersion = 18;
 
     /// <summary>Brings a config written by an older build up to current defaults where the old default was a mistake.</summary>
     /// <returns>Whether anything changed, so the caller knows to save.</returns>
@@ -163,6 +163,14 @@ public static class ConfigMigrations
             // Everyone here was on 0.9.5 or earlier, before the "what's new" card: show them what came since.
             if (s.SeenFirstRun && s.LastSeenVersion is null) s.LastSeenVersion = "0.9.5";
             s.Version = 17;
+            changed = true;
+        }
+        if (s.Version < 18)
+        {
+            // "Discard all" used to widen what counts as junk as well. It now only decides what happens to junk, and a
+            // profile still on the old values moves to the new ones rather than turning into an unnamed custom mix.
+            if (Presets.IsLegacyDiscardAll(s.Profiles.Account.Thresholds)) s.Profiles.Account.ApplyPreset(PresetName.DiscardAll);
+            s.Version = 18;
             changed = true;
         }
         changed |= EnsureDefaults(s);

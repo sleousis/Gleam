@@ -57,6 +57,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly AllaganToolsSource allagan;
     private readonly Automation.AutoPilot pilot;
     private readonly AutoRetainerIpc autoRetainer;
+    private readonly AutomationPause pause;
     private readonly VentureHook ventures;
     private readonly BagHighlighter highlighter;
     private readonly SelfTest selfTest;
@@ -138,6 +139,11 @@ public sealed class Plugin : IDalamudPlugin
         pilot = new Automation.AutoPilot(framework, clientState, condition, objectTable, data, chat, log, config, coordinator, nav, travel, db);
         autoRetainer = new AutoRetainerIpc(pi);
         ventures = new VentureHook(autoRetainer, coordinator, config, chat, log);
+        // Other automation stands back while Gleam works, and AutoRetainer keeps off Gleam's bell during a trip.
+        pause = new AutomationPause(pi, framework, log, autoRetainer,
+            working: () => coordinator.IsRunning || organizer.IsRunning || pilot.IsRunning,
+            onTrip: () => pilot.IsRunning);
+        pilot.OtherAutomationBusy = () => autoRetainer.MultiModeEnabled ? "AutoRetainer's multi mode is on. Turn it off, then run again" : null;
         settingsWindow.AutoRetainer = autoRetainer;
         report = new DebugReport(pi, config, coordinator, organizer, pilot, runLog, moveLog, selfTest);
         selfTest.IsBusy = () => coordinator.IsRunning || organizer.IsRunning || pilot.IsRunning;
@@ -525,6 +531,7 @@ public sealed class Plugin : IDalamudPlugin
         commands.RemoveHandler(ShortCommand);
         windows.RemoveAllWindows();
         highlighter.Dispose();
+        pause.Dispose();
         ventures.Dispose();
         autoRetainer.Dispose();
         pilot.Dispose();

@@ -100,7 +100,16 @@ public sealed unsafe class AddonDriver : IDisposable
     {
         lock (gate) { if (armed != a) return; }
         var addon = GetAddon(a.AddonName);
-        if (addon == null || !addon->IsVisible) return;
+        if (addon == null || !addon->IsVisible)
+        {
+            // Gone within a frame of opening: another plugin (YesAlready, TextAdvance) answered it first. Every action
+            // checks its own result afterwards (the item leaving, the listing appearing), so this counts as answered.
+            // It used to wait out the whole timeout and report an item that had been handed in as failed.
+            log.Debug("{Addon} was answered before Gleam could", a.AddonName);
+            lock (gate) { if (armed == a) armed = null; }
+            a.Completion.TrySetResult(true);
+            return;
+        }
 
         if (a.AddonName == "SelectYesno" && a.ExpectedNames is { Count: > 0 } names)
         {

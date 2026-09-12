@@ -14,6 +14,9 @@ public sealed class AutoRetainerIpc : IDisposable
     private readonly ICallGateSubscriber<string, string, object> onReady;
     private readonly ICallGateSubscriber<string, object> request;
     private readonly ICallGateSubscriber<object> finish;
+    private readonly ICallGateSubscriber<bool> getSuppressed;
+    private readonly ICallGateSubscriber<bool, object> setSuppressed;
+    private readonly ICallGateSubscriber<bool> getMultiMode;
 
     /// <summary>A retainer's ventures are done; call <see cref="RequestTurn"/> right away to be given a turn.</summary>
     public event Action<string>? RetainerStep;
@@ -28,6 +31,9 @@ public sealed class AutoRetainerIpc : IDisposable
         onReady = pi.GetIpcSubscriber<string, string, object>("AutoRetainer.OnRetainerReadyForPostprocess");
         request = pi.GetIpcSubscriber<string, object>("AutoRetainer.RequestPostprocess");
         finish = pi.GetIpcSubscriber<object>("AutoRetainer.FinishPostprocessRequest");
+        getSuppressed = pi.GetIpcSubscriber<bool>("AutoRetainer.GetSuppressed");
+        setSuppressed = pi.GetIpcSubscriber<bool, object>("AutoRetainer.SetSuppressed");
+        getMultiMode = pi.GetIpcSubscriber<bool>("AutoRetainer.GetMultiModeEnabled");
         onStep.Subscribe(OnStep);
         onReady.Subscribe(OnReady);
     }
@@ -44,6 +50,23 @@ public sealed class AutoRetainerIpc : IDisposable
     public void RequestTurn()
     {
         try { request.InvokeAction(pi.InternalName); } catch { /* not installed */ }
+    }
+
+    /// <summary>Whether AutoRetainer is told to keep its hands off right now; null when it cannot be asked.</summary>
+    public bool? Suppressed
+    {
+        get { try { return IsInstalled ? getSuppressed.InvokeFunc() : null; } catch { return null; } }
+    }
+
+    public void SetSuppressed(bool on)
+    {
+        try { if (IsInstalled) setSuppressed.InvokeAction(on); } catch { /* not installed or older */ }
+    }
+
+    /// <summary>Multi mode logs from character to character on its own; a trip must not start under it.</summary>
+    public bool MultiModeEnabled
+    {
+        get { try { return IsInstalled && getMultiMode.InvokeFunc(); } catch { return false; } }
     }
 
     public void FinishTurn()

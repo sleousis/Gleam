@@ -130,7 +130,8 @@ public class RuleTests
         Assert.Null(new ObsoleteGearRule().Evaluate(ScannedItem.Simple(Arm(0), 4, 1), Items[4], Context(gearsetItems: [4u]), t));
         Assert.Null(new ObsoleteGearRule().Evaluate(ScannedItem.Simple(Arm(0), 13, 1), Items[13], Context(), t));
 
-        var aggressive = Presets.For(PresetName.DiscardAll);
+        var aggressive = Presets.For(PresetName.Vendor);
+        aggressive.IncludeGearForUnplayedJobs = true;
         var p = new ObsoleteGearRule().Evaluate(ScannedItem.Simple(Arm(0), 13, 1), Items[13], Context(), aggressive);
         Assert.NotNull(p);
         Assert.Equal(Confidence.Medium, p!.Confidence);

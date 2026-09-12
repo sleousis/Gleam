@@ -280,6 +280,8 @@ public sealed class OrganizerCoordinator : IDisposable
     /// </summary>
     public async Task OnContainerOpenedAsync(ContainerKind kind)
     {
+        // "Put my things away" off means nothing moves, moves left waiting from an earlier preview included.
+        if (!config.UseOrganize) return;
         var ran = false;
         for (var round = 0; round < 20; round++)
         {
