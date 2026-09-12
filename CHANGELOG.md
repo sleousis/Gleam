@@ -3,6 +3,10 @@
 Each release's section is shown in Dalamud's plugin installer and on the GitHub release page. The release
 workflow refuses a tag whose version has no section here.
 
+## 0.11.2
+
+- The big numbers on the stats page are sharp now. They used to be the normal font stretched, which blurred them.
+
 ## 0.11.1
 
 - If you kept using the older copy (0.9.x) after installing the renamed Gleam, what it saved since then now comes across once you remove it: its newer settings (your previous ones are kept as a backup) and the history it recorded.
