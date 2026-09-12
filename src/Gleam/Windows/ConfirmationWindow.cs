@@ -1025,7 +1025,7 @@ public sealed class ConfirmationWindow : StyledWindow
             Ui.Gap(0.3f);
             if (!suggested)
             {
-                Ui.HintWrapped("Gleam did not pick these. Nothing here is ticked for you; tick any you want gone.");
+                Ui.HintWrapped("Gleam did not pick these. Nothing here is ticked for you. Tick any you want gone.");
                 Ui.Gap(0.2f);
             }
             using var fade = ImRaii.PushStyle(ImGuiStyleVar.Alpha, ImGui.GetStyle().Alpha * Ui.Appear(group.AppearKey, 0.18f));

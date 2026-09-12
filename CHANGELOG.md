@@ -3,6 +3,12 @@
 Each release's section is shown in Dalamud's plugin installer and on the GitHub release page. The release
 workflow refuses a tag whose version has no section here.
 
+## 0.12.1
+
+- Each retainer in the Clean list is titled with its name again. Before you had used a summoning bell since logging in, every retainer was shown only as Retainer.
+- On the Organize page, the line about items left alone is centred under the message when nothing needs to move, instead of sitting at the left edge.
+- The last semicolons are gone from on-screen text.
+
 ## 0.12.0
 
 A large update after a full review of Gleam. Safety first, then fixes, other languages, speed and a tidier settings page.
