@@ -51,7 +51,11 @@ public sealed class InventoryContextDriver
     public bool Matches(ContextEntry entry, string englishLabel)
     {
         var (ids, texts) = Label(englishLabel);
-        return (entry.LabelId != 0 && ids.Contains(entry.LabelId)) || texts.Contains(entry.Text);
+        if (entry.LabelId != 0 && ids.Contains(entry.LabelId)) return true;
+        // On other clients an entry with a text id is decided by it alone: in French "Sell" and "Put Up for Sale" are
+        // both "Vendre", so the text could pick the wrong one. English keeps the text as its fallback.
+        if (entry.LabelId != 0 && db.Language != Dalamud.Game.ClientLanguage.English) return false;
+        return texts.Contains(entry.Text);
     }
 
     /// <summary>How many sheet rows carry the label, for the self-test. Zero means Gleam cannot recognise it.</summary>

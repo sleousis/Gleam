@@ -427,11 +427,64 @@ public sealed class ItemDatabase
     });
 
     /// <summary>
+    /// The game text rows the menus Gleam uses are built from, by the English fragment the settings keep. A null sheet
+    /// means Addon. Guessing "the shortest Addon row that contains the fragment" picked the wrong row for most of
+    /// these (row 772 "Entrust Quantity", row 5 "Quit", a line about flowers), so every other client failed to find them.
+    /// </summary>
+    private static readonly Dictionary<string, (string? Sheet, uint Row)[]> KnownMenuRows = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["Entrust"] = [(null, 2378)],
+        ["Quit"] = [(null, 2383)],
+        ["your inventory"] = [(null, 2380)],
+        ["retainer's inventory"] = [(null, 2381)],
+        ["supply"] = [("custom/000/ComDefGrandCompanyOfficer_00073", 69)],
+    };
+
+    /// <summary>The rows of questions Gleam answers itself. The buyback question lives in two NPC sheets, not in Addon.</summary>
+    private static readonly Dictionary<string, (string? Sheet, uint Row)[]> KnownPromptRows = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["buyback"] = [("custom/005/CmnDefRetainerBell_00544", 52), ("custom/000/CmnDefRetainerCall_00010", 215)],
+    };
+
+    private readonly ConcurrentDictionary<string, IReadOnlyList<string[]>> rowPieces = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>The words of each known row, in the client's language.</summary>
+    private IReadOnlyList<string[]> PiecesFor(Dictionary<string, (string? Sheet, uint Row)[]> table, string key) =>
+        rowPieces.GetOrAdd((table == KnownPromptRows ? "prompt:" : "menu:") + key, _ =>
+        {
+            var list = new List<string[]>();
+            if (!table.TryGetValue(key, out var rows)) return list;
+            foreach (var (sheet, row) in rows)
+                if (RowText(sheet, row) is { Length: > 0 } text && Core.Execution.MenuText.Pieces(text) is { Length: > 0 } pieces)
+                    list.Add(pieces);
+            return list;
+        });
+
+    /// <summary>Column 1 of a row, in the client's language. Addon rows by their typed sheet, NPC text sheets raw.</summary>
+    private string? RowText(string? sheet, uint row)
+    {
+        try
+        {
+            if (sheet is null) return data.GetExcelSheet<Addon>()!.TryGetRow(row, out var a) ? a.Text.ExtractText() : null;
+            var raw = data.GetExcelSheet<RawRow>(name: sheet);
+            return raw.TryGetRow(row, out var r) ? r.ReadStringColumn(1).ExtractText() : null;
+        }
+        catch (Exception ex)
+        {
+            log.Warning(ex, "Could not read row {Row} of {Sheet}", row, sheet ?? "Addon");
+            return null;
+        }
+    }
+
+    /// <summary>
     /// A menu entry, matched loosely: the shortest English Addon text containing the fragment is taken
     /// as the entry, and its client-language text is returned for matching against the live menu.
+    /// Entries with a known row show that row's text instead.
     /// </summary>
     public string LocalizeMenuText(string englishFragment) => Localize("menu", englishFragment, () =>
     {
+        if (KnownMenuRows.TryGetValue(englishFragment, out var known) && RowText(known[0].Sheet, known[0].Row) is { Length: > 0 } rowText)
+            return rowText;
         var en = data.GetExcelSheet<Addon>(ClientLanguage.English)!;
         var local = data.GetExcelSheet<Addon>()!;
         uint? best = null; var bestLen = int.MaxValue;
@@ -524,7 +577,11 @@ public sealed class ItemDatabase
     public Func<string, bool> MenuMatcher(string englishFragment)
     {
         if (string.IsNullOrWhiteSpace(englishFragment)) return _ => false;
-        if (ClientIsEnglish) return entry => entry.Contains(englishFragment, StringComparison.OrdinalIgnoreCase);
+        var pieces = PiecesFor(KnownMenuRows, englishFragment);
+        if (ClientIsEnglish)
+            return entry => entry.Contains(englishFragment, StringComparison.OrdinalIgnoreCase) || pieces.Any(p => Core.Execution.MenuText.HasPieces(entry, p));
+        // A known row decides on its own: the loose guesses below matched the wrong entry for these on other clients.
+        if (pieces.Count > 0) return entry => pieces.Any(p => Core.Execution.MenuText.HasPieces(entry, p));
         var local = LocalizeMenuText(englishFragment);
         return entry => entry.Contains(local, StringComparison.OrdinalIgnoreCase)
                         || EnglishFor(entry).Any(en => en.Contains(englishFragment, StringComparison.OrdinalIgnoreCase));
@@ -532,9 +589,55 @@ public sealed class ItemDatabase
 
     /// <summary>Whether a menu fragment has a translation on this client. Always true in English.</summary>
     public bool CanTranslateMenuText(string englishFragment) =>
-        ClientIsEnglish || !string.Equals(LocalizeMenuText(englishFragment), englishFragment, StringComparison.OrdinalIgnoreCase);
+        ClientIsEnglish || PiecesFor(KnownMenuRows, englishFragment).Count > 0
+        || !string.Equals(LocalizeMenuText(englishFragment), englishFragment, StringComparison.OrdinalIgnoreCase);
+
+    private readonly ConcurrentDictionary<string, IReadOnlySet<uint>> objectIds = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Every placed-object id whose English name is this ("Summoning Bell"). Objects are found by id, in any language:
+    /// by name, a Japanese client picked an unused bell row and never found the bell at all.
+    /// </summary>
+    public IReadOnlySet<uint> ObjectIdsForEnglishName(string english) => objectIds.GetOrAdd(english, name =>
+    {
+        var set = new HashSet<uint>();
+        try
+        {
+            foreach (var row in data.GetExcelSheet<EObjName>(ClientLanguage.English)!)
+                if (string.Equals(row.Singular.ExtractText(), name, StringComparison.OrdinalIgnoreCase)) set.Add(row.RowId);
+        }
+        catch (Exception ex)
+        {
+            log.Warning(ex, "Could not find the objects named {Name}", name);
+        }
+        return set;
+    });
+
+    /// <summary>The names of an NPC's own gil shops in the client's language: what its menu offers to open the shop.</summary>
+    public IReadOnlyList<string> GilShopNames(uint enpcBaseId)
+    {
+        var names = new List<string>();
+        try
+        {
+            if (!data.GetExcelSheet<ENpcBase>()!.TryGetRow(enpcBaseId, out var npc)) return names;
+            var shops = data.GetExcelSheet<GilShop>()!;
+            foreach (var d in npc.ENpcData)
+                if (d.RowId is >= 0x40000 and < 0x50000 && shops.TryGetRow(d.RowId, out var shop) && shop.Name.ExtractText() is { Length: > 0 } n)
+                    names.Add(n);
+        }
+        catch (Exception ex)
+        {
+            log.Warning(ex, "Could not read the shops of NPC {Npc}", enpcBaseId);
+        }
+        return names;
+    }
 
     private static readonly System.Text.RegularExpressions.Regex GrammarMarks = new(@"\[[^\]]{1,4}\]", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    // German names mark an adjective whose ending follows the sentence with [a], and some add a plural ending in
+    // brackets. Stripped outright, "fünfblättrig[a] Ahornzweig" never matched the "fünfblättrigen" in a prompt.
+    private static readonly System.Text.RegularExpressions.Regex AdjectiveMark = new(@"\[a\]", System.Text.RegularExpressions.RegexOptions.Compiled);
+    private static readonly System.Text.RegularExpressions.Regex BracketedEnding = new(@"(?<=\p{L})\(\p{Ll}{1,3}\)", System.Text.RegularExpressions.RegexOptions.Compiled);
 
     /// <summary>
     /// The names a confirmation may use for an item, in the client's language: its name, and the singular
@@ -549,7 +652,8 @@ public sealed class ItemDatabase
             if (!items.TryGetRow(itemId, out var row)) return names;
             void Add(string s)
             {
-                s = GrammarMarks.Replace(s, string.Empty).Trim();
+                s = AdjectiveMark.Replace(s, Core.Execution.PromptMatch.InflectedEnding.ToString());
+                s = BracketedEnding.Replace(GrammarMarks.Replace(s, string.Empty), string.Empty).Trim();
                 if (s.Length > 0 && !names.Contains(s, StringComparer.OrdinalIgnoreCase)) names.Add(s);
             }
             Add(row.Name.ExtractText());
@@ -573,6 +677,9 @@ public sealed class ItemDatabase
     public bool PromptIsAbout(string prompt, string englishFragment)
     {
         if (string.IsNullOrWhiteSpace(prompt) || string.IsNullOrWhiteSpace(englishFragment)) return false;
+        // The question's own rows first, in the client's language. The French buyback question shares no word with
+        // any Addon text about buyback, so a French trip stopped at the first retainer that had sold something.
+        if (PiecesFor(KnownPromptRows, englishFragment).Any(p => Core.Execution.MenuText.HasPieces(prompt, p))) return true;
         var flat = AddonDriver.Normalize(prompt);
         if (ClientIsEnglish) return flat.Contains(AddonDriver.Normalize(englishFragment), StringComparison.Ordinal);
         var texts = promptTextsAbout.GetOrAdd(englishFragment, fragment =>
