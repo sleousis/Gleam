@@ -98,10 +98,37 @@ public static class Charts
     public static IFontHandle CreateBigFont(IFontAtlas atlas) =>
         atlas.NewDelegateFontHandle(e => e.OnPreBuild(tk => tk.AddDalamudDefaultFont(Dalamud.Interface.UiBuilder.DefaultFontSizePx * BigFontScale)));
 
+    private static ILockedImFont? heldBig;
+    private static readonly BigFontHold Held = new();
+
+    /// <summary>
+    /// Takes the big font for the rest of a page's draw, so each headline number on it does not lock and
+    /// release the font again. Dispose at the end of the page.
+    /// </summary>
+    public static IDisposable HoldBigFont()
+    {
+        if (heldBig is null && BigFont is { Available: true } handle) heldBig = handle.Lock();
+        return Held;
+    }
+
+    private sealed class BigFontHold : IDisposable
+    {
+        public void Dispose()
+        {
+            heldBig?.Dispose();
+            heldBig = null;
+        }
+    }
+
     /// <summary>Headline text, <paramref name="scale"/> times the body font's size, from the big font when it is ready.</summary>
     public static void BigText(Vector2 pos, Vector4 color, string text, float scale)
     {
         var size = ImGui.GetFontSize() * Math.Min(scale, BigFontScale);
+        if (heldBig is { } held)
+        {
+            ImGui.GetWindowDrawList().AddText(held.ImFont, size, pos, Col(color), text);
+            return;
+        }
         if (BigFont is { Available: true } handle)
         {
             using var locked = handle.Lock();
@@ -140,10 +167,11 @@ public static class Charts
         if (values.Count < 3) return;
         var s = Get(id);
         var dl = ImGui.GetWindowDrawList();
-        var top = Math.Max(0.001f, values.Max());
+        var top = 0.001f;
+        for (var i = 0; i < values.Count; i++) top = Math.Max(top, values[i]);
         var n = values.Count;
         var step = scroll > 0 || !ease ? size.X / (n - 2) : size.X / (n - 1);
-        var pts = new Vector2[n];
+        Span<Vector2> pts = n <= 256 ? stackalloc Vector2[n] : new Vector2[n];
         for (var i = 0; i < n; i++)
         {
             var v = (ease ? Ease(s, i, values[i]) : values[i]) / top;
@@ -316,11 +344,14 @@ public static class Charts
         var limit = plotMin.X + w * Reveal(s, 0.9f);
         foreach (var line in series)
         {
-            var pts = line.Points.Select(P).ToList();
+            // Placed as they are drawn, rather than into a fresh list of every point on every frame.
+            var pts = line.Points;
+            if (pts.Count == 0) continue;
+            var next = P(pts[0]);
             for (var i = 1; i < pts.Count; i++)
             {
-                var a = pts[i - 1];
-                var b = pts[i];
+                var a = next;
+                var b = next = P(pts[i]);
                 if (a.X > limit) break;
                 if (b.X > limit) b = Vector2.Lerp(a, b, (limit - a.X) / Math.Max(0.001f, b.X - a.X));
                 if (line.Fill) dl.AddQuadFilled(new Vector2(a.X, plotMax.Y), a, b, new Vector2(b.X, plotMax.Y), Col(Fade(line.Color, 0.14f)));
@@ -538,22 +569,38 @@ public static class Charts
     {
         var s = Get(id);
         var dl = ImGui.GetWindowDrawList();
-        var peak = Math.Max(1, values.Count == 0 ? 1 : values.Max());
+        var peak = 1;
+        for (var i = 0; i < values.Count; i++) peak = Math.Max(peak, values[i]);
+        var pitch = cell + gap;
+
+        // The day under the pointer, worked out once from where the pointer is rather than by asking each of
+        // three hundred and sixty-five squares. The gaps between squares belong to no day, as before.
         var hover = -1;
+        if (values.Count > 0 && ImGui.IsMouseHoveringRect(pos, pos + HeatmapSize(values.Count, cell, gap), true))
+        {
+            var local = ImGui.GetIO().MousePos - pos;
+            var col = (int)MathF.Floor(local.X / pitch);
+            var row = (int)MathF.Floor(local.Y / pitch);
+            var day = col * 7 + row;
+            if (col >= 0 && row is >= 0 and < 7 && day < values.Count && local.X - col * pitch < cell && local.Y - row * pitch < cell) hover = day;
+        }
+
+        // Five shades, each made into a colour once. Only while the year is still fading in does a square
+        // need its own.
+        var since = Since(s);
+        var settled = Ui.Reduced || since - (values.Count - 1) / 7 * 0.008f >= 0.25f;
+        Span<uint> shades = stackalloc uint[5];
+        for (var k = 0; k < shades.Length; k++) shades[k] = Col(Shade(k));
         for (var i = 0; i < values.Count; i++)
         {
-            var min = pos + new Vector2(i / 7 * (cell + gap), i % 7 * (cell + gap));
+            var min = pos + new Vector2(i / 7 * pitch, i % 7 * pitch);
             var max = min + new Vector2(cell);
-            var appear = Ui.Reduced ? 1f : Math.Clamp((Since(s) - i / 7 * 0.008f) / 0.25f, 0f, 1f);
             var v = values[i];
             var share = (float)v / peak;
-            var color = v == 0 ? new Vector4(1, 1, 1, 0.05f)
-                : share < 0.25f ? Fade(Ui.Accent, 0.4f)
-                : share < 0.5f ? Fade(Ui.Accent, 0.68f)
-                : share < 0.75f ? Ui.Mix(Ui.Accent, Ui.AccentSoft, 0.5f)
-                : Ui.AccentSoft;
-            dl.AddRectFilled(min, max, Col(Fade(color, appear)), 2.5f * Ui.Scale);
-            if (ImGui.IsMouseHoveringRect(min, max, true)) hover = i;
+            var shade = v == 0 ? 0 : share < 0.25f ? 1 : share < 0.5f ? 2 : share < 0.75f ? 3 : 4;
+            var color = settled ? shades[shade] : Col(Fade(Shade(shade), Math.Clamp((since - i / 7 * 0.008f) / 0.25f, 0f, 1f)));
+            // Square corners: at five to thirteen pixels a rounded corner is barely seen and costs twice the vertices.
+            dl.AddRectFilled(min, max, color, 0f);
             if (i == values.Count - 1)
             {
                 var a = pulseLast && !Ui.Reduced ? 0.35f + 0.65f * (0.5f + 0.5f * MathF.Sin((float)ImGui.GetTime() * 4f)) : 0.85f;
@@ -562,4 +609,14 @@ public static class Charts
         }
         return hover;
     }
+
+    /// <summary>The heatmap's five shades, from an empty day to the busiest.</summary>
+    private static Vector4 Shade(int shade) => shade switch
+    {
+        0 => new Vector4(1, 1, 1, 0.05f),
+        1 => Fade(Ui.Accent, 0.4f),
+        2 => Fade(Ui.Accent, 0.68f),
+        3 => Ui.Mix(Ui.Accent, Ui.AccentSoft, 0.5f),
+        _ => Ui.AccentSoft,
+    };
 }
