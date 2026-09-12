@@ -80,10 +80,28 @@ public sealed partial class SettingsWindow
     /// <summary>The profile the controls edit.</summary>
     private Profile Editing => config.Profiles.Account;
 
+    /// <summary>The version never changes while the plugin is loaded, so it is read once rather than every frame.</summary>
+    private static readonly string Byline = $"Gleam v{typeof(SettingsWindow).Assembly.GetName().Version?.ToString(3) ?? "dev"} · by Raiden Shinryu";
+
+    // Whether the plugins Gleam leans on are there, asked at most once a second. Each ask walks Dalamud's whole
+    // list of installed plugins, and this page used to ask several times a frame.
+    private (bool Nav, bool Travel, bool AutoRetainer, bool Allagan) installed;
+    private double installedAt = double.MinValue;
+
+    private (bool Nav, bool Travel, bool AutoRetainer, bool Allagan) Installed
+    {
+        get
+        {
+            var now = ImGui.GetTime();
+            if (now - installedAt < 1.0) return installed;
+            installedAt = now;
+            return installed = (Nav is { IsInstalled: true }, Travel is { IsInstalled: true }, AutoRetainer is { IsInstalled: true }, allagan.IsInstalled);
+        }
+    }
+
     public void Draw()
     {
-        var version = typeof(SettingsWindow).Assembly.GetName().Version?.ToString(3) ?? "dev";
-        Ui.Header(icons.LogoSmall, "Settings", $"Gleam v{version} · by Raiden Shinryu");
+        Ui.Header(icons.LogoSmall, "Settings", Byline);
         if (Back is not null) { if (Ui.BackLink()) Back(); Ui.Gap(0.2f); }
         using (var body = ImRaii.Child("##body", new Vector2(0, 0), false, ImGuiWindowFlags.None))
         {
@@ -180,7 +198,7 @@ public sealed partial class SettingsWindow
             var after = a.CleanAfterVentures;
             if (Ui.Check("Throw away junk a finished venture leaves in my bags", ref after)) { a.CleanAfterVentures = after; dirty = true; }
             ImGui.SameLine();
-            if (AutoRetainer is null || !AutoRetainer.IsInstalled) Ui.Pill("not installed", Ui.Warn, null, "req:AutoRetainer"); else Ui.Pill("AutoRetainer", Ui.Ok, Dalamud.Interface.FontAwesomeIcon.Check, "req:AutoRetainer");
+            if (!Installed.AutoRetainer) Ui.Pill("not installed", Ui.Warn, null, "req:AutoRetainer"); else Ui.Pill("AutoRetainer", Ui.Ok, Dalamud.Interface.FontAwesomeIcon.Check, "req:AutoRetainer");
         }
 
         if (!config.AdvancedMode && HiddenChanges() is { Count: > 0 } hidden)
@@ -264,8 +282,7 @@ public sealed partial class SettingsWindow
     /// </summary>
     private void DrawRequiredPlugins()
     {
-        var haveNav = Nav is { IsInstalled: true };
-        var haveTravel = Travel is { IsInstalled: true };
+        var (haveNav, haveTravel, _, _) = Installed;
 
         using (Ui.Card("auto"))
         {
