@@ -92,7 +92,7 @@ public sealed partial class AutoPilot
         }
         finally
         {
-            await RecoverUiAsync(CancellationToken.None).ConfigureAwait(false);
+            await LeaveGameTidyAsync().ConfigureAwait(false);
             EndTrip(RunTrigger.HandsFreeOrganize, PlannedTotal, movesDone, movesSkipped, movesFailed, movesPending, stopped, tally.LegFailures.Concat(tally.Reasons));
             IsRunning = false;
             _ = Organizer.PreviewAsync();

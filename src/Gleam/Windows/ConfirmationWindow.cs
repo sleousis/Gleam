@@ -1259,7 +1259,7 @@ public sealed class ConfirmationWindow : StyledWindow
         var armed = CapArmedFor(cap);
         var verb = cap.Exceeded && armed
             ? $"Yes, clean all {items}"
-            : handsFree && needsTravel && !Simple ? $"Clean {items} everywhere" : $"Clean {items}";
+            : handsFree && needsTravel ? $"Clean {items} everywhere" : $"Clean {items}";
         if (cap.Exceeded && armed)
         {
             Ui.Gap(0.2f);
@@ -1269,9 +1269,9 @@ public sealed class ConfirmationWindow : StyledWindow
         // The button narrows before the window does, so a small window never pushes it off the edge.
         var buttonWidth = Math.Clamp((ImGui.GetWindowWidth() - style.WindowPadding.X * 2) * 0.42f, 150 * Ui.Scale, 240 * Ui.Scale);
         var sortW = Simple ? 0f : ImGui.CalcTextSize(SortAfterLabel, false, 0).X + ImGui.GetFrameHeight() + style.ItemInnerSpacing.X + style.ItemSpacing.X * 2;
-        // "Clean here only" is the way out whenever hands-free would travel: always in advanced mode, and in
-        // simple mode whenever hands-free cannot start, so nobody is left with only a greyed-out button.
-        var offerHere = handsFree && needsTravel && (!Simple || blocked is not null);
+        // "Clean here only" is the way out whenever hands-free would travel, in simple mode too. Simple mode
+        // used to show a plain "Clean N items" that teleported to a merchant or the Grand Company unannounced.
+        var offerHere = handsFree && needsTravel;
         var hereW = offerHere ? ImGui.CalcTextSize("Clean here only", false, 0).X + style.FramePadding.X * 2 + style.ItemSpacing.X : 0;
         Ui.RightAlignOrWrap(sortW + hereW + buttonWidth, 160 * Ui.Scale);
         if (!Simple)
@@ -1309,7 +1309,7 @@ public sealed class ConfirmationWindow : StyledWindow
 
     public const string SortAfterLabel = "Sort bags afterwards";
     public const string SortAfterHint = "After a clean, runs the game's own sort on every container it touched.";
-    public const string HandsFreeCleanHint = "Hands-free: opens the saddlebag, travels to an inn, visits each retainer and the dresser, and cleans as it goes.";
+    public const string HandsFreeCleanHint = "Hands-free: opens the saddlebag, travels to an inn, visits each retainer and the dresser, and teleports to a merchant or your Grand Company when a sale or turn-in needs one. It cleans as it goes.";
     private const string StopHint = "Finishes the current item, then stops.";
 
     // ---------- first run: three screens, once ----------
@@ -1430,8 +1430,8 @@ public sealed class ConfirmationWindow : StyledWindow
     }
 
     /// <summary>
-    /// The one way a run starts, whether from the button, "Clean here only", Enter or the gamepad. Enter and
-    /// the gamepad never pass through the button, so every reason the button might be disabled is checked
+    /// The one way a run starts, whether from the button, "Clean here only" or Ctrl+Enter. Ctrl+Enter never
+    /// passes through the button, so every reason the button might be disabled is checked
     /// again here; a run that the screen says cannot start must not start from the keyboard either.
     /// </summary>
     private void Accept(RunPlan plan, bool hereOnly = false)
@@ -1524,17 +1524,24 @@ public sealed class ConfirmationWindow : StyledWindow
         var count = visibleRows.Count;
         if (count == 0) { cursor = -1; return; }
 
+        var io = ImGui.GetIO();
         var down = ImGui.IsKeyPressed(ImGuiKey.DownArrow, true);
         var up = ImGui.IsKeyPressed(ImGuiKey.UpArrow, true);
         var toggle = ImGui.IsKeyPressed(ImGuiKey.Space, false);
-        var accept = ImGui.IsKeyPressed(ImGuiKey.Enter, false);
+        // Ctrl as well: a bare Enter, pressed to chat after clicking a row, used to start the run.
+        var accept = io.KeyCtrl && ImGui.IsKeyPressed(ImGuiKey.Enter, false);
         var cancel = ImGui.IsKeyPressed(ImGuiKey.Escape, false);
 
-        down |= gamepad.Pressed(GamepadButtons.DpadDown) > 0;
-        up |= gamepad.Pressed(GamepadButtons.DpadUp) > 0;
-        toggle |= gamepad.Pressed(GamepadButtons.South) > 0;
-        accept |= gamepad.Pressed(GamepadButtons.West) > 0;
-        cancel |= gamepad.Pressed(GamepadButtons.East) > 0;
+        // The gamepad is read from the game, which acts on the same press. Listen only while Dalamud's own gamepad
+        // navigation has the window: a button meant for the game used to tick rows, close the window, and with
+        // X/Square start a run. No button starts a run now; that is the Clean button's job.
+        if ((io.ConfigFlags & ImGuiConfigFlags.NavEnableGamepad) != 0 && io.NavActive)
+        {
+            down |= gamepad.Pressed(GamepadButtons.DpadDown) > 0;
+            up |= gamepad.Pressed(GamepadButtons.DpadUp) > 0;
+            toggle |= gamepad.Pressed(GamepadButtons.South) > 0;
+            cancel |= gamepad.Pressed(GamepadButtons.East) > 0;
+        }
 
         if (down) cursor = Math.Min(count - 1, cursor + 1);
         if (up) cursor = Math.Max(0, cursor - 1);

@@ -50,17 +50,17 @@ public sealed class InventorySnapshotService
     /// <summary>Scans everything the profile enables, or only <paramref name="focus"/> live, without cached containers.</summary>
     public async Task<InventorySnapshot> CaptureAsync(Profile profile, ContainerKind? focus = null)
     {
-        var (live, ctx, retainerNames) = await framework.RunOnFrameworkThread(() =>
+        var (live, ctx, retainerNames, saddlebagLoaded) = await framework.RunOnFrameworkThread(() =>
         {
             var items = focus is null
                 ? scanner.ScanAll(profile.IsContainerEnabled(ContainerKind.Saddlebag), profile.IsContainerEnabled(ContainerKind.Retainer), profile.IsContainerEnabled(ContainerKind.GlamourDresser))
                 : scanner.ScanKind(focus.Value);
-            return (items, contextBuilder.Build(), GameInventoryScanner.KnownRetainers());
+            return (items, contextBuilder.Build(), GameInventoryScanner.KnownRetainers(), GameInventoryScanner.IsSaddlebagLoaded());
         }).ConfigureAwait(false);
 
         var liveContainers = new HashSet<(ContainerKind, ulong)>(live.Select(i => (i.Slot.Kind, i.Slot.OwnerId)));
         var all = new List<ScannedItem>(live);
-        if (focus is null) all.AddRange(OfflineItems(live, ctx.CharacterId));
+        if (focus is null) all.AddRange(OfflineItems(live, ctx.CharacterId, saddlebagLoaded));
 
         var enriched = await EnrichAsync(all, ctx).ConfigureAwait(false);
         return new InventorySnapshot(all, enriched, retainerNames, liveContainers);
@@ -71,7 +71,7 @@ public sealed class InventorySnapshotService
     /// closed, and every retainer's pages. Retainers are separate entries in the cache, recognised by
     /// their items living in retainer pages that name them as owner.
     /// </summary>
-    private IEnumerable<ScannedItem> OfflineItems(IReadOnlyList<ScannedItem> live, ulong characterId)
+    private IEnumerable<ScannedItem> OfflineItems(IReadOnlyList<ScannedItem> live, ulong characterId, bool saddlebagLoaded)
     {
         if (!offline.IsAvailable) yield break;
         var liveKinds = new HashSet<(ContainerKind, ulong)>(live.Select(i => (i.Slot.Kind, i.Slot.OwnerId)));
@@ -84,7 +84,7 @@ public sealed class InventorySnapshotService
                 if (item.Slot.Kind.IsAlwaysLoaded()) continue;
                 if (item.Slot.Kind == ContainerKind.Retainer && item.Slot.OwnerId == 0) continue;
                 if (liveKinds.Contains((item.Slot.Kind, item.Slot.OwnerId))) continue;
-                if (item.Slot.Kind == ContainerKind.Saddlebag && GameInventoryScanner.IsSaddlebagLoaded()) continue;
+                if (item.Slot.Kind == ContainerKind.Saddlebag && saddlebagLoaded) continue;
                 yield return item;
             }
         }

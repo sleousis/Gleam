@@ -30,21 +30,27 @@ public sealed class MoveActions : IMoveActions
 
     private TimeSpan Timeout => TimeSpan.FromMilliseconds(config.Callbacks.ActionTimeoutMs);
 
+    /// <summary>Reads game memory on the framework thread; the executor calls in from the thread pool.</summary>
+    private T OnGame<T>(Func<T> read) =>
+        framework.IsInFrameworkUpdateThread ? read() : framework.RunOnFrameworkThread(read).GetAwaiter().GetResult();
+
+    private ScannedItem? Read(SlotRef slot) => OnGame(() => scanner.ReadSlot(slot));
+
     // Data can stay loaded after a window closes; the game only accepts moves while the window itself is up.
-    public bool IsOpen(StorageId storage) => storage.Kind switch
+    public bool IsOpen(StorageId storage) => OnGame(() => storage.Kind switch
     {
         ContainerKind.Inventory or ContainerKind.Armoury => true,
         ContainerKind.Saddlebag => GameInventoryScanner.IsSaddlebagLoaded() && AddonDriver.IsAddonVisible("InventoryBuddy"),
         ContainerKind.Retainer => GameInventoryScanner.IsRetainerOpen(storage.OwnerId)
                                   && (AddonDriver.IsAddonVisible("InventoryRetainer") || AddonDriver.IsAddonVisible("InventoryRetainerLarge")),
         _ => false,
-    };
+    });
 
-    public ScannedItem? ReadSlot(SlotRef slot) => scanner.ReadSlot(slot);
+    public ScannedItem? ReadSlot(SlotRef slot) => Read(slot);
 
     public SlotRef? FindSlot(StorageId storage, uint itemId, int quantity, bool isHq, IReadOnlySet<SlotRef> exclude, SlotRef? preferred)
     {
-        var hits = scanner.ScanKind(storage.Kind)
+        var hits = OnGame(() => scanner.ScanKind(storage.Kind))
             .Where(i => (storage.Kind != ContainerKind.Retainer || i.Slot.OwnerId == storage.OwnerId)
                         && i.ItemId == itemId && i.Quantity == quantity && i.IsHq == isHq && !exclude.Contains(i.Slot))
             .Select(i => i.Slot)
@@ -54,16 +60,16 @@ public sealed class MoveActions : IMoveActions
     }
 
     public SlotRef? FindLanding(StorageId storage, uint itemId, bool isHq, int quantity, uint preferredPage, IReadOnlySet<SlotRef> reserved, bool emptyOnly = false) =>
-        Native.FindLanding(storage, itemId, isHq, quantity, stackSizeOf(itemId), preferredPage, reserved, emptyOnly);
+        OnGame(() => Native.FindLanding(storage, itemId, isHq, quantity, stackSizeOf(itemId), preferredPage, reserved, emptyOnly));
 
-    public IReadOnlyDictionary<(StorageId Storage, uint Page), int> LiveSizes() => GameInventoryScanner.LiveSizes();
+    public IReadOnlyDictionary<(StorageId Storage, uint Page), int> LiveSizes() => OnGame(GameInventoryScanner.LiveSizes);
 
     public async Task<MoveOutcome> MoveAsync(SlotRef from, SlotRef to, uint itemId, int quantity, CancellationToken ct)
     {
-        var before = scanner.ReadSlot(from);
+        var before = Read(from);
         if (before is null || before.ItemId != itemId || before.Quantity != quantity)
             return new MoveOutcome(MoveStatus.SourceChanged, "the stack is no longer where it was");
-        var destBefore = scanner.ReadSlot(to);
+        var destBefore = Read(to);
         var expectAtDest = destBefore is null ? quantity : destBefore.ItemId == itemId ? destBefore.Quantity + quantity : -1;
         if (expectAtDest < 0) return new MoveOutcome(MoveStatus.Refused, "the destination slot holds a different item");
         // A merge must take the whole stack; the game would otherwise leave a remainder behind or swap the two.
@@ -81,8 +87,8 @@ public sealed class MoveActions : IMoveActions
         while (DateTime.UtcNow < deadline)
         {
             await Task.Delay(100, CancellationToken.None).ConfigureAwait(false);
-            var src = scanner.ReadSlot(from);
-            var dst = scanner.ReadSlot(to);
+            var src = Read(from);
+            var dst = Read(to);
             var sourceGone = src is null || src.ItemId != itemId || src.Quantity < quantity;
             var destHas = dst is not null && dst.ItemId == itemId && dst.Quantity >= Math.Min(expectAtDest, quantity);
             if (sourceGone && destHas) return MoveOutcome.Ok;

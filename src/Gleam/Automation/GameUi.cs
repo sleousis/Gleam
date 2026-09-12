@@ -20,6 +20,9 @@ public static unsafe class GameUi
 
     public static bool AnyVisible(params string[] addons) => addons.Any(IsVisible);
 
+    /// <summary>The text of the yes/no question on screen, or null.</summary>
+    public static string? YesNoPrompt() => AddonDriver.YesNoPromptText();
+
     public static bool Close(string addon)
     {
         var a = AddonDriver.GetAddon(addon);

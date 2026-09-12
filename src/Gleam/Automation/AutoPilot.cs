@@ -107,9 +107,8 @@ public sealed partial class AutoPilot : IDisposable
 
     public void Dispose()
     {
+        // Cancel only. The run may still be unwinding, and its finally reads the token.
         if (IsRunning) Stop();
-        cts?.Dispose();
-        cts = null;
     }
 
     /// <summary>Runs the whole accepted plan, travelling as needed. Returns when done, stopped, or failed.</summary>
@@ -205,7 +204,7 @@ public sealed partial class AutoPilot : IDisposable
         }
         finally
         {
-            nav.Stop();
+            await LeaveGameTidyAsync().ConfigureAwait(false);
             coordinator.SuppressChatSummary = false;
             EndTrip(RunTrigger.HandsFree, PlannedTotal, tally.Done, tally.Skipped, tally.Failed, tally.Pending.Values.Sum(), stopped, tally.LegFailures.Concat(tally.Reasons));
             IsRunning = false;
@@ -397,11 +396,9 @@ public sealed partial class AutoPilot : IDisposable
         if (atStart && await OnFramework(() => GameUi.IsVisible("SelectYesno")).ConfigureAwait(false))
             throw new AutoPilotException("a yes/no question is open in the game. Answer it, then start again");
         // A retainer's leave prompt left open blocks every later confirmation; answer it before closing windows.
-        if (await OnFramework(() => GameUi.IsVisible("SelectYesno") && (GameUi.IsVisible("RetainerList") || GameUi.SelectStringReady())).ConfigureAwait(false))
-        {
-            await framework.RunOnFrameworkThread(() => GameUi.FireInts("SelectYesno", [config.Callbacks.YesNoConfirm])).ConfigureAwait(false);
+        // Only that one: this used to answer any question on screen, a party invite at the bell included.
+        if (await AnswerBuybackPromptAsync().ConfigureAwait(false))
             await Task.Delay(500, ct).ConfigureAwait(false);
-        }
         await framework.RunOnFrameworkThread(() =>
         {
             foreach (var addon in new[] { "SelectString", "SelectIconString", "InventoryRetainer", "InventoryRetainerLarge", "RetainerSellList", "RetainerList", "Shop", "GrandCompanySupplyList", "MiragePrismPrismBox", "InventoryBuddy" })
@@ -659,20 +656,78 @@ public sealed partial class AutoPilot : IDisposable
 
     /// <summary>
     /// After a retainer has sold something, quitting asks "unable to process buyback requests once recalled,
-    /// proceed?". Answer yes when that prompt shows up within a moment of leaving.
+    /// proceed?". Answer yes when that prompt shows up within a moment of leaving, and only that prompt: any
+    /// other question stops the trip and is left for the player.
     /// </summary>
     private async Task AnswerLeavePromptAsync(CancellationToken ct)
     {
+        var unknown = 0;
         for (var i = 0; i < 15; i++)
         {
             if (await OnFramework(() => GameUi.IsVisible("SelectYesno")).ConfigureAwait(false))
             {
-                await framework.RunOnFrameworkThread(() => GameUi.FireInts("SelectYesno", [config.Callbacks.YesNoConfirm])).ConfigureAwait(false);
-                await Task.Delay(500, ct).ConfigureAwait(false);
-                return;
+                if (await AnswerBuybackPromptAsync().ConfigureAwait(false))
+                {
+                    await Task.Delay(500, ct).ConfigureAwait(false);
+                    return;
+                }
+                // The text can lag the window by a frame; only a question that stays unrecognised is someone else's.
+                if (++unknown >= 5)
+                    throw new AutoPilotException("the game asked a question Gleam does not answer while leaving the retainer. Answer it, then run again");
             }
-            if (await OnFramework(() => GameUi.IsVisible("RetainerList") && !GameUi.SelectStringReady()).ConfigureAwait(false)) return;
+            else if (await OnFramework(() => GameUi.IsVisible("RetainerList") && !GameUi.SelectStringReady()).ConfigureAwait(false)) return;
             await Task.Delay(100, ct).ConfigureAwait(false);
+        }
+    }
+
+    private const string BuybackPromptFragment = "buyback";
+
+    /// <summary>
+    /// Answers the retainer's "no buyback once recalled" question, having read it first. Anything else on screen
+    /// is somebody else's question and is left alone. Returns whether the prompt was answered.
+    /// </summary>
+    private Task<bool> AnswerBuybackPromptAsync() => OnFramework(() =>
+        GameUi.YesNoPrompt() is { } prompt && db.PromptIsAbout(prompt, BuybackPromptFragment)
+        && GameUi.FireInts("SelectYesno", [config.Callbacks.YesNoConfirm]));
+
+    /// <summary>
+    /// Leaves the game as a player would after a trip: the retainer dismissed, and the shop, dresser, saddlebag
+    /// and retainer windows closed. Runs after every trip, finished, stopped or failed, and ignores Stop. A Stop
+    /// used to end only the walking, and left the retainer summoned with its windows open. Never throws.
+    /// </summary>
+    private async Task LeaveGameTidyAsync()
+    {
+        var none = CancellationToken.None;
+        try
+        {
+            nav.Stop();
+            for (var attempt = 0; attempt < 3; attempt++)
+            {
+                var state = await OnFramework(() =>
+                    GameUi.AnyVisible("RetainerSell", "RetainerSellList", "InventoryRetainer", "InventoryRetainerLarge") ? "inventory"
+                    : GameUi.SelectStringReady() && GameInventoryScanner.ActiveRetainer().Id != 0 ? "menu"
+                    : "other").ConfigureAwait(false);
+                if (state == "other") break;
+                if (state == "inventory")
+                {
+                    await framework.RunOnFrameworkThread(() =>
+                    {
+                        GameUi.Close("RetainerSell"); GameUi.Close("RetainerSellList");
+                        GameUi.Close("InventoryRetainer"); GameUi.Close("InventoryRetainerLarge");
+                    }).ConfigureAwait(false);
+                }
+                else if (await framework.RunOnFrameworkThread(() => GameUi.SelectStringChoose(db.MenuMatcher(S.QuitMenuText))).ConfigureAwait(false) >= 0)
+                {
+                    await AnswerLeavePromptAsync(none).ConfigureAwait(false);
+                }
+                else break;
+                await Task.Delay(800, none).ConfigureAwait(false);
+            }
+            await RecoverUiAsync(none).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            log.Warning(ex, "Could not close every game window after the trip");
         }
     }
 

@@ -60,4 +60,13 @@ public sealed class ItemList
         Entries.RemoveAll(e => e.ItemId == itemId && (characterId is null || e.CharacterId == characterId));
 
     public int RemoveAll(uint itemId) => Entries.RemoveAll(e => e.ItemId == itemId);
+
+    /// <summary>A copy for work done off the game thread while the settings page may edit this list.</summary>
+    public ItemList Snapshot() => new()
+    {
+        Entries = Entries.Select(e => new ItemListEntry
+        {
+            ItemId = e.ItemId, IncludeHq = e.IncludeHq, CharacterId = e.CharacterId, Note = e.Note, Added = e.Added,
+        }).ToList(),
+    };
 }

@@ -489,6 +489,42 @@ public sealed class ItemDatabase
         return names;
     }
 
+    private readonly ConcurrentDictionary<string, IReadOnlyList<string>> promptTextsAbout = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Whether a yes/no prompt is the game's own question about <paramref name="englishFragment"/> ("buyback"),
+    /// in any client language. Elsewhere than English the prompt is compared, letters and digits only, with every
+    /// game text whose English original mentions the fragment. A question it cannot place is not the one meant.
+    /// </summary>
+    public bool PromptIsAbout(string prompt, string englishFragment)
+    {
+        if (string.IsNullOrWhiteSpace(prompt) || string.IsNullOrWhiteSpace(englishFragment)) return false;
+        if (ClientIsEnglish) return prompt.Contains(englishFragment, StringComparison.OrdinalIgnoreCase);
+        var flat = AddonDriver.Normalize(prompt);
+        var texts = promptTextsAbout.GetOrAdd(englishFragment, fragment =>
+        {
+            var found = new List<string>();
+            try
+            {
+                var en = data.GetExcelSheet<Addon>(ClientLanguage.English)!;
+                var local = data.GetExcelSheet<Addon>()!;
+                foreach (var row in en)
+                {
+                    if (!row.Text.ExtractText().Contains(fragment, StringComparison.OrdinalIgnoreCase)) continue;
+                    if (!local.TryGetRow(row.RowId, out var l)) continue;
+                    var t = AddonDriver.Normalize(l.Text.ExtractText());
+                    if (t.Length >= 6) found.Add(t);
+                }
+            }
+            catch (Exception ex)
+            {
+                log.Warning(ex, "Could not read the game's texts about {Fragment}", fragment);
+            }
+            return found;
+        });
+        return texts.Any(t => flat.Contains(t, StringComparison.Ordinal));
+    }
+
     /// <summary>Text of an Addon sheet row in the client language, or null.</summary>
     public string? AddonText(uint rowId)
     {

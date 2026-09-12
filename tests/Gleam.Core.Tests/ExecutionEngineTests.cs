@@ -15,6 +15,10 @@ internal sealed class FakeGame : IGameActions
     public int FreeSlots { get; set; } = 10;
     public Func<SlotRef, bool> FailWhen { get; set; } = _ => false;
     public Func<Task>? BeforeAction { get; set; }
+    /// <summary>Runs just after the dresser hands an item back, e.g. to press Stop at that moment.</summary>
+    public Action? AfterRestore { get; set; }
+    /// <summary>When set, actions refuse a cancelled token the way the real game calls do.</summary>
+    public bool HonoursStop { get; set; }
     public bool MateriaFails { get; set; }
     public string? LastFailure { get; private set; }
 
@@ -52,7 +56,11 @@ internal sealed class FakeGame : IGameActions
         return true;
     }
 
-    public Task<bool> DiscardAsync(SlotRef slot, uint itemId, CancellationToken ct) => Do("discard", slot);
+    public Task<bool> DiscardAsync(SlotRef slot, uint itemId, CancellationToken ct)
+    {
+        if (HonoursStop) ct.ThrowIfCancellationRequested();
+        return Do("discard", slot);
+    }
     public Task<bool> VendorSellAsync(SlotRef slot, uint itemId, CancellationToken ct) => Do("sell", slot);
     public int MarketSlots { get; set; } = 20;
     public Task<bool> MarketListAsync(SlotRef slot, uint itemId, long unitPrice, int quantity, CancellationToken ct)
@@ -86,6 +94,7 @@ internal sealed class FakeGame : IGameActions
         Slots.Remove(dresserSlot);
         Slots[landed] = item with { Slot = landed };
         FreeSlots--;
+        AfterRestore?.Invoke();
         return Task.FromResult<SlotRef?>(landed);
     }
 }
@@ -186,6 +195,22 @@ public class ExecutionEngineTests
 
         Assert.Equal(2, report.Done);
         Assert.Equal(["discard:Inventory:0#0", "restore:GlamourDresser:4294901761#5", "discard:Inventory:0#99"], game.Calls);
+    }
+
+    [Fact]
+    public async Task A_stop_after_the_dresser_returned_an_item_still_finishes_that_item()
+    {
+        using var stop = new CancellationTokenSource();
+        var game = new FakeGame { AfterRestore = stop.Cancel, HonoursStop = true };
+        game.Open.Add(ContainerKind.GlamourDresser);
+        game.Slots[SlotRef.Dresser(5)] = ScannedItem.Simple(SlotRef.Dresser(5), 6, 1);
+
+        var report = await new ExecutionEngine(game, new MemoryRunLog(), new NoDelay())
+            .ExecuteAsync([Q(SlotRef.Dresser(5), 6, 1)], Who, stop.Token);
+
+        // Out of the dresser means past the point of no return: the item is discarded, not left in the bags.
+        Assert.Equal(1, report.Done);
+        Assert.Equal(["restore:GlamourDresser:4294901761#5", "discard:Inventory:0#99"], game.Calls);
     }
 
     [Fact]
