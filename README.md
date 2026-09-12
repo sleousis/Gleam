@@ -83,9 +83,6 @@ Gleam used to be called TidyUp, and Dalamud still sees an old copy as a separate
 Gleam moves your character and clicks through the game's menus for you. Square Enix's terms of service do not allow third-party tools, and automation is what they act against most. Use it at your own risk.
 
 After a game patch, Gleam pauses hands-free runs until a version checked on that patch is out. Runs you start by hand keep working, and **Go ahead on this patch** in the settings lifts the pause.
-
-Organizing is newer and has not had a full test in game yet. It never discards anything. At worst an item stays in your bags or a run stops early.
-
 ## Support
 
 Something not working? Run `/gleam selftest`, then `/gleam report`, and [open an issue](https://github.com/sleousis/Gleam/issues/new/choose) with the report pasted in. The report holds no character or retainer names.

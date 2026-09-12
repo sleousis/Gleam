@@ -36,6 +36,7 @@ public sealed class Plugin : IDalamudPlugin
     private bool ownsCommand, ownsShortCommand;
 
     private readonly IDalamudPluginInterface pi;
+    private readonly IPlayerState player;
     private readonly ICommandManager commands;
     private readonly IClientState clientState;
     private readonly IPluginLog log;
@@ -235,6 +236,7 @@ public sealed class Plugin : IDalamudPlugin
         ApplyProfileToServices();
 
         this.framework = framework;
+        this.player = player;
         clientState.Logout += OnLogout;
         clientState.Login += OnLogin;
         if (clientState.IsLoggedIn) { Greet(); WarnAboutOldCopy(); }
@@ -544,7 +546,7 @@ public sealed class Plugin : IDalamudPlugin
     /// </summary>
     private void DrawUi()
     {
-        if (Game.RetainerDirectory.Poll(config)) config.Save(pi);
+        if (Game.RetainerDirectory.Poll(config, player.ContentId)) config.Save(pi);
         // The clipboard belongs to the drawing thread; a report built in the background waits here for it.
         if (report.TakeReady() is { } text)
         {

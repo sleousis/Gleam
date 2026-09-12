@@ -3,6 +3,11 @@
 Each release's section is shown in Dalamud's plugin installer and on the GitHub release page. The release
 workflow refuses a tag whose version has no section here.
 
+## 0.12.3
+
+- Your retainers show up in Organize and in Settings as soon as you log in, once Gleam has seen them at a summoning bell one time. Before, Gleam only knew them after a bell visit in the same session, and a layout that sent things to one of your own retainers said it was not on this character.
+- Organize is no longer marked as a preview.
+
 ## 0.12.2
 
 - Removing the copy of Gleam from before its rename no longer leaves /gleam and /gl answering nothing. Gleam now takes both commands over as soon as the old copy is gone, without a restart.
