@@ -30,7 +30,7 @@ A Dalamud plugin for Final Fantasy XIV that finds the junk in your bags, armoury
 - **Careful by default.** Gear in your gear sets, glamour plate items and anything on your never-touch list are never touched. A big run asks you twice, and Stop ends a run at once.
 - **Highlights in your bags.** Items that will be cleaned or moved are tinted in the game's own bag windows.
 - **Statistics.** See the bag slots Gleam has freed, the gil it made and where the junk came from.
-- **Every client language.** English, Japanese, German and French clients are supported.
+- **Other client languages.** Gleam is tested on the English client. It reads menus and prompts from the game's own text, so Japanese, German and French clients should work too, but they have not been tried yet. If you play on one, `/gleam selftest` shows whether Gleam finds everything it needs.
 
 ## Requirements
 
