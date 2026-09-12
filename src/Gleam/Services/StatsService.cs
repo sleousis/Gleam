@@ -45,6 +45,18 @@ public sealed class StatsService : IDisposable
     private ulong character;
     private string characterName = string.Empty;
 
+    // The sums are only worth doing for a page someone is looking at, or to see whether a finished run
+    // reached a milestone. Recounting every history a few times a second in the background, for a page
+    // that was not open, cost the most exactly when the game was busiest.
+    private long viewedAt = long.MinValue;
+    private volatile bool milestonesDue = true;
+    private (StatsRange, bool, ulong)? computedFor;
+
+    /// <summary>Called by the stats page each time it draws.</summary>
+    public void MarkViewed() => viewedAt = Environment.TickCount64;
+
+    private bool Viewed => Environment.TickCount64 - viewedAt < 1000;
+
     public StatsService(IFramework framework, IPlayerState player, IChatGui chat, IPluginLog log, Configuration config,
         IRunLog runLog, IMoveLog moveLog, IJournal journal, Action save)
     {
@@ -142,8 +154,13 @@ public sealed class StatsService : IDisposable
     /// <summary>The game's thread: note who is logged in, sample the rate, and start a recount when something changed.</summary>
     private void Tick(IFramework fw)
     {
-        character = player.ContentId;
-        characterName = player.CharacterName;
+        // The name is only read again when someone else logs in, or while it has not loaded yet.
+        var id = player.ContentId;
+        if (id != character || (id != 0 && characterName.Length == 0))
+        {
+            character = id;
+            characterName = player.CharacterName;
+        }
 
         var now = DateTime.UtcNow;
         if ((now - lastSample).TotalSeconds >= 1)
@@ -159,10 +176,17 @@ public sealed class StatsService : IDisposable
             rate[^1] = lastHalfMinute * 2f;
         }
 
-        if (!dirty || !Loaded || computing || (now - lastCompute).TotalMilliseconds < 300) return;
+        if (!dirty || !Loaded || computing) return;
+        var viewed = Viewed;
+        if (!viewed && !milestonesDue) return;
+        // A different period or character on the page is answered at once; anything else waits its second.
+        var asked = (Range, AllCharacters, character);
+        if ((now - lastCompute).TotalMilliseconds < 1000 && !(viewed && computedFor != asked)) return;
         dirty = false;
+        milestonesDue = false;
         computing = true;
         lastCompute = now;
+        computedFor = asked;
         var query = new StatsQuery(Range, AllCharacters ? null : character, DateTimeOffset.Now, TimeZoneInfo.Local, config.StatsResetAt);
         _ = Task.Run(() => Compute(query));
     }
@@ -248,6 +272,9 @@ public sealed class StatsService : IDisposable
 
     public void OnRunFinished(RunReport report, RunTrigger trigger, DateTimeOffset started)
     {
+        // A finished run is when a milestone can have been reached, page open or not.
+        milestonesDue = true;
+        Invalidate();
         if (trigger == RunTrigger.PartOfTrip || report.Results.Count + report.Pending.Count == 0) return;
         Record(new RunEvent
         {
@@ -265,6 +292,8 @@ public sealed class StatsService : IDisposable
 
     public void OnMovesFinished(MoveRunReport report, RunTrigger trigger, DateTimeOffset started)
     {
+        milestonesDue = true;
+        Invalidate();
         if (trigger == RunTrigger.PartOfTrip || report.Results.Count + report.Pending.Count == 0) return;
         Record(new RunEvent
         {
@@ -280,7 +309,11 @@ public sealed class StatsService : IDisposable
         });
     }
 
-    public void OnTrip(RunEvent trip) => Record(trip);
+    public void OnTrip(RunEvent trip)
+    {
+        milestonesDue = true;
+        Record(trip);
+    }
 
     public void OnSeals(uint itemId, int seals)
     {
