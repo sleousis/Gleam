@@ -32,7 +32,7 @@ public sealed class MoveActions : IMoveActions
 
     /// <summary>Reads game memory on the framework thread; the executor calls in from the thread pool.</summary>
     private T OnGame<T>(Func<T> read) =>
-        framework.IsInFrameworkUpdateThread ? read() : framework.RunOnFrameworkThread(read).GetAwaiter().GetResult();
+        framework.IsInFrameworkUpdateThread || Dalamud.Utility.ThreadSafety.IsMainThread ? read() : framework.RunOnFrameworkThread(read).GetAwaiter().GetResult();
 
     private ScannedItem? Read(SlotRef slot) => OnGame(() => scanner.ReadSlot(slot));
 

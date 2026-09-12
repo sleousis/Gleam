@@ -54,7 +54,7 @@ public sealed class GameActions : IGameActions
     /// used to run on the thread pool and race the game rewriting the same slots and windows.
     /// </summary>
     private T OnGame<T>(Func<T> read) =>
-        framework.IsInFrameworkUpdateThread ? read() : framework.RunOnFrameworkThread(read).GetAwaiter().GetResult();
+        framework.IsInFrameworkUpdateThread || Dalamud.Utility.ThreadSafety.IsMainThread ? read() : framework.RunOnFrameworkThread(read).GetAwaiter().GetResult();
 
     private ScannedItem? Read(SlotRef slot) => OnGame(() => scanner.ReadSlot(slot));
 
