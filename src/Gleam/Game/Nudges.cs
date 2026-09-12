@@ -5,7 +5,10 @@ using Dalamud.Plugin.Services;
 
 namespace Gleam.Game;
 
-/// <summary>Server info bar entry: "38/140 · 12 cleanable", click to open, toast when the inventory crosses the fullness threshold.</summary>
+/// <summary>
+/// Server info bar entry: "Bags 18/140 · 3 junk", the way the game's own inventory counter reads. Click to
+/// open, toast when the inventory crosses the fullness threshold.
+/// </summary>
 public sealed class DtrEntry : IDisposable
 {
     private readonly IDtrBar dtr;
@@ -18,12 +21,20 @@ public sealed class DtrEntry : IDisposable
 
     // Counting the bags is the expensive half, so it stays on a two-second poll. What the player reads
     // catches up every frame, which is the difference between a figure that counts and one that steps.
-    private int targetFree, targetCleanable, targetPct;
-    private double shownFree, shownCleanable;
+    private int targetUsed, targetTotal, targetCleanable, targetPct;
+    private double shownUsed, shownCleanable;
     private bool haveShown;
-    private string lastText = string.Empty;
+
+    // What the entry and its tooltip last said, kept as the numbers they were made from. Each is rebuilt only
+    // when one of its numbers changes, so nothing is formatted on a frame where nothing moved.
+    private static readonly (int, int, int, bool) NothingShown = (-1, -1, -1, false);
+    private (int Used, int Total, int Junk, bool Warn) shownText = NothingShown;
+    private (int Used, int Total, int Junk, bool ShowsJunk, bool Organize) shownTip = (-1, -1, -1, false, false);
 
     public Func<int>? CleanableCount { get; set; }
+
+    /// <summary>False when the player has turned clearing junk off: the tooltip then says nothing about junk.</summary>
+    public Func<bool>? ShowsJunk { get; set; }
     public bool Enabled { get; set; } = true;
     public int NudgePercent { get; set; } = 90;
 
@@ -53,7 +64,8 @@ public sealed class DtrEntry : IDisposable
     public void Reset()
     {
         haveShown = false;
-        lastText = string.Empty;
+        shownText = NothingShown;
+        shownTip = (-1, -1, -1, false, false);
         nudgedThisCrossing = true;
     }
 
@@ -77,29 +89,39 @@ public sealed class DtrEntry : IDisposable
         var pct = total == 0 ? 0 : used * 100 / total;
         var cleanable = CleanableCount?.Invoke() ?? 0;
 
-        entry ??= dtr.Get("Gleam");
-        entry.OnClick = e =>
+        if (entry is null)
         {
-            if (e.ClickType == MouseClickType.Right && OpenOrganize is not null) OpenOrganize();
-            else openWindow();
-        };
+            entry = dtr.Get("Gleam");
+            entry.OnClick = e =>
+            {
+                if (e.ClickType == MouseClickType.Right && OpenOrganize is not null) OpenOrganize();
+                else openWindow();
+            };
+        }
         // Nothing loaded yet means nothing worth saying.
         entry.Shown = Enabled && total > 0;
         if (total == 0) return;
 
-        targetFree = free;
+        targetUsed = used;
+        targetTotal = total;
         targetCleanable = cleanable;
         targetPct = pct;
-        if (!haveShown) { shownFree = free; shownCleanable = cleanable; haveShown = true; }
+        if (!haveShown) { shownUsed = used; shownCleanable = cleanable; haveShown = true; }
 
-        var tip = new SeStringBuilder()
-            .AddText($"Bags: {used} of {total} used, {free} free ({pct}%).\n")
-            .AddText(cleanable > 0
-                ? $"{cleanable} item{(cleanable == 1 ? " looks" : "s look")} like junk.\n"
-                : "Nothing looks like junk right now.\n")
-            .AddText("Click to open Gleam.");
-        if (OpenOrganize is not null) tip.AddText(" Right-click to put things away.");
-        entry.Tooltip = tip.Build();
+        var showsJunk = ShowsJunk?.Invoke() ?? true;
+        var tipFrom = (used, total, cleanable, showsJunk, OpenOrganize is not null);
+        if (tipFrom != shownTip)
+        {
+            shownTip = tipFrom;
+            var tip = new SeStringBuilder().AddText($"{used} of {total} bag slots used, {free} free");
+            if (showsJunk)
+                tip.AddText(cleanable == 0 ? "\nNothing to clean right now"
+                    : cleanable == 1 ? "\n1 item looks like junk"
+                    : $"\n{cleanable} items look like junk");
+            tip.AddText("\n\nClick to review and clean");
+            if (OpenOrganize is not null) tip.AddText("\nRight-click to put things away");
+            entry.Tooltip = tip.Build();
+        }
 
         if (pct >= NudgePercent)
         {
@@ -107,7 +129,7 @@ public sealed class DtrEntry : IDisposable
             {
                 nudgedThisCrossing = true;
                 if (cleanable > 0)
-                    toast.ShowNormal($"Gleam: your bags are {pct}% full. {cleanable} item{(cleanable == 1 ? "" : "s")} could be cleaned. /gleam to review.");
+                    toast.ShowNormal($"Your bags are {pct}% full, and Gleam found {cleanable} item{(cleanable == 1 ? "" : "s")} to clean. Type /gleam to review {(cleanable == 1 ? "it" : "them")}.");
             }
         }
         else if (pct < NudgePercent - 5)
@@ -118,7 +140,8 @@ public sealed class DtrEntry : IDisposable
 
     /// <summary>
     /// Eases the two figures towards what the last count found and rewrites the entry only when a whole
-    /// number actually changes, so the info bar is not rebuilt sixty times a second for nothing.
+    /// number or the warning actually changes. The numbers are compared first, so a frame where nothing
+    /// moved formats nothing at all.
     /// </summary>
     private void DrawEntry(IFramework f)
     {
@@ -126,30 +149,29 @@ public sealed class DtrEntry : IDisposable
 
         if (Windows.Ui.Reduced)
         {
-            shownFree = targetFree;
+            shownUsed = targetUsed;
             shownCleanable = targetCleanable;
         }
         else
         {
             var dt = Math.Clamp(f.UpdateDelta.TotalSeconds, 0, 0.1);
             var k = 1 - Math.Exp(-6 * dt);
-            shownFree += (targetFree - shownFree) * k;
+            shownUsed += (targetUsed - shownUsed) * k;
             shownCleanable += (targetCleanable - shownCleanable) * k;
-            if (Math.Abs(targetFree - shownFree) < 0.5) shownFree = targetFree;
+            if (Math.Abs(targetUsed - shownUsed) < 0.5) shownUsed = targetUsed;
             if (Math.Abs(targetCleanable - shownCleanable) < 0.5) shownCleanable = targetCleanable;
         }
 
-        var free = (int)Math.Round(shownFree);
-        var junk = (int)Math.Round(shownCleanable);
-        // Free space is what a player actually wants to know, junk second, and a warning glyph only once
-        // the bags are genuinely tight.
-        var plain = $"{(targetPct >= NudgePercent ? "!" : "")}{free} free{(junk > 0 ? $" · {junk} junk" : "")}";
-        if (plain == lastText) return;
-        lastText = plain;
+        // Bag use first, read like the game's own counter, junk second, and a warning glyph only once the
+        // bags are genuinely tight.
+        var now = ((int)Math.Round(shownUsed), targetTotal, (int)Math.Round(shownCleanable), targetPct >= NudgePercent);
+        if (now == shownText) return;
+        shownText = now;
+        var (used, total, junk, warn) = now;
 
         var text = new SeStringBuilder();
-        if (targetPct >= NudgePercent) text.AddIcon(BitmapFontIcon.Warning);
-        text.AddText($"{free} free");
+        if (warn) text.AddIcon(BitmapFontIcon.Warning);
+        text.AddText($"Bags {used}/{total}");
         if (junk > 0) text.AddText($" · {junk} junk");
         entry.Text = text.Build();
     }
