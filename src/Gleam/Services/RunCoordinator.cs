@@ -331,7 +331,7 @@ public sealed class RunCoordinator : IDisposable
     public List<QueuedAction> BuildQueueFromPlan(Func<PlanRow, bool> filter, bool requireChecked = true) =>
         CurrentPlan is null
             ? new List<QueuedAction>()
-            : CurrentPlan.AllRows.Where(r => (!requireChecked || r.Checked) && r.IsExecutable && filter(r)).Select(QueuedAction.FromRow).ToList();
+            : PlanQueue.Build(CurrentPlan.AllRows, filter, requireChecked);
 
     public void RaiseOpenWindow() => RequestOpenWindow?.Invoke();
 
