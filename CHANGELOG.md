@@ -3,6 +3,17 @@
 Each release's section is shown in Dalamud's plugin installer and on the GitHub release page. The release
 workflow refuses a tag whose version has no section here.
 
+## 0.11.3
+
+Safety fixes for hands-free trips.
+
+- Stopping a trip now leaves the game tidy: the retainer is dismissed, and the shop, dresser, saddlebag and retainer windows are closed. Before, Stop only stopped the walking.
+- Gleam reads a yes/no question before answering it. On its own it answers only the retainer's "no buyback once recalled" question. Anything else, such as a party invite at the bell, is left for you and the trip stops.
+- An item already handed to a retainer to be sold, or taken out of the glamour dresser, is finished even if you press Stop at that moment. If the sale still fails, the message says which retainer has the item.
+- In the simple view the Clean button now says "everywhere" when the run will travel, and "Clean here only" is offered there too. The button's tooltip mentions the teleports to a merchant or your Grand Company.
+- The gamepad no longer starts a run, and it only moves through the list while Dalamud's gamepad navigation has the window. The keyboard shortcut is now Ctrl+Enter instead of Enter.
+- During a run Gleam reads your bags and the game's windows only on the game's own thread, and it works from copies of your layout and lists, so editing them while it works cannot upset it.
+
 ## 0.11.2
 
 - The big numbers on the stats page are sharp now. They used to be the normal font stretched, which blurred them.

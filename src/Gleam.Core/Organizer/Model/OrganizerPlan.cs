@@ -171,7 +171,7 @@ public sealed class OrganizerPlan
             Id = Guid.NewGuid(),
             Name = Name,
             Simple = false,
-            Fallback = Fallback,
+            Fallback = Fallback with { },
             MergeStacksAtDestination = MergeStacksAtDestination,
             RetainersInScope = new HashSet<ulong>(RetainersInScope),
             BagStagingReserve = BagStagingReserve,
@@ -180,7 +180,7 @@ public sealed class OrganizerPlan
         {
             c.Rules.Add(new OrganizerRule
             {
-                Id = Guid.NewGuid(), Name = r.Name, Enabled = r.Enabled, Then = r.Then, KeepInBags = r.KeepInBags,
+                Id = Guid.NewGuid(), Name = r.Name, Enabled = r.Enabled, Then = r.Then with { }, KeepInBags = r.KeepInBags,
                 When = new OrganizerPredicate
                 {
                     Tags = r.When.Tags is null ? null : new HashSet<ItemTag>(r.When.Tags),
@@ -194,6 +194,19 @@ public sealed class OrganizerPlan
                 },
             });
         }
+        return c;
+    }
+
+    /// <summary>
+    /// An exact copy, ids included, for work done off the game thread while the page may edit this layout.
+    /// <see cref="Clone"/> makes a new layout; this one stands in for the same layout.
+    /// </summary>
+    public OrganizerPlan Snapshot()
+    {
+        var c = Clone();
+        c.Id = Id;
+        c.Simple = Simple;
+        for (var i = 0; i < Rules.Count; i++) c.Rules[i].Id = Rules[i].Id;
         return c;
     }
 

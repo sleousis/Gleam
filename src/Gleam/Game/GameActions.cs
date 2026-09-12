@@ -49,20 +49,33 @@ public sealed class GameActions : IGameActions
 
     private TimeSpan Timeout => TimeSpan.FromMilliseconds(config.Callbacks.ActionTimeoutMs);
 
-    public bool IsContainerAvailable(ContainerKind kind, ulong ownerId) => kind switch
+    /// <summary>
+    /// Reads game memory on the framework thread. The engine awaits with ConfigureAwait(false), so its checks
+    /// used to run on the thread pool and race the game rewriting the same slots and windows.
+    /// </summary>
+    private T OnGame<T>(Func<T> read) =>
+        framework.IsInFrameworkUpdateThread ? read() : framework.RunOnFrameworkThread(read).GetAwaiter().GetResult();
+
+    private ScannedItem? Read(SlotRef slot) => OnGame(() => scanner.ReadSlot(slot));
+
+    private bool Visible(string addon) => OnGame(() => AddonDriver.IsAddonVisible(addon));
+
+    private static string Who(string retainerName) => string.IsNullOrEmpty(retainerName) ? "your retainer" : retainerName;
+
+    public bool IsContainerAvailable(ContainerKind kind, ulong ownerId) => OnGame(() => kind switch
     {
         ContainerKind.Inventory or ContainerKind.Armoury => true,
         ContainerKind.Saddlebag => GameInventoryScanner.IsSaddlebagLoaded() && AddonDriver.IsAddonVisible("InventoryBuddy"),
         ContainerKind.Retainer => GameInventoryScanner.IsRetainerOpen(ownerId),
         ContainerKind.GlamourDresser => GameInventoryScanner.IsDresserLoaded() && AddonDriver.IsAddonVisible("MiragePrismPrismBox"),
         _ => false,
-    };
+    });
 
-    public ScannedItem? ReadSlot(SlotRef slot) => scanner.ReadSlot(slot);
+    public ScannedItem? ReadSlot(SlotRef slot) => Read(slot);
 
-    public int FreeInventorySlots() => GameInventoryScanner.FreeInventorySlots();
+    public int FreeInventorySlots() => OnGame(GameInventoryScanner.FreeInventorySlots);
 
-    public bool IsActionAvailable(ActionKind action) => action switch
+    public bool IsActionAvailable(ActionKind action) => OnGame(() => action switch
     {
         ActionKind.Discard => true,
         // A merchant's shop, or a retainer's inventory: retainers buy at the vendor price too.
@@ -71,7 +84,7 @@ public sealed class GameActions : IGameActions
         ActionKind.Desynth => true,
         ActionKind.MarketList => AddonDriver.IsAddonVisible("RetainerSellList"),
         _ => false,
-    };
+    });
 
     public string ActionRequirement(ActionKind action) => action switch
     {
@@ -83,7 +96,7 @@ public sealed class GameActions : IGameActions
 
     public const int MarketSlotsPerRetainer = 20;
 
-    public int FreeMarketSlots() => Native.FreeMarketSlots();
+    public int FreeMarketSlots() => OnGame(Native.FreeMarketSlots);
 
     // ---------- sort ----------
 
@@ -93,7 +106,7 @@ public sealed class GameActions : IGameActions
     /// </summary>
     public async Task<int> SortContainerAsync(ContainerKind kind, CancellationToken ct)
     {
-        var items = scanner.ScanKind(kind);
+        var items = OnGame(() => scanner.ScanKind(kind));
         var pages = items.GroupBy(i => i.Slot.ContainerId).Select(g => g.First().Slot).ToList();
         var sorted = 0;
         foreach (var slot in pages)
@@ -113,15 +126,15 @@ public sealed class GameActions : IGameActions
     {
         LastFailure = null;
         if (unitPrice <= 0) { LastFailure = "no market price known"; return false; }
-        if (!AddonDriver.IsAddonVisible("RetainerSellList")) { LastFailure = "the retainer's sell list is not open"; return false; }
-        var before = scanner.ReadSlot(slot)?.Quantity ?? quantity;
+        if (!Visible("RetainerSellList")) { LastFailure = "the retainer's sell list is not open"; return false; }
+        var before = Read(slot)?.Quantity ?? quantity;
         var listedBefore = await framework.RunOnFrameworkThread(Native.OccupiedMarketSlots).ConfigureAwait(false);
 
         var opened = await context.InvokeAsync(slot, config.Callbacks.PutUpForSaleLabel, ct).ConfigureAwait(false);
         if (!opened) { LastFailure = context.LastFailure; return false; }
 
         var deadline = DateTime.UtcNow + Timeout;
-        while (!AddonDriver.IsAddonVisible("RetainerSell"))
+        while (!Visible("RetainerSell"))
         {
             if (DateTime.UtcNow > deadline) { LastFailure = "the sell window did not open"; return false; }
             await Task.Delay(50, ct).ConfigureAwait(false);
@@ -137,7 +150,7 @@ public sealed class GameActions : IGameActions
         deadline = DateTime.UtcNow + Timeout;
         while (DateTime.UtcNow < deadline)
         {
-            var live = scanner.ReadSlot(slot);
+            var live = Read(slot);
             if (live is null || live.ItemId != itemId || live.Quantity <= before - quantity)
                 return await ListedAtAsync(itemId, price, listedBefore, ct).ConfigureAwait(false);
             await Task.Delay(100, ct).ConfigureAwait(false);
@@ -249,13 +262,13 @@ public sealed class GameActions : IGameActions
     public async Task<bool> RetrieveMateriaAsync(SlotRef slot, uint itemId, CancellationToken ct)
     {
         LastFailure = null;
-        var start = scanner.ReadSlot(slot);
+        var start = Read(slot);
         if (start is null || start.ItemId != itemId) { LastFailure = "the item is no longer where it was"; return false; }
         var rounds = start.MateriaCount + 1;
 
         for (var round = 0; round < rounds; round++)
         {
-            var current = scanner.ReadSlot(slot);
+            var current = Read(slot);
             if (current is null || current.ItemId != itemId) { LastFailure = "the item moved while its materia was being removed"; return false; }
             if (!current.HasMateria) return true;
 
@@ -286,7 +299,7 @@ public sealed class GameActions : IGameActions
             await Task.Delay(300, ct).ConfigureAwait(false);
         }
 
-        var after = scanner.ReadSlot(slot);
+        var after = Read(slot);
         if (after is { HasMateria: true }) { LastFailure = $"{after.MateriaCount} materia still attached after {rounds} tries"; return false; }
         return true;
     }
@@ -318,7 +331,7 @@ public sealed class GameActions : IGameActions
     public Task<bool> VendorSellAsync(SlotRef slot, uint itemId, CancellationToken ct)
     {
         if (slot.Kind == ContainerKind.Retainer) return RetainerBuysAsync(slot, itemId, ct);
-        if (!AddonDriver.IsAddonVisible("Shop") && RetainerInventoryOpen) return EntrustThenRetainerBuysAsync(slot, itemId, ct);
+        if (OnGame(() => !AddonDriver.IsAddonVisible("Shop") && RetainerInventoryOpen)) return EntrustThenRetainerBuysAsync(slot, itemId, ct);
         return RunAndAwaitRemoval(slot, itemId, ct,
             async () =>
             {
@@ -341,9 +354,9 @@ public sealed class GameActions : IGameActions
 
     private async Task<bool> EntrustThenRetainerBuysAsync(SlotRef slot, uint itemId, CancellationToken ct)
     {
-        var before = scanner.ReadSlot(slot);
+        var before = Read(slot);
         if (before is null || before.ItemId != itemId) { LastFailure = "the item is no longer where it was"; return false; }
-        var retainer = GameInventoryScanner.ActiveRetainer().Id;
+        var (retainer, retainerName) = OnGame(GameInventoryScanner.ActiveRetainer);
 
         var handedOver = await RunAndAwaitRemoval(slot, itemId, ct,
             async () =>
@@ -355,16 +368,21 @@ public sealed class GameActions : IGameActions
             expectDialog: null).ConfigureAwait(false);
         if (!handedOver) { LastFailure = $"the retainer did not take the item ({LastFailure ?? "no reason given"})"; return false; }
 
-        // Find where it landed with the retainer, then have the retainer sell it.
+        // Find where it landed with the retainer, then have the retainer sell it. The item is with the retainer
+        // now and Stop cannot put it back in the bag, so the sale finishes on its own timeouts. A Stop here used
+        // to leave the item with the retainer and report it as left untouched.
+        var finish = CancellationToken.None;
         SlotRef? landed = null;
         for (var i = 0; i < 20 && landed is null; i++)
         {
             landed = FindSlot(ContainerKind.Retainer, retainer, itemId, before.Quantity, before.IsHq, new HashSet<SlotRef>(), slot);
-            if (landed is null) await Task.Delay(100, ct).ConfigureAwait(false);
+            if (landed is null) await Task.Delay(100, finish).ConfigureAwait(false);
         }
-        if (landed is null) { LastFailure = "the item was handed to the retainer but could not be found in its inventory"; return false; }
-        await Task.Delay(config.Callbacks.RateLimitMs, ct).ConfigureAwait(false);
-        return await RetainerBuysAsync(landed.Value, itemId, ct).ConfigureAwait(false);
+        if (landed is null) { LastFailure = $"the item went to {Who(retainerName)} but could not be found there to sell. It is with that retainer now"; return false; }
+        await Task.Delay(config.Callbacks.RateLimitMs, finish).ConfigureAwait(false);
+        var sold = await RetainerBuysAsync(landed.Value, itemId, finish).ConfigureAwait(false);
+        if (!sold) LastFailure = $"{LastFailure ?? "the sale did not go through"}. The item is with {Who(retainerName)} now";
+        return sold;
     }
 
     // ---------- expert delivery ----------
@@ -488,7 +506,7 @@ public sealed class GameActions : IGameActions
     /// </summary>
     public SlotRef? FindSlot(ContainerKind kind, ulong ownerId, uint itemId, int quantity, bool isHq, IReadOnlySet<SlotRef> exclude, SlotRef preferred)
     {
-        var candidates = scanner.ScanKind(kind)
+        var candidates = OnGame(() => scanner.ScanKind(kind))
             .Where(i => i.ItemId == itemId && i.Quantity == quantity && i.IsHq == isHq && !exclude.Contains(i.Slot))
             .Where(i => kind != ContainerKind.Retainer || i.Slot.OwnerId == ownerId)
             .ToList();

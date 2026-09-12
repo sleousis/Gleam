@@ -179,14 +179,20 @@ public sealed class RunCoordinator : IDisposable
             if (Game.RetainerDirectory.Learn(config, snapshot.RetainerNames)) save();
             var withMarket = snapshot.Context;
 
+            // The planner runs on the thread pool while the settings page and the row menus edit these lists in
+            // place on the game thread, so it plans from copies taken there.
+            var lists = await framework.RunOnFrameworkThread(() => (
+                Protect: config.ProtectList.Snapshot(),
+                Discard: config.AlwaysDiscardList.Snapshot(),
+                Skips: (IReadOnlySet<string>)new HashSet<string>(SessionSkips))).ConfigureAwait(false);
             var plan = planner.Build(snapshot.Items, new PlannerInputs
             {
                 Context = withMarket,
                 Profile = profile,
                 InfoLookup = db.Get,
-                ProtectList = config.ProtectList,
-                AlwaysDiscardList = config.AlwaysDiscardList,
-                SessionSkips = SessionSkips,
+                ProtectList = lists.Protect,
+                AlwaysDiscardList = lists.Discard,
+                SessionSkips = lists.Skips,
                 IsAvailable = actions.IsContainerAvailable,
                 RetainerNames = snapshot.RetainerNames,
                 IncludeUnproposed = true,

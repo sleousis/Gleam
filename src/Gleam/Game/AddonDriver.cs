@@ -122,7 +122,6 @@ public sealed unsafe class AddonDriver : IDisposable
         a.Completion.TrySetResult(ok);
     }
 
-    /// <summary>Letters and digits only, lower-cased: immune to soft hyphens, payload bytes, and punctuation.</summary>
     /// <summary>Closes a named addon if it is up. Cosmetic; never throws.</summary>
     public static void CloseAddon(string name)
     {
@@ -137,6 +136,7 @@ public sealed unsafe class AddonDriver : IDisposable
         }
     }
 
+    /// <summary>Letters and digits only, lower-cased: immune to soft hyphens, payload bytes, and punctuation.</summary>
     public static string Normalize(string s)
     {
         var sb = new System.Text.StringBuilder(s.Length);
@@ -195,6 +195,13 @@ public sealed unsafe class AddonDriver : IDisposable
         {
             return null;
         }
+    }
+
+    /// <summary>The question a visible yes/no prompt asks, or null when none is up. Framework thread only.</summary>
+    public static string? YesNoPromptText()
+    {
+        var addon = GetAddon("SelectYesno");
+        return addon == null || !addon->IsVisible ? null : ReadYesNoPrompt(addon);
     }
 
     public static bool IsAddonVisible(string name)

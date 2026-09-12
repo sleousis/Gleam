@@ -175,6 +175,9 @@ public sealed class ExecutionEngine
             if (restored is null)
                 return new ActionResult(action, ActionOutcome.Failed, $"the dresser did not return it{(game.LastFailure is { } r0 ? $": {r0}" : string.Empty)}");
             target = restored.Value;
+            // The item has left the dresser and Stop cannot put it back, so it is finished on its own timeouts.
+            // A Stop here used to leave it in the bags and report it as left untouched.
+            ct = CancellationToken.None;
             await delay.Wait(options.RateLimit, ct).ConfigureAwait(false);
         }
 

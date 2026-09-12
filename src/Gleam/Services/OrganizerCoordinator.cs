@@ -154,9 +154,12 @@ public sealed class OrganizerCoordinator : IDisposable
         Changed?.Invoke();
         try
         {
-            var plan = config.Organizer.Active;
-            if (plan is null) { Status = "No layout yet"; return; }
-            Plan = plan;
+            // The page edits the layout and the never-touch list in place on the game thread while this works on
+            // the thread pool, so the work below uses copies taken on the game thread.
+            var (live, plan, protect) = await framework.RunOnFrameworkThread(() =>
+                (config.Organizer.Active, config.Organizer.Active?.Snapshot(), config.ProtectList.Snapshot())).ConfigureAwait(false);
+            if (live is null || plan is null) { Status = "No layout yet"; return; }
+            Plan = live;
 
             var profile = cleaner.EffectiveProfile;
             // "It only ever opens the places ticked here" holds for organizing too. The bags always count.
@@ -168,7 +171,7 @@ public sealed class OrganizerCoordinator : IDisposable
 
             var desired = DesiredStateBuilder.Build(
                 snapshot.Items, plan, snapshot.Context, db.Get,
-                (id, hq) => config.ProtectList.Contains(id, hq, cid),
+                (id, hq) => protect.Contains(id, hq, cid),
                 snapshot.RetainerNames.Keys.ToList(),
                 profile.ExcludedRetainerIds, MayOpen);
 
