@@ -35,8 +35,42 @@ public sealed unsafe class BagHighlighter : IDisposable
     /// <summary>Sea-glass teal over items the organizer will move, so the two never look alike.</summary>
     public static readonly Vector4 MoveTint = new(0.0f, 0.42f, 0.38f, 1f);
 
-    /// <summary>Slots to tint, with their colour (RGB added to the icon, alpha applied). Read on the game thread each frame.</summary>
+    /// <summary>Slots to tint, with their colour (RGB added to the icon, alpha applied). Read on the game thread.</summary>
     public Func<IReadOnlyDictionary<SlotRef, Vector4>>? Source { get; set; }
+
+    /// <summary>
+    /// What the tints are made from. While it stays the same, the map <see cref="Source"/> last built is used
+    /// again; it used to be built afresh from every plan row on every frame. A null From means nothing to tint.
+    /// </summary>
+    public Func<(object? From, int Version, int Mode)>? SourceKey { get; set; }
+
+    /// <summary>The map for frames with nothing to tint, shared so that those frames allocate nothing.</summary>
+    public static readonly IReadOnlyDictionary<SlotRef, Vector4> NoTints = new Dictionary<SlotRef, Vector4>();
+
+    private IReadOnlyDictionary<SlotRef, Vector4>? tints;
+    private (object? From, int Version, int Mode) tintsKey;
+    private long tintsAt;
+
+    // The grid addons that come in numbered pages, named once rather than formatted on every frame.
+    private static readonly string[] ExpansionGrids = ["InventoryGrid0E", "InventoryGrid1E", "InventoryGrid2E", "InventoryGrid3E"];
+    private static readonly string[] RetainerGrids = ["RetainerGrid0", "RetainerGrid1", "RetainerGrid2", "RetainerGrid3", "RetainerGrid4"];
+
+    private IReadOnlyDictionary<SlotRef, Vector4>? Wanted()
+    {
+        if (SourceKey is null) return Source?.Invoke();
+        var key = SourceKey();
+        if (key.From is null) { tints = null; return NoTints; }
+        // Built again when what it was made from changes, and once a second regardless, so a tick made
+        // somewhere the version never hears about still reaches the bags.
+        var now = Environment.TickCount64;
+        if (tints is null || key != tintsKey || now - tintsAt >= 1000)
+        {
+            tints = Source?.Invoke();
+            tintsKey = key;
+            tintsAt = now;
+        }
+        return tints;
+    }
 
     public BagHighlighter(IFramework framework, IGameGui gui, IPluginLog log)
     {
@@ -60,7 +94,7 @@ public sealed unsafe class BagHighlighter : IDisposable
         if (failures > 5) return;
         try
         {
-            var wanted = Source?.Invoke();
+            var wanted = Wanted();
             var live = wanted is { Count: > 0 };
             // Nothing wanted and nothing still fading: leave the game's own colours alone entirely.
             if (!live && strength.Count == 0) return;
@@ -79,38 +113,46 @@ public sealed unsafe class BagHighlighter : IDisposable
 
     private void Paint(IReadOnlyDictionary<SlotRef, Vector4>? wanted)
     {
-        var order = ItemOrderModule.Instance();
-        if (order == null) return;
         seen.Clear();
 
         // Bags: three window layouts, each showing one or more 35-slot pages of the same four containers.
+        // Every window is looked up first: with none of them on screen there is nothing to paint, and every
+        // cell still remembered is forgotten below, as it would be after a paint that saw none of them.
         var inventory = gui.GetAddonByName<AddonInventory>("Inventory");
+        var large = gui.GetAddonByName<AddonInventoryLarge>("InventoryLarge");
+        var expansion = gui.GetAddonByName<AddonInventoryExpansion>("InventoryExpansion");
+        var retainer = gui.GetAddonByName<AddonInventoryRetainer>("InventoryRetainer");
+        var retainerLarge = gui.GetAddonByName<AddonInventoryRetainerLarge>("InventoryRetainerLarge");
+        var buddy = gui.GetAddonByName<AddonInventoryBuddy>("InventoryBuddy");
+        var anyOpen = (inventory != null && inventory->IsVisible) || (large != null && large->IsVisible)
+            || (expansion != null && expansion->IsVisible) || (retainer != null && retainer->IsVisible)
+            || (retainerLarge != null && retainerLarge->IsVisible) || (buddy != null && buddy->IsVisible);
+        if (!anyOpen) { strength.Clear(); return; }
+
+        var order = ItemOrderModule.Instance();
+        if (order == null) return;
+
         if (inventory != null && inventory->IsVisible)
             PaintGrid("InventoryGrid", order->InventorySorter, inventory->TabIndex, ContainerKind.Inventory, 0, 0, wanted);
-        var large = gui.GetAddonByName<AddonInventoryLarge>("InventoryLarge");
         if (large != null && large->IsVisible)
         {
             PaintGrid("InventoryGrid0", order->InventorySorter, large->TabIndex * 2, ContainerKind.Inventory, 0, 0, wanted);
             PaintGrid("InventoryGrid1", order->InventorySorter, large->TabIndex * 2 + 1, ContainerKind.Inventory, 0, 0, wanted);
         }
-        var expansion = gui.GetAddonByName<AddonInventoryExpansion>("InventoryExpansion");
         if (expansion != null && expansion->IsVisible)
-            for (var page = 0; page < 4; page++)
-                PaintGrid($"InventoryGrid{page}E", order->InventorySorter, page, ContainerKind.Inventory, 0, 0, wanted);
+            for (var page = 0; page < ExpansionGrids.Length; page++)
+                PaintGrid(ExpansionGrids[page], order->InventorySorter, page, ContainerKind.Inventory, 0, 0, wanted);
 
         // Retainer: pages 0..4 are item bags; the retainer id must match the one whose window is open.
         var retainerSorter = order->GetActiveRetainerSorter();
         var retainerId = order->ActiveRetainerId;
-        var retainer = gui.GetAddonByName<AddonInventoryRetainer>("InventoryRetainer");
         if (retainer != null && retainer->IsVisible && retainerSorter != null && retainer->TabIndex <= 4)
             PaintGrid("RetainerGrid", retainerSorter, retainer->TabIndex, ContainerKind.Retainer, GameContainerIds.RetainerPage1, retainerId, wanted);
-        var retainerLarge = gui.GetAddonByName<AddonInventoryRetainerLarge>("InventoryRetainerLarge");
         if (retainerLarge != null && retainerLarge->IsVisible && retainerSorter != null)
-            for (var page = 0; page < 5; page++)
-                PaintGrid($"RetainerGrid{page}", retainerSorter, page, ContainerKind.Retainer, GameContainerIds.RetainerPage1, retainerId, wanted);
+            for (var page = 0; page < RetainerGrids.Length; page++)
+                PaintGrid(RetainerGrids[page], retainerSorter, page, ContainerKind.Retainer, GameContainerIds.RetainerPage1, retainerId, wanted);
 
         // Saddlebag: one window, both pages side by side, a tab for the premium half.
-        var buddy = gui.GetAddonByName<AddonInventoryBuddy>("InventoryBuddy");
         if (buddy != null && buddy->IsVisible)
         {
             var premium = buddy->TabIndex == 1;
@@ -190,17 +232,18 @@ public sealed unsafe class BagHighlighter : IDisposable
 
         var breath = Windows.Ui.Reduced ? 1f : 0.88f + 0.12f * MathF.Sin(phase * MathF.Tau);
         var lit = s * breath;
-        res->Color.A = (byte)Math.Clamp(255f - (255f - tint.W * 255f) * lit, 0, 255);
-        res->AddRed = (short)(tint.X * 255f * lit);
-        res->AddGreen = (short)(tint.Y * 255f * lit);
-        res->AddBlue = (short)(tint.Z * 255f * lit);
+        Write(res, (byte)Math.Clamp(255f - (255f - tint.W * 255f) * lit, 0, 255),
+            (short)(tint.X * 255f * lit), (short)(tint.Y * 255f * lit), (short)(tint.Z * 255f * lit));
     }
 
-    private static void Clear(AtkResNode* res)
+    private static void Clear(AtkResNode* res) => Write(res, 255, 0, 0, 0);
+
+    /// <summary>Sets a cell's colour, writing only the values that are not already there.</summary>
+    private static void Write(AtkResNode* res, byte alpha, short red, short green, short blue)
     {
-        res->Color.A = 255;
-        res->AddRed = 0;
-        res->AddGreen = 0;
-        res->AddBlue = 0;
+        if (res->Color.A != alpha) res->Color.A = alpha;
+        if (res->AddRed != red) res->AddRed = red;
+        if (res->AddGreen != green) res->AddGreen = green;
+        if (res->AddBlue != blue) res->AddBlue = blue;
     }
 }

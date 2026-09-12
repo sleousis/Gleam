@@ -178,6 +178,13 @@ public sealed class Plugin : IDalamudPlugin
         // Tint the game's own bag windows: gold for what the review will clean, blue for what the organizer will move.
         highlighter = new BagHighlighter(framework, gameGui, log)
         {
+            // What the tints are made from. The map below is built again only when this changes, and with the
+            // window closed or on another page there is nothing to tint, so nothing is built at all.
+            SourceKey = () =>
+                !confirmWindow.IsOpen ? default
+                : confirmWindow.Mode == Ui.AppMode.Organize ? ((object?)organizer.Current, 0, 1)
+                : confirmWindow.Mode == Ui.AppMode.Clean ? ((object?)coordinator.CurrentPlan, confirmWindow.TickVersion, 2)
+                : default,
             Source = () =>
             {
                 var tints = new Dictionary<SlotRef, System.Numerics.Vector4>();

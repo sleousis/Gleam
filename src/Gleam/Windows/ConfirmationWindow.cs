@@ -703,6 +703,9 @@ public sealed class ConfirmationWindow : StyledWindow
     private ReviewView? cachedView;
     /// <summary>Bumped by anything that changes a row's tick or chosen action, so the view knows to rebuild.</summary>
     private int viewVersion;
+
+    /// <summary>Changes whenever a row is ticked, unticked or given another action here. The bag tints key on it.</summary>
+    internal int TickVersion => viewVersion;
     /// <summary>Bumped when a section's own sort changes, which the stamp cannot see from the fields alone.</summary>
     private int sortVersion;
     private readonly Dictionary<PlanRow, RowView> rowViews = new();
