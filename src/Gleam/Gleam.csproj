@@ -70,7 +70,8 @@ Requires vnavmesh, and Lifestream to travel between towns. Gleam automates game 
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <Visible>true</Visible>
     </Content>
-    <Content Include="images\*.png">
+    <!-- The installer screenshots are served from GitHub for the listing only, so they stay out of the zip. -->
+    <Content Include="images\*.png" Exclude="images\screenshot-*.png">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <Visible>true</Visible>
     </Content>

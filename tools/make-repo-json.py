@@ -11,10 +11,14 @@ The version's section of CHANGELOG.md becomes the changelog Dalamud shows beside
 --notes-out the same section is also written on its own, for the GitHub release page.
 """
 import argparse
+import glob
 import json
+import os
 import time
 
 ASSET = "Gleam.zip"
+# Relative to the repository root, which is where the release workflow runs this.
+IMAGES = "src/Gleam/images"
 
 
 def main():
@@ -36,7 +40,13 @@ def main():
     base = f"https://github.com/{args.repo}"
     download = f"{base}/releases/download/{args.tag}/{ASSET}"
 
-    plugin["IconUrl"] = f"https://raw.githubusercontent.com/{args.repo}/{args.branch}/src/Gleam/images/icon.png"
+    raw = f"https://raw.githubusercontent.com/{args.repo}/{args.branch}"
+    plugin["IconUrl"] = f"{raw}/{IMAGES}/icon.png"
+    # The installer shows up to five screenshots, 730x380, in the order given. Only files that exist are
+    # listed, so a release made before they are captured simply has none.
+    shots = sorted(glob.glob(os.path.join(IMAGES, "screenshot-*.png")))[:5]
+    if shots:
+        plugin["ImageUrls"] = [f"{raw}/{IMAGES}/{os.path.basename(s)}" for s in shots]
     # The installer files plugins under these; "inventory" and "utility" are two of its eight categories.
     plugin["CategoryTags"] = ["inventory", "utility"]
     plugin["RepoUrl"] = base
