@@ -80,6 +80,7 @@ public sealed class ConfirmationWindow : StyledWindow
 
     private readonly record struct HeaderColumn(float X, float Width, string Label, SortKey? Key, bool Numeric);
     private readonly Dictionary<string, double> rowFlash = new();
+    private double flashSweptAt;
     private object? staggerPlan;
     private double staggerAt;
     private string? hoveredRow;
@@ -134,6 +135,14 @@ public sealed class ConfirmationWindow : StyledWindow
         AddNav(FontAwesomeIcon.Cog, "Settings", () => Show(Ui.AppMode.Settings));
     }
 
+    public override void OnClose()
+    {
+        base.OnClose();
+        // Nothing of the window is on screen now, so none of its motion is worth keeping.
+        rowFlash.Clear();
+        Ui.ResetMotion();
+    }
+
     public override void OnOpen()
     {
         base.OnOpen();
@@ -154,6 +163,13 @@ public sealed class ConfirmationWindow : StyledWindow
         if (Mode == Ui.AppMode.History && History is not null) { History.Draw(); return; }
         if (Mode == Ui.AppMode.Stats && Stats is not null) { Stats.Draw(); return; }
         if (Mode == Ui.AppMode.Settings && SettingsPage is not null) { SettingsPage.Draw(); return; }
+
+        // A glow lasts 0.7 s; one that has finished is only taking up room.
+        if (rowFlash.Count > 0 && ImGui.GetTime() - flashSweptAt > 1.0)
+        {
+            flashSweptAt = ImGui.GetTime();
+            foreach (var (k, at) in rowFlash) if (flashSweptAt - at > 0.7) rowFlash.Remove(k);
+        }
 
         var plan = coordinator.CurrentPlan;
         if (Pilot is { IsRunning: true, Mode: Automation.PilotMode.Clean }) { DrawPilotRunning(); return; }

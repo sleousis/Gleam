@@ -31,6 +31,14 @@ public static class Charts
     private static readonly Random random = new();
     private static readonly Vector4 Grid = new(1f, 1f, 1f, 0.06f);
 
+    /// <summary>Forgets charts nothing has drawn for a while; one that comes back grows in again, as it would anyway.</summary>
+    internal static void Sweep(double now, double idle)
+    {
+        foreach (var (k, s) in states) if (now - s.Last > idle) states.Remove(k);
+    }
+
+    internal static void Reset() => states.Clear();
+
     /// <summary>A chart's state. One that has been off screen for a moment starts over, so it grows in again.</summary>
     private static State Get(string id)
     {
