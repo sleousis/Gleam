@@ -214,6 +214,7 @@ public sealed class Plugin : IDalamudPlugin
         {
             // No junk count for someone who has turned clearing junk off.
             CleanableCount = () => config.UseClean ? coordinator.LastCleanableCount : 0,
+            ShowsJunk = () => config.UseClean,
             OpenOrganize = () => confirmWindow.Show(Ui.AppMode.Organize),
         };
         dutyNudge = new DutyNudge(dutyState, framework, coordinator.CountCleanableAsync,
