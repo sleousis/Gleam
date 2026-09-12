@@ -390,8 +390,8 @@ public sealed class OrganizerPanel
                 }
                 else if (result is { Moves.Count: > 0 })
                 {
-                    var opens = result.StoragesToOpen.Select(Name).ToList();
-                    Ui.Hint(opens.Count == 0 ? "Everything moves within your bags and armoury chest." : $"Gleam needs {string.Join(" and ", opens)} open. {(Pilot is not null && config.Automation.Enabled ? "It will go there for you." : "Open them and it carries on by itself.")}");
+                    var view = Preview(result);
+                    Ui.Hint(view.Opens.Count == 0 ? "Everything moves within your bags and armoury chest." : $"Gleam needs {view.OpenNames} open. {(Pilot is not null && config.Automation.Enabled ? "It will go there for you." : "Open them and it carries on by itself.")}");
                 }
                 else if (result is not null) DrawNothingToMove(result);
             }
@@ -407,16 +407,25 @@ public sealed class OrganizerPanel
     /// </summary>
     private void DrawNothingToMove(SolveResult result)
     {
+        // What Gleam has never looked inside only changes with a new look, so it is worked out once per look
+        // rather than by walking every item once per retainer on every frame.
+        var view = Preview(result);
         var snapshot = organizer.Snapshot;
-        var unseen = new List<string>();
-        if (snapshot is not null)
+        if (view.Unseen is null || !ReferenceEquals(view.UnseenFor, snapshot))
         {
-            foreach (var (id, name) in organizer.RetainerNames.OrderBy(kv => kv.Value))
-                if (!snapshot.LiveContainers.Contains((ContainerKind.Retainer, id)) && !snapshot.Items.Any(i => i.Slot.Kind == ContainerKind.Retainer && i.Slot.OwnerId == id))
-                    unseen.Add(name);
-            if (!snapshot.LiveContainers.Any(c => c.Kind == ContainerKind.Saddlebag) && !snapshot.Items.Any(i => i.Slot.Kind == ContainerKind.Saddlebag))
-                unseen.Add("your chocobo saddlebag");
+            var found = new List<string>();
+            if (snapshot is not null)
+            {
+                foreach (var (id, name) in RetainerNames.OrderBy(kv => kv.Value))
+                    if (!snapshot.LiveContainers.Contains((ContainerKind.Retainer, id)) && !snapshot.Items.Any(i => i.Slot.Kind == ContainerKind.Retainer && i.Slot.OwnerId == id))
+                        found.Add(name);
+                if (!snapshot.LiveContainers.Any(c => c.Kind == ContainerKind.Saddlebag) && !snapshot.Items.Any(i => i.Slot.Kind == ContainerKind.Saddlebag))
+                    found.Add("your chocobo saddlebag");
+            }
+            view.Unseen = found;
+            view.UnseenFor = snapshot;
         }
+        var unseen = view.Unseen;
 
         using (Ui.Card("nothing"))
         {
@@ -440,7 +449,7 @@ public sealed class OrganizerPanel
             {
                 Ui.Gap(0.4f);
                 Ui.HintWrapped($"Gleam has not seen inside {string.Join(", ", unseen)} yet. It looks when it goes there, or when you open one yourself.");
-                if (Pilot?.MissingDependency() is { } missing)
+                if (MissingDependencyCached() is { } missing)
                 {
                     Ui.TextColored(Ui.Danger, $"Gleam cannot travel there: {missing}.");
                     if (Ui.LinkButton("What it needs")) OpenSettings?.Invoke();
@@ -674,7 +683,7 @@ public sealed class OrganizerPanel
             if (Ui.InputInt("Bag slots kept free while moving", ref reserve)) { plan.BagStagingReserve = Math.Clamp(reserve, 0, 100); dirty = true; }
             Ui.Tooltip("Items going from one retainer to another pass through your bags. This many bag slots stay free while they do.");
 
-            var retainers = organizer.CurrentRetainers;
+            var retainers = CurrentRetainers;
             if (retainers.Count > 0)
             {
                 Ui.Gap(0.3f);
@@ -827,22 +836,38 @@ public sealed class OrganizerPanel
         DestinationKind.Armoury => "armoury chest",
         DestinationKind.Saddlebag => "chocobo saddlebag",
         DestinationKind.Retainer when d.RetainerId == 0 => "any retainer",
-        DestinationKind.Retainer => organizer.RetainerNames.TryGetValue(d.RetainerId, out var n) ? n : "a retainer Gleam has not met",
+        DestinationKind.Retainer => RetainerNames.TryGetValue(d.RetainerId, out var n) ? n : "a retainer Gleam has not met",
         _ => d.Kind.ToString(),
     };
 
+    private (bool AllowStay, IReadOnlyDictionary<ulong, string> Retainers)? destinationsFor;
+    private List<(Destination D, string Label)> destinations = new();
+    private List<string> destinationLabels = new();
+
     private bool DestinationCombo(string id, ref Destination value, bool allowStay)
     {
-        var options = new List<(Destination D, string Label)>();
-        if (allowStay) options.Add((Destination.Stay, "Stays where it is"));
-        options.Add((Destination.Bags, "Bags"));
-        options.Add((Destination.Armoury, "Armoury chest"));
-        options.Add((Destination.Saddlebag, "Chocobo saddlebag"));
-        options.Add((Destination.AnyRetainer, "Any retainer with room"));
-        // This character's retainers. Another character's still shows, by name, when a layout already names it.
-        foreach (var (rid, rname) in organizer.CurrentRetainers.OrderBy(kv => kv.Value)) options.Add((Destination.RetainerNamed(rid), $"Retainer: {rname}"));
+        // Every rule and question shows the same choices, so they are made once and made again only when a
+        // retainer comes or goes. They used to be built afresh for every dropdown on every frame.
+        var retainers = CurrentRetainers;
+        if (destinationsFor is not { } built || built.AllowStay != allowStay || !ReferenceEquals(built.Retainers, retainers))
+        {
+            destinationsFor = (allowStay, retainers);
+            destinations = new List<(Destination D, string Label)>();
+            if (allowStay) destinations.Add((Destination.Stay, "Stays where it is"));
+            destinations.Add((Destination.Bags, "Bags"));
+            destinations.Add((Destination.Armoury, "Armoury chest"));
+            destinations.Add((Destination.Saddlebag, "Chocobo saddlebag"));
+            destinations.Add((Destination.AnyRetainer, "Any retainer with room"));
+            // This character's retainers. Another character's still shows, by name, when a layout already names it.
+            foreach (var (rid, rname) in retainers.OrderBy(kv => kv.Value)) destinations.Add((Destination.RetainerNamed(rid), $"Retainer: {rname}"));
+            destinationLabels = destinations.Select(o => o.Label).ToList();
+        }
+        var options = destinations;
+        var labels = destinationLabels;
         var current = value;
-        var idx = options.FindIndex(o => o.D == current);
+        var idx = -1;
+        for (var i = 0; i < options.Count; i++)
+            if (options[i].D == current) { idx = i; break; }
         // A layout can name a retainer this character does not have: another character's, or a dismissed one.
         // Say so in words. It used to print the raw id, which tells a player nothing at all.
         if (idx < 0)
@@ -852,12 +877,14 @@ public sealed class OrganizerPanel
             else if (Game.RetainerDirectory.Names(config).TryGetValue(current.RetainerId, out var known))
                 label = $"{known}  ·  not on this character";
             else label = "A retainer Gleam has not met";
-            options.Add((current, label));
+            // Only this dropdown names it, so only this dropdown gets a copy of the choices with it added.
+            options = new List<(Destination D, string Label)>(options) { (current, label) };
+            labels = new List<string>(labels) { label };
             idx = options.Count - 1;
         }
         ImGui.SetNextItemWidth(210 * Ui.Scale);
         using var bg = ImRaii.PushColor(ImGuiCol.FrameBg, new Vector4(1, 1, 1, 0.06f));
-        if (!Ui.Combo(id, ref idx, options.Select(o => o.Label).ToList())) return false;
+        if (!Ui.Combo(id, ref idx, labels)) return false;
         value = options[idx].D;
         return true;
     }
@@ -884,16 +911,17 @@ public sealed class OrganizerPanel
         }
 
         // End state cards
-        var states = result.EndState.Where(e => e.UsedBefore != e.UsedAfter || result.Report.Shortfalls.Any(s => s.Storage == e.Storage)).ToList();
+        var view = Preview(result);
+        var states = view.States;
         if (states.Count > 0)
         {
             Ui.Hint("After organizing");
             var cardW = Math.Max(180 * Ui.Scale, (ImGui.GetContentRegionAvail().X - 8 * Ui.Scale * (Math.Min(states.Count, 4) - 1)) / Math.Min(states.Count, 4));
             var col = 0;
-            foreach (var e in states)
+            foreach (var (e, shortfall) in states)
             {
                 if (col > 0) ImGui.SameLine();
-                DrawStateCard(e, cardW, result.Report.Shortfalls.FirstOrDefault(s => s.Storage == e.Storage));
+                DrawStateCard(e, cardW, shortfall);
                 col = (col + 1) % Math.Min(states.Count, 4);
             }
             ImGui.NewLine();
@@ -906,21 +934,19 @@ public sealed class OrganizerPanel
         }
         else
         {
-            foreach (var group in result.Moves.GroupBy(m => m.RequiresOpen))
+            foreach (var group in view.Groups)
             {
-                var title = group.Key is { } s ? $"With {Name(s)} open" : "Bags and armoury";
                 ImGui.SetNextItemOpen(true, ImGuiCond.Once);
                 bool open;
                 using (ImRaii.PushStyle(ImGuiStyleVar.FramePadding, new Vector2(10 * Ui.Scale, 6 * Ui.Scale)))
-                    open = ImGui.CollapsingHeader($"{title}###g{group.Key}", ImGuiTreeNodeFlags.None);
+                    open = ImGui.CollapsingHeader(group.HeaderId, ImGuiTreeNodeFlags.None);
                 ImGui.SameLine();
                 ImGui.SetCursorPosX(ImGui.GetCursorPosX() + 8 * Ui.Scale);
                 ImGui.SetCursorPosY(ImGui.GetCursorPosY() + 5 * Ui.Scale);
-                var groupKey = $"g{group.Key}";
-                Ui.Pill($"{(int)Ui.Count($"mv:{groupKey}", group.Count())}", Ui.Muted, null, groupKey);
+                Ui.Pill($"{(int)Ui.Count(group.CountKey, group.Rows.Count)}", Ui.Muted, null, group.PillKey);
                 if (!open) continue;
-                using var groupFade = Ui.FoldFade(groupKey);
-                DrawMoveTable(group.Key?.ToString() ?? "bags", group.ToList());
+                using var groupFade = Ui.FoldFade(group.PillKey);
+                DrawMoveTable(group);
             }
         }
 
@@ -995,9 +1021,128 @@ public sealed class OrganizerPanel
         return Ui.EaseOut((float)Math.Clamp(elapsed / 0.16, 0, 1));
     }
 
-    private void DrawMoveTable(string key, List<MoveOp> moves)
+    // ---------- the preview, worked out once per solve ----------
+    // Grouping the moves, naming both ends of every route and picking the end-state cards used to happen on
+    // every frame, with each retainer name costing a merge of two dictionaries. A preview is now turned into
+    // what the screen draws once, when the organizer hands over a new result or a retainer's name changes.
+
+    /// <summary>One move as the table draws it.</summary>
+    private sealed class MoveRowView(MoveOp move, string key, string route)
     {
-        using var table = ImRaii.Table($"##mv{key}", 4, ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingFixedFit | ImGuiTableFlags.NoSavedSettings | ImGuiTableFlags.PadOuterX);
+        public readonly MoveOp Move = move;
+        public readonly string Key = key;
+        public readonly string LiftKey = $"mvicon:{key}";
+        public readonly string IconKey = $"icon:{move.Info.IconId}";
+        public readonly string Route = route;
+        public readonly string? Quantity = move.Item.Quantity > 1 ? $"× {move.Item.Quantity}" : null;
+        public readonly string? Round = move.Pass > 1 ? $"Round {move.Pass}" : null;
+    }
+
+    /// <summary>The moves that need the same storage open, under one collapsing header.</summary>
+    private sealed class MoveGroupView(string headerId, string pillKey, string tableId, List<MoveRowView> rows)
+    {
+        public readonly string HeaderId = headerId;
+        public readonly string PillKey = pillKey;
+        public readonly string CountKey = $"mv:{pillKey}";
+        public readonly string TableId = tableId;
+        public readonly List<MoveRowView> Rows = rows;
+    }
+
+    private sealed class PreviewView
+    {
+        public required SolveResult From { get; init; }
+        public required IReadOnlyDictionary<ulong, string> Names { get; init; }
+        public required List<(StorageEndState State, Shortfall? Short)> States { get; init; }
+        public required List<MoveGroupView> Groups { get; init; }
+        public required List<StorageId> Opens { get; init; }
+        public required string OpenNames { get; init; }
+        /// <summary>Storage Gleam has not looked inside yet, for the snapshot it was worked out from.</summary>
+        public List<string>? Unseen;
+        public object? UnseenFor;
+    }
+
+    private PreviewView? preview;
+
+    private PreviewView Preview(SolveResult result)
+    {
+        var names = RetainerNames;
+        if (preview is { } p && ReferenceEquals(p.From, result) && ReferenceEquals(p.Names, names)) return p;
+
+        var groups = new List<MoveGroupView>();
+        foreach (var group in result.Moves.GroupBy(m => m.RequiresOpen))
+        {
+            var title = group.Key is { } s ? $"With {Name(s)} open" : "Bags and armoury";
+            var tableKey = group.Key?.ToString() ?? "bags";
+            var rows = group.Select(m => new MoveRowView(m, $"{tableKey}:{m.Item.Slot}:{m.Info.ItemId}", $"{Name(m.From)}  →  {Name(m.To)}")).ToList();
+            groups.Add(new MoveGroupView($"{title}###g{group.Key}", $"g{group.Key}", $"##mv{tableKey}", rows));
+        }
+        var opens = result.StoragesToOpen.ToList();
+        return preview = new PreviewView
+        {
+            From = result,
+            Names = names,
+            States = result.EndState
+                .Where(e => e.UsedBefore != e.UsedAfter || result.Report.Shortfalls.Any(s => s.Storage == e.Storage))
+                .Select(e => (e, result.Report.Shortfalls.FirstOrDefault(s => s.Storage == e.Storage)))
+                .ToList(),
+            Groups = groups,
+            Opens = opens,
+            OpenNames = string.Join(" and ", opens.Select(Name)),
+        };
+    }
+
+    private IReadOnlyDictionary<ulong, string> retainerNames = new Dictionary<ulong, string>();
+    private double retainerNamesAt = double.MinValue;
+    private IReadOnlyDictionary<ulong, string> currentRetainers = new Dictionary<ulong, string>();
+    private double currentRetainersAt = double.MinValue;
+
+    /// <summary>
+    /// Every retainer that can be named, asked of the organizer at most once a second: each ask merges two
+    /// dictionaries under a lock. The reference only changes when a name does, so what is built from it can tell.
+    /// </summary>
+    private IReadOnlyDictionary<ulong, string> RetainerNames => Refreshed(ref retainerNames, ref retainerNamesAt, organizer, static o => o.RetainerNames);
+
+    /// <summary>This character's retainers, asked at most once a second in the same way.</summary>
+    private IReadOnlyDictionary<ulong, string> CurrentRetainers => Refreshed(ref currentRetainers, ref currentRetainersAt, organizer, static o => o.CurrentRetainers);
+
+    private static IReadOnlyDictionary<ulong, string> Refreshed(ref IReadOnlyDictionary<ulong, string> kept, ref double askedAt,
+        OrganizerCoordinator from, Func<OrganizerCoordinator, IReadOnlyDictionary<ulong, string>> ask)
+    {
+        var now = ImGui.GetTime();
+        if (now - askedAt < 1.0) return kept;
+        askedAt = now;
+        var fresh = ask(from);
+        if (!SameNames(fresh, kept)) kept = fresh;
+        return kept;
+    }
+
+    private static bool SameNames(IReadOnlyDictionary<ulong, string> a, IReadOnlyDictionary<ulong, string> b)
+    {
+        if (a.Count != b.Count) return false;
+        foreach (var (id, name) in a)
+            if (!b.TryGetValue(id, out var other) || other != name) return false;
+        return true;
+    }
+
+    private string? missingDependency;
+    private double missingCheckedAt = double.MinValue;
+
+    /// <summary>What hands-free is missing, asked at most once a second: the question walks Dalamud's plugin list.</summary>
+    private string? MissingDependencyCached()
+    {
+        if (Pilot is null) return null;
+        var now = ImGui.GetTime();
+        if (now - missingCheckedAt >= 1.0)
+        {
+            missingDependency = Pilot.MissingDependency();
+            missingCheckedAt = now;
+        }
+        return missingDependency;
+    }
+
+    private void DrawMoveTable(MoveGroupView group)
+    {
+        using var table = ImRaii.Table(group.TableId, 4, ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingFixedFit | ImGuiTableFlags.NoSavedSettings | ImGuiTableFlags.PadOuterX);
         if (!table) return;
         ImGui.TableSetupColumn("##icon", ImGuiTableColumnFlags.WidthFixed, 30 * Ui.Scale, 0);
         ImGui.TableSetupColumn("##item", ImGuiTableColumnFlags.WidthStretch, 5f, 0);
@@ -1006,30 +1151,34 @@ public sealed class OrganizerPanel
         var legW = ImGui.CalcTextSize("To bags first", false, 0).X + ImGui.CalcTextSize("Round 10", false, 0).X + 56 * Ui.Scale;
         ImGui.TableSetupColumn("##leg", ImGuiTableColumnFlags.WidthFixed, legW, 0);
 
-        var index = 0;
-        foreach (var m in moves)
-        {
-            var rowKey = $"{key}:{m.Item.Slot}:{m.Info.ItemId}";
-            // Same staggered entry the clean list uses, so a fresh preview reads down the page.
-            using var fade = ImRaii.PushStyle(ImGuiStyleVar.Alpha, ImGui.GetStyle().Alpha * MoveRowAlpha(index++));
-            ImGui.TableNextRow(ImGuiTableRowFlags.None, 28 * Ui.Scale);
-            ImGui.TableNextColumn();
-            var lift = Ui.Smooth($"mvicon:{rowKey}", hoveredMove == rowKey ? 1f : 0f, 16f);
-            Ui.ImageLifted(icons.Get(m.Info.IconId, m.Item.IsHq), 24 * Ui.Scale, lift, 4 * Ui.Scale, $"icon:{m.Info.IconId}");
-            ImGui.TableNextColumn();
-            ImGui.AlignTextToFramePadding();
-            Ui.Text(m.Info.Name);
-            if (ImGui.IsItemHovered()) hoveredMove = rowKey;
-            if (m.Item.Quantity > 1) { ImGui.SameLine(); Ui.Hint($"× {m.Item.Quantity}"); }
-            ImGui.TableNextColumn();
-            ImGui.AlignTextToFramePadding();
-            Ui.Hint($"{Name(m.From)}  →  {Name(m.To)}");
-            ImGui.TableNextColumn();
-            ImGui.SetCursorPosY(ImGui.GetCursorPosY() + 3 * Ui.Scale);
-            if (m.Leg == MoveLeg.RelayOut) { Ui.Pill("To bags first", Ui.Info); Ui.Tooltip("Goes into your bags now and on to its destination when that storage is open."); }
-            else if (m.Leg == MoveLeg.RelayIn) { Ui.Pill("From bags", Ui.Info); Ui.Tooltip("The second half of a move that passed through your bags."); }
-            if (m.Pass > 1) { ImGui.SameLine(); Ui.Pill($"Round {m.Pass}", Ui.Warn); Ui.Tooltip("Needs room freed by earlier moves, so it runs in a later round."); }
-        }
+        // Only the rows in view are drawn; the ones above and below are stood in by empty space.
+        var rows = group.Rows;
+        using var clip = new Ui.RowClipper(rows.Count);
+        while (clip.Step())
+            for (var i = clip.Start; i < clip.End; i++)
+            {
+                var row = rows[i];
+                var m = row.Move;
+                // Same staggered entry the clean list uses, so a fresh preview reads down the page.
+                using var fade = ImRaii.PushStyle(ImGuiStyleVar.Alpha, ImGui.GetStyle().Alpha * MoveRowAlpha(i));
+                ImGui.TableNextRow(ImGuiTableRowFlags.None, 28 * Ui.Scale);
+                ImGui.TableNextColumn();
+                var lift = Ui.Smooth(row.LiftKey, hoveredMove == row.Key ? 1f : 0f, 16f);
+                Ui.ImageLifted(icons.Get(m.Info.IconId, m.Item.IsHq), 24 * Ui.Scale, lift, 4 * Ui.Scale, row.IconKey);
+                ImGui.TableNextColumn();
+                ImGui.AlignTextToFramePadding();
+                Ui.Text(m.Info.Name);
+                if (ImGui.IsItemHovered()) hoveredMove = row.Key;
+                if (row.Quantity is { } quantity) { ImGui.SameLine(); Ui.Hint(quantity); }
+                ImGui.TableNextColumn();
+                ImGui.AlignTextToFramePadding();
+                Ui.Hint(row.Route);
+                ImGui.TableNextColumn();
+                ImGui.SetCursorPosY(ImGui.GetCursorPosY() + 3 * Ui.Scale);
+                if (m.Leg == MoveLeg.RelayOut) { Ui.Pill("To bags first", Ui.Info); Ui.Tooltip("Goes into your bags now and on to its destination when that storage is open."); }
+                else if (m.Leg == MoveLeg.RelayIn) { Ui.Pill("From bags", Ui.Info); Ui.Tooltip("The second half of a move that passed through your bags."); }
+                if (row.Round is { } round) { ImGui.SameLine(); Ui.Pill(round, Ui.Warn); Ui.Tooltip("Needs room freed by earlier moves, so it runs in a later round."); }
+            }
     }
 
     private void DrawFooter()
@@ -1037,9 +1186,10 @@ public sealed class OrganizerPanel
         Ui.Rule();
         Ui.Gap(0.3f);
         var r = organizer.Current;
+        var opens = r is null ? null : Preview(r).Opens;
         var nMoves = (int)Ui.Count("ftMoves", r?.Moves.Count ?? 0);
         var nRelay = (int)Ui.Count("ftRelay", r?.RelayedMoves ?? 0);
-        var nOpens = (int)Ui.Count("ftOpens", r?.StoragesToOpen.Count() ?? 0);
+        var nOpens = (int)Ui.Count("ftOpens", opens?.Count ?? 0);
         var nWaiting = (int)Ui.Count("ftOrgWait", organizer.PendingMoves.Count);
 
         var parts = new List<string>();
@@ -1064,9 +1214,12 @@ public sealed class OrganizerPanel
 
         // A storage that is already open needs no trip, and a run by hand never travels at all. Both used to
         // count as travel, so an open saddlebag without vnavmesh still greyed the button out.
-        var needsTravel = r is not null && r.StoragesToOpen.Any(s => !organizer.IsOpen(s));
+        var needsTravel = false;
+        if (opens is not null)
+            foreach (var s in opens)
+                if (!organizer.IsOpen(s)) { needsTravel = true; break; }
         var handsFree = Pilot is not null && config.Automation.Enabled && needsTravel;
-        var blocked = handsFree ? Pilot?.MissingDependency() : null;
+        var blocked = handsFree ? MissingDependencyCached() : null;
         // Only a preview of the layout as it is now can be run.
         var feasible = r is not null && r.Report.Feasible && r.Moves.Count > 0 && !Rethinking && organizer.IsCurrentFresh;
         var canRun = feasible && blocked is null;
@@ -1154,7 +1307,7 @@ public sealed class OrganizerPanel
 
     private string Name(StorageId s) => s.Kind switch
     {
-        ContainerKind.Retainer => organizer.RetainerNames.TryGetValue(s.OwnerId, out var n) ? n : "a retainer",
+        ContainerKind.Retainer => RetainerNames.TryGetValue(s.OwnerId, out var n) ? n : "a retainer",
         _ => s.Kind.DisplayName(),
     };
 }
