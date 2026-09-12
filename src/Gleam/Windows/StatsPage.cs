@@ -71,6 +71,8 @@ public sealed class StatsPage
 
     public void Draw()
     {
+        // The service only keeps the sums current while this page is being looked at.
+        stats.MarkViewed();
         var snap = stats.Snapshot;
         var comboW = 140f * Ui.Scale;
         var rightW = Ui.SegmentedWidth(Ranges) + ImGui.GetStyle().ItemSpacing.X + comboW;
