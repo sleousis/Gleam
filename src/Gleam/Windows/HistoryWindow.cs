@@ -58,6 +58,88 @@ public sealed class HistoryWindow
     private double staggerAt;
     private string lastSearch = string.Empty;
 
+    private static readonly string[] CleanedTitles = ["When", "", "Item", "Action", "To get it back"];
+    private static readonly string[] MovedTitles = ["When", "", "Item", "Where it went"];
+
+    /// <summary>One cleaned item as the table draws it, looked up and worded once rather than on every frame.</summary>
+    private sealed class CleanedRow(RunLogEntry e, ItemInfo? info)
+    {
+        public readonly RunLogEntry Entry = e;
+        public readonly ItemInfo? Info = info;
+        public readonly string When = e.At.ToLocalTime().ToString("MMM d, HH:mm");
+        public readonly string? IconKey = info is null ? null : $"icon:{info.IconId}";
+        public readonly string Name = e.ItemName + (e.IsHq ? " " : "");
+        public readonly string Detail = $"{(e.Quantity > 1 ? $"× {e.Quantity} · " : "")}{e.CharacterName} · {e.Container.DisplayName().ToLowerInvariant()}";
+        public readonly string Back = ReacquireHint(info);
+        /// <summary>
+        /// What a discard was worth. A discard under "Discard all" is logged with no value, which made everything
+        /// destroyed add up to nothing; the vendor price is the least it was worth.
+        /// </summary>
+        public readonly long Lost = e.Action != ActionKind.Discard ? 0 : e.ValueGil > 0 ? e.ValueGil : (long)(info?.VendorPrice ?? 0) * e.Quantity;
+    }
+
+    /// <summary>One move as the table draws it.</summary>
+    private sealed class MovedRow(MoveLogEntry e, ItemInfo? info)
+    {
+        public readonly MoveLogEntry Entry = e;
+        public readonly ItemInfo? Info = info;
+        public readonly string When = e.At.ToLocalTime().ToString("MMM d, HH:mm");
+        public readonly string? IconKey = info is null ? null : $"icon:{info.IconId}";
+        public readonly string Name = e.ItemName + (e.IsHq ? " " : "");
+        public readonly string Detail = $"{(e.Quantity > 1 ? $"× {e.Quantity} · " : "")}{e.CharacterName}";
+        public readonly string Route = $"{e.FromKind.DisplayName()}  →  {e.ToKind.DisplayName()}{(e.Leg == "RelayOut" ? ", on the way" : "")}";
+    }
+
+    private static bool Matches(string itemName, string characterName, string search) =>
+        string.IsNullOrWhiteSpace(search)
+        || itemName.Contains(search, StringComparison.OrdinalIgnoreCase)
+        || characterName.Contains(search, StringComparison.OrdinalIgnoreCase);
+
+    // Worked out once per list and search rather than once per frame: filtering the whole history, summing it
+    // three times over the item sheet and wording every row was the most expensive thing this page did.
+    private IReadOnlyList<RunLogEntry>? cleanedFrom;
+    private List<CleanedRow> cleanedAll = new();
+    private string? cleanedSearch;
+    private List<CleanedRow> cleanedShown = new();
+    private long cleanedLost, cleanedGot, cleanedValue;
+
+    private IReadOnlyList<MoveLogEntry>? movedFrom;
+    private List<MovedRow> movedAll = new();
+    private string? movedSearch;
+    private List<MovedRow> movedShown = new();
+
+    private void RefreshCleaned()
+    {
+        // A reload swaps the whole list for a new one, so the reference says whether anything changed.
+        var source = entries;
+        if (!ReferenceEquals(source, cleanedFrom))
+        {
+            cleanedFrom = source;
+            cleanedAll = source.Select(e => new CleanedRow(e, db.Get(e.ItemId))).ToList();
+            cleanedSearch = null;
+        }
+        if (cleanedSearch == search) return;
+        cleanedSearch = search;
+        cleanedShown = cleanedAll.Where(r => Matches(r.Entry.ItemName, r.Entry.CharacterName, search)).ToList();
+        cleanedLost = cleanedShown.Sum(r => r.Lost);
+        cleanedGot = cleanedShown.Where(r => r.Entry.Action == ActionKind.VendorSell).Sum(r => r.Entry.ValueGil);
+        cleanedValue = cleanedShown.Sum(r => r.Entry.ValueGil);
+    }
+
+    private void RefreshMoved()
+    {
+        var source = moves;
+        if (!ReferenceEquals(source, movedFrom))
+        {
+            movedFrom = source;
+            movedAll = source.Select(e => new MovedRow(e, db.Get(e.ItemId))).ToList();
+            movedSearch = null;
+        }
+        if (movedSearch == search) return;
+        movedSearch = search;
+        movedShown = movedAll.Where(r => Matches(r.Entry.ItemName, r.Entry.CharacterName, search)).ToList();
+    }
+
     /// <summary>Rows fade in one after another after a reload or a new search; only the first screenful.</summary>
     private float RowAlpha(int index)
     {
@@ -81,19 +163,15 @@ public sealed class HistoryWindow
         if (Ui.Segmented("##histview", ref which, Views)) showMoves = which == 1;
         if (showMoves) { DrawMoves(); return; }
 
-        var rows = entries.Where(e => string.IsNullOrWhiteSpace(search)
-            || e.ItemName.Contains(search, StringComparison.OrdinalIgnoreCase)
-            || e.CharacterName.Contains(search, StringComparison.OrdinalIgnoreCase)).ToList();
+        RefreshCleaned();
+        var rows = cleanedShown;
 
-        // A discard under "Discard all" is logged with no value, which made everything destroyed add up to
-        // nothing. The vendor price is the least it was worth.
-        var destroyed = Ui.Count("histLost", rows.Where(e => e.Action == ActionKind.Discard)
-            .Sum(e => e.ValueGil > 0 ? e.ValueGil : (long)(db.Get(e.ItemId)?.VendorPrice ?? 0) * e.Quantity));
-        var recovered = Ui.Count("histGot", rows.Where(e => e.Action == ActionKind.VendorSell).Sum(e => e.ValueGil));
+        var destroyed = Ui.Count("histLost", cleanedLost);
+        var recovered = Ui.Count("histGot", cleanedGot);
         var summary = loading ? "Loading…" : $"Recovered {Ui.Gil(recovered)} · destroyed {Ui.Gil(destroyed)} of vendor value";
         ImGui.SameLine();
         // Reserve the width of the settled sentence, so a counting total does not drag the line sideways.
-        Ui.RightAlign(ImGui.CalcTextSize($"Recovered {Ui.Gil(rows.Sum(e => e.ValueGil))} · destroyed {Ui.Gil(destroyed)} of vendor value", false, 0).X);
+        Ui.RightAlign(ImGui.CalcTextSize($"Recovered {Ui.Gil(cleanedValue)} · destroyed {Ui.Gil(destroyed)} of vendor value", false, 0).X);
         Ui.TextSwap("histSummary", summary, Ui.Muted * new Vector4(1, 1, 1, 0.8f));
         Ui.Gap(0.5f);
 
@@ -114,7 +192,7 @@ public sealed class HistoryWindow
         ImGui.TableSetupColumn("##back", ImGuiTableColumnFlags.WidthStretch, 4f, 0);
 
         ImGui.TableNextRow(ImGuiTableRowFlags.None, 24 * Ui.Scale);
-        foreach (var title in new[] { "When", "", "Item", "Action", "To get it back" })
+        foreach (var title in CleanedTitles)
         {
             ImGui.TableNextColumn();
             ImGui.AlignTextToFramePadding();
@@ -123,33 +201,35 @@ public sealed class HistoryWindow
 
         if (staggerAt <= 0 || lastSearch != search) { staggerAt = ImGui.GetTime(); lastSearch = search; }
 
-        var index = 0;
-        foreach (var e in rows)
-        {
-            var info = db.Get(e.ItemId);
-            using var fade = ImRaii.PushStyle(ImGuiStyleVar.Alpha, ImGui.GetStyle().Alpha * RowAlpha(index++));
-            ImGui.TableNextRow(ImGuiTableRowFlags.None, 28 * Ui.Scale);
-            ImGui.TableNextColumn(); ImGui.AlignTextToFramePadding(); Ui.Hint(e.At.ToLocalTime().ToString("MMM d, HH:mm"));
-            ImGui.TableNextColumn();
-            if (info is not null)
+        // Only the rows in view are drawn; the ones above and below are stood in by empty space.
+        using var clip = new Ui.RowClipper(rows.Count);
+        while (clip.Step())
+            for (var i = clip.Start; i < clip.End; i++)
             {
-                Ui.ImageRounded(icons.Get(info.IconId, e.IsHq), new Vector2(24 * Ui.Scale, 24 * Ui.Scale), 4 * Ui.Scale, $"icon:{info.IconId}");
+                var r = rows[i];
+                var e = r.Entry;
+                using var fade = ImRaii.PushStyle(ImGuiStyleVar.Alpha, ImGui.GetStyle().Alpha * RowAlpha(i));
+                ImGui.TableNextRow(ImGuiTableRowFlags.None, 28 * Ui.Scale);
+                ImGui.TableNextColumn(); ImGui.AlignTextToFramePadding(); Ui.Hint(r.When);
+                ImGui.TableNextColumn();
+                if (r.Info is not null)
+                {
+                    Ui.ImageRounded(icons.Get(r.Info.IconId, e.IsHq), new Vector2(24 * Ui.Scale, 24 * Ui.Scale), 4 * Ui.Scale, r.IconKey);
+                }
+                ImGui.TableNextColumn(); ImGui.AlignTextToFramePadding();
+                Ui.Text(r.Name);
+                ImGui.SameLine(); Ui.Hint(r.Detail);
+                ImGui.TableNextColumn(); ImGui.AlignTextToFramePadding(); Ui.ActionLabel(e.Action);
+                ImGui.TableNextColumn(); ImGui.AlignTextToFramePadding(); Ui.Hint(r.Back);
             }
-            ImGui.TableNextColumn(); ImGui.AlignTextToFramePadding();
-            Ui.Text(e.ItemName + (e.IsHq ? " " : ""));
-            ImGui.SameLine(); Ui.Hint($"{(e.Quantity > 1 ? $"× {e.Quantity} · " : "")}{e.CharacterName} · {e.Container.DisplayName().ToLowerInvariant()}");
-            ImGui.TableNextColumn(); ImGui.AlignTextToFramePadding(); Ui.ActionLabel(e.Action);
-            ImGui.TableNextColumn(); ImGui.AlignTextToFramePadding(); Ui.Hint(ReacquireHint(info));
-        }
     }
 
     /// <summary>What the organizer moved, newest first: where each stack came from and where it went.</summary>
     private void DrawMoves()
     {
         Ui.Gap(0.5f);
-        var rows = moves.Where(e => string.IsNullOrWhiteSpace(search)
-            || e.ItemName.Contains(search, StringComparison.OrdinalIgnoreCase)
-            || e.CharacterName.Contains(search, StringComparison.OrdinalIgnoreCase)).ToList();
+        RefreshMoved();
+        var rows = movedShown;
         if (rows.Count == 0)
         {
             Ui.EmptyState(icons.LogoMedium, moves.Count == 0 ? "Nothing moved yet." : "Nothing matches your search.");
@@ -164,30 +244,32 @@ public sealed class HistoryWindow
         ImGui.TableSetupColumn("##item", ImGuiTableColumnFlags.WidthStretch, 5f, 0);
         ImGui.TableSetupColumn("##where", ImGuiTableColumnFlags.WidthStretch, 4f, 0);
         ImGui.TableNextRow(ImGuiTableRowFlags.None, 24 * Ui.Scale);
-        foreach (var title in new[] { "When", "", "Item", "Where it went" })
+        foreach (var title in MovedTitles)
         {
             ImGui.TableNextColumn();
             ImGui.AlignTextToFramePadding();
             Ui.Hint(title);
         }
 
-        var index = 0;
-        foreach (var e in rows)
-        {
-            var info = db.Get(e.ItemId);
-            using var fade = ImRaii.PushStyle(ImGuiStyleVar.Alpha, ImGui.GetStyle().Alpha * RowAlpha(index++));
-            ImGui.TableNextRow(ImGuiTableRowFlags.None, 28 * Ui.Scale);
-            ImGui.TableNextColumn(); ImGui.AlignTextToFramePadding(); Ui.Hint(e.At.ToLocalTime().ToString("MMM d, HH:mm"));
-            ImGui.TableNextColumn();
-            if (info is not null) Ui.ImageRounded(icons.Get(info.IconId, e.IsHq), new Vector2(24 * Ui.Scale, 24 * Ui.Scale), 4 * Ui.Scale, $"icon:{info.IconId}");
-            ImGui.TableNextColumn(); ImGui.AlignTextToFramePadding();
-            Ui.Text(e.ItemName + (e.IsHq ? " " : ""));
-            ImGui.SameLine(); Ui.Hint($"{(e.Quantity > 1 ? $"× {e.Quantity} · " : "")}{e.CharacterName}");
-            ImGui.TableNextColumn(); ImGui.AlignTextToFramePadding();
-            Ui.Icon(Ui.ContainerIcon(e.ToKind), Ui.Muted);
-            ImGui.SameLine(0, 6 * Ui.Scale);
-            Ui.Hint($"{e.FromKind.DisplayName()}  →  {e.ToKind.DisplayName()}{(e.Leg == "RelayOut" ? ", on the way" : "")}");
-        }
+        using var clip = new Ui.RowClipper(rows.Count);
+        while (clip.Step())
+            for (var i = clip.Start; i < clip.End; i++)
+            {
+                var r = rows[i];
+                var e = r.Entry;
+                using var fade = ImRaii.PushStyle(ImGuiStyleVar.Alpha, ImGui.GetStyle().Alpha * RowAlpha(i));
+                ImGui.TableNextRow(ImGuiTableRowFlags.None, 28 * Ui.Scale);
+                ImGui.TableNextColumn(); ImGui.AlignTextToFramePadding(); Ui.Hint(r.When);
+                ImGui.TableNextColumn();
+                if (r.Info is not null) Ui.ImageRounded(icons.Get(r.Info.IconId, e.IsHq), new Vector2(24 * Ui.Scale, 24 * Ui.Scale), 4 * Ui.Scale, r.IconKey);
+                ImGui.TableNextColumn(); ImGui.AlignTextToFramePadding();
+                Ui.Text(r.Name);
+                ImGui.SameLine(); Ui.Hint(r.Detail);
+                ImGui.TableNextColumn(); ImGui.AlignTextToFramePadding();
+                Ui.Icon(Ui.ContainerIcon(e.ToKind), Ui.Muted);
+                ImGui.SameLine(0, 6 * Ui.Scale);
+                Ui.Hint(r.Route);
+            }
     }
 
     private static string ReacquireHint(ItemInfo? info)
