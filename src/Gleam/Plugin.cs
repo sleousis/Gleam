@@ -63,6 +63,9 @@ public sealed class Plugin : IDalamudPlugin
     private readonly DebugReport report;
     private readonly StatsService stats;
 
+    /// <summary>Said at the next login when settings or history were brought across from the old copy again.</summary>
+    private string? carryOverNotice;
+
     public Plugin(
         IDalamudPluginInterface pi, ICommandManager commands, IClientState clientState, IPluginLog log,
         IFramework framework, IDataManager data, IPlayerState player, IGameInventory inventory, IAddonLifecycle addonLifecycle,
@@ -76,7 +79,7 @@ public sealed class Plugin : IDalamudPlugin
         this.chat = chat;
         PluginServices.Init(pi, data);
 
-        config = LoadConfig(pi, log, chat);
+        config = LoadConfig(pi, log, chat, out carryOverNotice);
         Windows.Ui.Reduced = config.ReduceMotion;
         // Saves from background work raced the settings page over the same objects. Every save goes through
         // the game's own thread, where the page also draws.
@@ -239,9 +242,9 @@ public sealed class Plugin : IDalamudPlugin
     /// Settings that cannot be read are copied aside before anything else happens. Otherwise the first save
     /// writes fresh defaults over the damaged file, and every list and layout in it is gone for good.
     /// </summary>
-    private static Configuration LoadConfig(IDalamudPluginInterface pi, IPluginLog log, IChatGui chat)
+    private static Configuration LoadConfig(IDalamudPluginInterface pi, IPluginLog log, IChatGui chat, out string? carryOverNotice)
     {
-        CarryOverFromOldName(pi, log);
+        carryOverNotice = CarryOverFromOldName(pi, log);
         Configuration? loaded = null;
         try { loaded = pi.GetPluginConfig() as Configuration; }
         catch (Exception ex) { log.Error(ex, "Gleam's settings could not be read"); }
@@ -269,32 +272,63 @@ public sealed class Plugin : IDalamudPlugin
     /// The first start under the new name brings them across: the settings with their type markers rewritten,
     /// the histories copied under their new names. The old files are left as they were, so an old copy that
     /// is still installed keeps working until it is removed.
+    ///
+    /// Players who kept using the old copy after that got nothing of what it saved later. Once the old copy is
+    /// gone for good, anything it saved after Gleam last saved comes across once more: its settings, since the
+    /// player touched those last (Gleam's are kept as a backup), and the history lines written after Gleam's
+    /// newest entry. Waiting until it is uninstalled means a copy still in use never flips settings back and forth.
     /// </summary>
-    private static void CarryOverFromOldName(IDalamudPluginInterface pi, IPluginLog log)
+    /// <returns>A sentence for the player when something came across a second time; otherwise null.</returns>
+    private static string? CarryOverFromOldName(IDalamudPluginInterface pi, IPluginLog log)
     {
         try
         {
             var configs = pi.ConfigFile.Directory;
-            if (configs is null) return;
+            if (configs is null) return null;
             var oldSettings = new FileInfo(Path.Combine(configs.FullName, $"{LegacyNames.InternalName}.json"));
+            var oldGone = !pi.InstalledPlugins.Any(p => p.InternalName == LegacyNames.InternalName);
+            var said = new List<string>();
+
             if (!pi.ConfigFile.Exists && oldSettings.Exists && oldSettings.Length > 0)
             {
                 File.WriteAllText(pi.ConfigFile.FullName, LegacyNames.RewriteConfig(File.ReadAllText(oldSettings.FullName)));
                 log.Information("Brought the settings across from before the rename");
             }
+            else if (oldGone && pi.ConfigFile.Exists && oldSettings.Exists && oldSettings.Length > 0
+                     && oldSettings.LastWriteTimeUtc > pi.ConfigFile.LastWriteTimeUtc)
+            {
+                var backup = pi.ConfigFile.FullName + $".before-carry-over-{DateTime.Now:yyyyMMdd-HHmmss}";
+                pi.ConfigFile.CopyTo(backup, overwrite: false);
+                File.WriteAllText(pi.ConfigFile.FullName,
+                    LegacyNames.MergeConfig(File.ReadAllText(oldSettings.FullName), File.ReadAllText(pi.ConfigFile.FullName)));
+                log.Information("Brought across the settings the old copy saved later; the previous ones are in {Backup}", backup);
+                said.Add($"the settings the older copy saved on {oldSettings.LastWriteTime:d MMM} (yours from before are kept as {Path.GetFileName(backup)})");
+            }
 
             var oldFolder = Path.Combine(configs.FullName, LegacyNames.InternalName);
             var newFolder = pi.GetPluginConfigDirectory();
+            var lines = 0;
             foreach (var (from, to) in LegacyNames.HistoryFiles)
             {
                 var source = Path.Combine(oldFolder, from);
                 var target = Path.Combine(newFolder, to);
-                if (File.Exists(source) && !File.Exists(target)) File.Copy(source, target);
+                if (!File.Exists(source)) continue;
+                if (!File.Exists(target)) { File.Copy(source, target); continue; }
+                if (!oldGone) continue;
+                var current = File.ReadAllText(target);
+                var newer = LegacyNames.NewerLines(File.ReadAllText(source), current);
+                if (newer.Count == 0) continue;
+                File.AppendAllText(target, (current.Length > 0 && !current.EndsWith('\n') ? "\n" : string.Empty) + string.Join("\n", newer) + "\n");
+                lines += newer.Count;
             }
+            if (lines > 0) said.Add($"{lines} history entr{(lines == 1 ? "y" : "ies")} it recorded");
+
+            return said.Count == 0 ? null : $"Brought across from the older copy: {string.Join(", and ", said)}.";
         }
         catch (Exception ex)
         {
             log.Warning(ex, "Could not bring the settings across from before the rename");
+            return null;
         }
     }
 
@@ -304,8 +338,14 @@ public sealed class Plugin : IDalamudPlugin
     /// </summary>
     private void WarnAboutOldCopy()
     {
+        if (carryOverNotice is { } notice)
+        {
+            chat.Print(notice, "Gleam");
+            carryOverNotice = null;
+        }
         if (!pi.InstalledPlugins.Any(p => p.InternalName == LegacyNames.InternalName && p.IsLoaded)) return;
-        chat.PrintError("An older Gleam from before its rename is still installed. Open /xlplugins and remove the Gleam at version 0.9. Your settings, layouts and history are already here.", "Gleam");
+        // Both copies register /gleam and the older one usually wins it, so say where the command goes until then.
+        chat.PrintError("An older Gleam from before its rename is still installed, and /gleam opens that one until it is gone. Open /xlplugins and remove the Gleam at version 0.9. Anything it saves before then comes across once it is removed.", "Gleam");
     }
 
     private static CuratedData LoadCurated(IDalamudPluginInterface pi, IPluginLog log)

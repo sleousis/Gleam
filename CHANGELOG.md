@@ -3,6 +3,11 @@
 Each release's section is shown in Dalamud's plugin installer and on the GitHub release page. The release
 workflow refuses a tag whose version has no section here.
 
+## 0.11.1
+
+- If you kept using the older copy (0.9.x) after installing the renamed Gleam, what it saved since then now comes across once you remove it: its newer settings (your previous ones are kept as a backup) and the history it recorded.
+- The warning about the older copy now says that /gleam opens the older copy until it is removed.
+
 ## 0.11.0
 
 - A new stats page, "Your Gleam in numbers", opens from the chart button in the title bar or with /gleam stats. It shows bag slots freed, gil from sales, market listings and time saved. It also shows a chart of what Gleam did day by day, where the junk came from, how full your bags have been, which rules you keep or untick, where the organizer put things, your last hands-free trip, a year of activity and milestones.

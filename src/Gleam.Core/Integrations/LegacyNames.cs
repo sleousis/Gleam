@@ -1,3 +1,6 @@
+using System.Text.Encodings.Web;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 
 namespace Gleam.Core.Integrations;
@@ -33,4 +36,49 @@ public static class LegacyNames
     /// </summary>
     public static string RewriteConfig(string json) =>
         TypeMarker.Replace(json, m => m.Groups[1].Value + OldName.Replace(m.Groups[2].Value, "Gleam") + m.Groups[3].Value);
+
+    /// <summary>
+    /// Settings the old copy saved after Gleam last saved its own: the player last touched those, so they win.
+    /// Anything only the new build knows (the last release seen, stats, the patch guard) is kept from Gleam's.
+    /// </summary>
+    public static string MergeConfig(string oldJson, string currentJson)
+    {
+        var merged = JsonNode.Parse(RewriteConfig(oldJson))!.AsObject();
+        var current = JsonNode.Parse(currentJson)!.AsObject();
+        foreach (var (key, value) in current)
+            if (!merged.ContainsKey(key)) merged[key] = value?.DeepClone();
+        return merged.ToJsonString(new JsonSerializerOptions { WriteIndented = true, Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping });
+    }
+
+    /// <summary>
+    /// Lines of the old copy's history written after the newest entry in Gleam's, in their order. Both files are
+    /// JSON lines with an "At" time; a line without one is skipped rather than guessed at.
+    /// </summary>
+    public static IReadOnlyList<string> NewerLines(string oldText, string currentText)
+    {
+        DateTimeOffset? newest = null;
+        foreach (var line in Lines(currentText))
+            if (At(line) is { } at && (newest is null || at > newest)) newest = at;
+
+        var newer = new List<string>();
+        foreach (var line in Lines(oldText))
+            if (At(line) is { } at && (newest is null || at > newest)) newer.Add(line);
+        return newer;
+    }
+
+    private static IEnumerable<string> Lines(string text) =>
+        text.Split('\n').Select(l => l.TrimEnd('\r')).Where(l => l.Length > 0);
+
+    private static DateTimeOffset? At(string line)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(line);
+            return doc.RootElement.TryGetProperty("At", out var at) && at.TryGetDateTimeOffset(out var value) ? value : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
 }
