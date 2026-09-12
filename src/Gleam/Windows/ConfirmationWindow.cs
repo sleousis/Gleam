@@ -143,6 +143,9 @@ public sealed class ConfirmationWindow : StyledWindow
     public override void OnClose()
     {
         base.OnClose();
+        // A number still being typed when the window closed has not been written yet.
+        SettingsPage?.SaveIfDirty();
+        Organizer?.SaveIfDirty();
         // Nothing of the window is on screen now, so none of its motion is worth keeping.
         rowFlash.Clear();
         Ui.ResetMotion();
@@ -1598,10 +1601,10 @@ public sealed class ConfirmationWindow : StyledWindow
         else Ui.Tooltip(irreversible);
     }
 
-    public const string SortAfterLabel = "Sort bags afterwards";
+    public const string SortAfterLabel = "Sort afterwards";
     public const string SortAfterHint = "After a clean, runs the game's own sort on every container it touched.";
     public const string HandsFreeCleanHint = "Hands-free: opens the saddlebag, travels to an inn, visits each retainer and the dresser, and teleports to a merchant or your Grand Company when a sale or turn-in needs one. It cleans as it goes.";
-    private const string StopHint = "Finishes the current item, then stops.";
+    private const string StopHint = "Stops now. An item already on its way is finished first.";
 
     // ---------- first run: three screens, once ----------
 

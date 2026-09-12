@@ -41,7 +41,7 @@ for W in WIDTHS:
 
     # ---- cleaning footer: summary, sort tick, here-only link, primary button
     button = min(max(inner * 0.42, 150 * SCALE), 240 * SCALE)
-    sort = w("Sort bags afterwards") + FRAME_H + 4 * SCALE + ITEM * 2
+    sort = w("Sort afterwards") + FRAME_H + 4 * SCALE + ITEM * 2
     here = w("Clean here only") + FRAME_PAD * 2 + ITEM
     for label, need in [("simple", button), ("advanced", sort + here + button)]:
         wraps = need + 160 * SCALE > inner
@@ -80,9 +80,9 @@ for W in WIDTHS:
     check("settings market stack", W, w("Put it up for sale in stacks of") + ITEM + 70 * SCALE + ITEM + w("(the whole stack)"), card,
           "the stack-size row runs off the card")
 
-    # where should Gleam look: the ticks wrap, so only the widest single one has to fit
-    for name in ("Bags", "Armoury chest", "Chocobo saddlebag", "Retainer", "Glamour dresser"):
-        check("settings container tick", W, check_box(name), card, f"'{name}' does not fit on a line of its own")
+    # where Gleam may look: one tick per line inside the fold
+    for name in ("Armoury chest", "Chocobo saddlebag", "Retainer", "Glamour dresser"):
+        check("settings container tick", W, check_box(name), inner - 24 * SCALE, f"'{name}' does not fit on a line of its own")
 
     # what Gleam needs: pill, name, and the sentence beside it or wrapped under it
     for pill, name, what in [("installed", "vnavmesh", "Walks you to the bell, the dresser and the merchant."),
@@ -99,10 +99,11 @@ for W in WIDTHS:
     check("settings ventures", W,
           check_box("Throw away junk a finished venture leaves in my bags") + ITEM + w("not installed") + FRAME_PAD * 2, card,
           "the venture tick and its pill collide")
-    check("settings finish", W, check_box("Sort bags afterwards"), card, "the sort tick does not fit")
+    check("settings unseen", W, check_box("Clean junk it only finds once it gets there"), card, "the unseen tick does not fit")
+    check("settings finish", W, check_box("Sort afterwards"), card, "the sort tick does not fit")
 
     # the page footer: a tick on the left, a link pushed to the right
-    foot_tick = check_box("Show me every setting") + 24 * SCALE + check_box("Hold still")
+    foot_tick = check_box("Show me every setting") + 24 * SCALE + check_box("Reduce motion")
     foot_link = w("Something is not working") + FRAME_PAD * 2
     check("settings footer", W, foot_tick + ITEM + foot_link, inner, "the footer ticks and the help link collide")
 

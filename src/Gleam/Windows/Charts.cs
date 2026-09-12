@@ -7,7 +7,7 @@ namespace Gleam.Windows;
 /// <summary>
 /// The stats page's charts, drawn straight onto ImGui's draw list in Gleam's colours. Each chart keeps a
 /// little state by id: its parts ease towards their values, so a chart grows in when it first appears and
-/// reshapes, rather than redraws, when the numbers behind it change. With "Hold still" everything arrives
+/// reshapes, rather than redraws, when the numbers behind it change. With "Reduce motion" everything arrives
 /// at once. Callers reserve the space; these only draw into the rectangle they are given.
 /// </summary>
 public static class Charts
