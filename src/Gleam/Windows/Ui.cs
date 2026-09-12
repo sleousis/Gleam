@@ -399,7 +399,8 @@ internal static class Ui
     /// </summary>
     public static bool Check(string id, ref bool value, bool disabled = false)
     {
-        var visible = id.Split("##")[0];
+        var cut = id.IndexOf("##", StringComparison.Ordinal);
+        var visible = cut < 0 ? id : id[..cut];
         var h = ImGui.GetFrameHeight();
         var size = Math.Min(h, 19f * Scale);
         var gap = visible.Length == 0 ? 0f : 8f * Scale;
@@ -407,6 +408,8 @@ internal static class Ui
         var start = ImGui.GetCursorScreenPos();
         var clicked = ImGui.InvisibleButton(id, new Vector2(size + gap + textW, h)) && !disabled;
         if (clicked) value = !value;
+        // Scrolled out of view, the box still takes up its room and its click, but there is nothing to draw.
+        if (!ImGui.IsItemVisible()) return clicked;
         var key = $"chk:{ImGui.GetID(id)}";
         RecordHover(key);
         var hv = disabled ? 0f : Hover(key);
@@ -842,7 +845,7 @@ internal static class Ui
     {
         var pos = ImGui.GetCursorScreenPos();
         ImGui.Dummy(new Vector2(box, box));
-        if (tex.IsNull) return;
+        if (tex.IsNull || !ImGui.IsItemVisible()) return;
 
         var a = key is not null && !Reduced ? IconArrival(key) : 1f;
         var grow = box * 0.11f * Math.Clamp(lift, 0f, 1f);
@@ -872,7 +875,7 @@ internal static class Ui
     {
         var pos = ImGui.GetCursorScreenPos();
         ImGui.Dummy(size);
-        if (tex.IsNull) return;
+        if (tex.IsNull || !ImGui.IsItemVisible()) return;
 
         var a = key is not null && !Reduced ? IconArrival(key) : 1f;
         // Draw-list calls ignore the style alpha, so a fading row would keep its icons at full strength.
@@ -1309,6 +1312,35 @@ internal static class Ui
     {
         var pad = ImGui.GetStyle().FramePadding;
         return options.Sum(o => ImGui.CalcTextSize(o.Label, false, 0).X + pad.X * 2 + 6f * Scale) + 8f * Scale;
+    }
+
+    /// <summary>Whether the last item is under the cursor, asked the way tooltips ask. Check it before wording one.</summary>
+    public static bool ItemHovered() => ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled);
+
+    /// <summary>
+    /// Walks the rows of a long list that are actually on screen. The rows above and below are stood in by
+    /// empty space of the same height, so the scrollbar and everything under the list stay where they were.
+    /// Every row must be the same height: the clipper measures the first one and assumes the rest.
+    /// </summary>
+    public readonly struct RowClipper : IDisposable
+    {
+        private readonly ImGuiListClipperPtr clipper;
+
+        public RowClipper(int count)
+        {
+            clipper = ImGui.ImGuiListClipper();
+            clipper.Begin(count);
+        }
+
+        public bool Step() => clipper.Step();
+        public int Start => clipper.DisplayStart;
+        public int End => clipper.DisplayEnd;
+
+        public void Dispose()
+        {
+            clipper.End();
+            clipper.Destroy();
+        }
     }
 
     public static void Tooltip(string text)
