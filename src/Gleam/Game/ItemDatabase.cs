@@ -24,10 +24,13 @@ public sealed class ItemDatabase
     private readonly ExcelSheet<ItemUICategory> uiCategoriesEn;
     private readonly ExcelSheet<Stain> stains;
 
-    private Dictionary<uint, List<RecipeUse>>? recipesByIngredient;
-    private Dictionary<uint, IReadOnlyList<uint>>? classJobCategoryJobs;
-    private HashSet<uint>? vendorBuyable;
-    private HashSet<uint>? retiredCurrencyGear;
+    // Each index reads a whole sheet. They are built once, under one lock, from whichever thread asks first; two
+    // callers used to build the same one side by side.
+    private readonly object buildGate = new();
+    private volatile Dictionary<uint, List<RecipeUse>>? recipesByIngredient;
+    private volatile Dictionary<uint, IReadOnlyList<uint>>? classJobCategoryJobs;
+    private volatile HashSet<uint>? vendorBuyable;
+    private volatile HashSet<uint>? retiredCurrencyGear;
 
     public ItemDatabase(IDataManager data, IPluginLog log)
     {
@@ -106,10 +109,34 @@ public sealed class ItemDatabase
         return EquipSlot.None;
     }
 
+    /// <summary>
+    /// Builds the whole-sheet lookups in the background at load. Built on first use they landed on the game's thread
+    /// in the middle of the first scan, or the first sale of a session, a stall of up to a second on a slow PC.
+    /// </summary>
+    public void WarmUp(IEnumerable<string> englishMenuTexts)
+    {
+        try
+        {
+            _ = VendorBuyable;
+            ClassJobCategoryJobs();
+            RetiredCurrencyGear();
+            RecipesUsing(0);
+            if (!ClientIsEnglish)
+            {
+                lock (clientIndexGate) addonIdsByClientText ??= BuildClientTextIndex();
+                foreach (var text in englishMenuTexts) LocalizeMenuText(text);
+            }
+        }
+        catch (Exception ex)
+        {
+            log.Warning(ex, "Warming up the game data lookups failed; they are built on first use instead");
+        }
+    }
+
     /// <summary>Ingredient item id → recipes using it, reduced to (craft job id, required level).</summary>
     public IReadOnlyList<RecipeUse> RecipesUsing(uint itemId)
     {
-        recipesByIngredient ??= BuildRecipeIndex();
+        if (recipesByIngredient is null) lock (buildGate) recipesByIngredient ??= BuildRecipeIndex();
         return recipesByIngredient.TryGetValue(itemId, out var list) ? list : Array.Empty<RecipeUse>();
     }
 
@@ -144,6 +171,11 @@ public sealed class ItemDatabase
     public IReadOnlyDictionary<uint, IReadOnlyList<uint>> ClassJobCategoryJobs()
     {
         if (classJobCategoryJobs is not null) return classJobCategoryJobs;
+        lock (buildGate) return classJobCategoryJobs ??= BuildClassJobCategoryJobs();
+    }
+
+    private Dictionary<uint, IReadOnlyList<uint>> BuildClassJobCategoryJobs()
+    {
         var result = new Dictionary<uint, IReadOnlyList<uint>>();
         try
         {
@@ -170,7 +202,6 @@ public sealed class ItemDatabase
         {
             log.Warning(ex, "ClassJobCategory index failed; gear rules will use the highest job level overall");
         }
-        classJobCategoryJobs = result;
         return result;
     }
 
@@ -186,7 +217,14 @@ public sealed class ItemDatabase
         }
     }
 
-    private HashSet<uint> VendorBuyable => vendorBuyable ??= BuildVendorBuyable();
+    private HashSet<uint> VendorBuyable
+    {
+        get
+        {
+            if (vendorBuyable is not null) return vendorBuyable;
+            lock (buildGate) return vendorBuyable ??= BuildVendorBuyable();
+        }
+    }
 
     private HashSet<uint> BuildVendorBuyable()
     {
@@ -208,6 +246,11 @@ public sealed class ItemDatabase
     public IReadOnlySet<uint> RetiredCurrencyGear()
     {
         if (retiredCurrencyGear is not null) return retiredCurrencyGear;
+        lock (buildGate) return retiredCurrencyGear ??= BuildRetiredCurrencyGear();
+    }
+
+    private HashSet<uint> BuildRetiredCurrencyGear()
+    {
         var gear = new HashSet<uint>();
         try
         {
@@ -246,7 +289,6 @@ public sealed class ItemDatabase
         {
             log.Warning(ex, "Retired-currency index failed; that rule will stay quiet");
         }
-        retiredCurrencyGear = gear;
         return gear;
     }
 
@@ -291,25 +333,28 @@ public sealed class ItemDatabase
     }
 
     /// <summary>MainCommand row id for an English command name (e.g. "Chocobo Saddlebag"), or null.</summary>
-    public uint? MainCommandIdForEnglishName(string englishName)
+    public uint? MainCommandIdForEnglishName(string englishName) => mainCommandIds.GetOrAdd(englishName, name =>
     {
         try
         {
             foreach (var row in data.GetExcelSheet<MainCommand>(ClientLanguage.English)!)
-                if (string.Equals(row.Name.ExtractText(), englishName, StringComparison.OrdinalIgnoreCase)) return row.RowId;
+                if (string.Equals(row.Name.ExtractText(), name, StringComparison.OrdinalIgnoreCase)) return row.RowId;
         }
         catch (Exception ex)
         {
-            log.Warning(ex, "MainCommand lookup failed for {Name}", englishName);
+            log.Warning(ex, "MainCommand lookup failed for {Name}", name);
         }
         return null;
-    }
+    });
+
+    private readonly ConcurrentDictionary<string, uint?> mainCommandIds = new(StringComparer.OrdinalIgnoreCase);
 
     // ---------- English -> client language ----------
     // Settings and defaults are written in English. The game's own sheets carry every language, so an
     // English name is looked up in the English sheet and read back from the client's sheet.
 
-    private readonly Dictionary<(string Kind, string En), string> localized = new(new TupleComparer());
+    // Written from the game's thread and from runs on the thread pool alike; a plain Dictionary can corrupt itself that way.
+    private readonly ConcurrentDictionary<(string Kind, string En), string> localized = new(new TupleComparer());
 
     private sealed class TupleComparer : IEqualityComparer<(string, string)>
     {

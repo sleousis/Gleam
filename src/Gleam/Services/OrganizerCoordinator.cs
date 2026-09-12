@@ -128,8 +128,12 @@ public sealed class OrganizerCoordinator : IDisposable
     public void Dispose()
     {
         // Cancelled, not disposed: work still unwinding reads the token, and a disposed one throws.
+        ShuttingDown = true;
         runCts?.Cancel();
     }
+
+    /// <summary>The plugin is unloading: no previews, and no waiting moves carried out.</summary>
+    public bool ShuttingDown { get; private set; }
 
     public void OnLogout()
     {
@@ -143,7 +147,9 @@ public sealed class OrganizerCoordinator : IDisposable
     /// <summary>Scans, applies the active plan and solves. Does not move anything.</summary>
     public async Task PreviewAsync()
     {
-        if (IsRunning || cleaner.IsRunning || !player.IsLoaded) return;
+        if (ShuttingDown || IsRunning || cleaner.IsRunning || !player.IsLoaded) return;
+        // The desired state, the capacity model and the solver run off the game's thread, whoever asked.
+        if (framework.IsInFrameworkUpdateThread) await Core.Execution.OffGameThread.Hop();
         if (!await gate.WaitAsync(0).ConfigureAwait(false)) return;
         IsPreviewing = true;
         Status = "Looking through your storage…";
@@ -281,7 +287,7 @@ public sealed class OrganizerCoordinator : IDisposable
     public async Task OnContainerOpenedAsync(ContainerKind kind)
     {
         // "Put my things away" off means nothing moves, moves left waiting from an earlier preview included.
-        if (!config.UseOrganize) return;
+        if (!config.UseOrganize || ShuttingDown) return;
         var ran = false;
         for (var round = 0; round < 20; round++)
         {

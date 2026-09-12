@@ -430,15 +430,31 @@ public sealed class GameActions : IGameActions
     private async Task<bool> RunAndAwaitRemoval(SlotRef slot, uint expectedItemId, CancellationToken ct, Func<Task<bool>> start,
         (string Addon, int Callback, IReadOnlyList<string>? Expect)? expectDialog, bool dialogOptional = false)
     {
+        // The two waiters inside race, and the loser stayed subscribed to every inventory change for its whole
+        // timeout. Cancelling both once the action is decided unsubscribes them at once.
+        using var waiters = new CancellationTokenSource();
+        try
+        {
+            return await RunAndAwaitRemovalCore(slot, expectedItemId, ct, start, expectDialog, dialogOptional, waiters.Token).ConfigureAwait(false);
+        }
+        finally
+        {
+            waiters.Cancel();
+        }
+    }
+
+    private async Task<bool> RunAndAwaitRemovalCore(SlotRef slot, uint expectedItemId, CancellationToken ct, Func<Task<bool>> start,
+        (string Addon, int Callback, IReadOnlyList<string>? Expect)? expectDialog, bool dialogOptional, CancellationToken waitersToken)
+    {
         LastFailure = null;
         // Once the request may reach the server the item is gone or it is not, and Stop cannot change that.
         // So the confirmation is waited out on its own timeouts rather than on the run's token: an item
         // destroyed mid-Stop used to be reported as cancelled and left out of history.
         var finish = CancellationToken.None;
         var removed = WaitForEvent<InventoryItemRemovedArgs>(
-            e => (uint)e.Item.ContainerType == slot.ContainerId && e.Item.InventorySlot == (uint)slot.Slot, finish);
+            e => (uint)e.Item.ContainerType == slot.ContainerId && e.Item.InventorySlot == (uint)slot.Slot, waitersToken);
         var changed = WaitForEvent<InventoryItemChangedArgs>(
-            e => (uint)e.Item.ContainerType == slot.ContainerId && e.Item.InventorySlot == (uint)slot.Slot && e.Item.IsEmpty, finish);
+            e => (uint)e.Item.ContainerType == slot.ContainerId && e.Item.InventorySlot == (uint)slot.Slot && e.Item.IsEmpty, waitersToken);
 
         // Arm first, then act: the dialog can only be answered if it appears after this point, and a
         // dialog that is already open (the player's own) makes the whole action refuse to start.

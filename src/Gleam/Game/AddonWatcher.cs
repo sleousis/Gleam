@@ -34,8 +34,12 @@ public sealed class AddonWatcher : IDisposable
         lifecycle.RegisterListener(AddonEvent.PostSetup, ActionAddons, OnActionSetup);
     }
 
+    // Callbacks queued a few frames ahead still arrive after an unload; they must not start a scan then.
+    private bool disposed;
+
     public void Dispose()
     {
+        disposed = true;
         lifecycle.UnregisterListener(AddonEvent.PostSetup, ContainerAddons.Keys, OnContainerSetup);
         lifecycle.UnregisterListener(AddonEvent.PreFinalize, ContainerAddons.Keys, OnContainerFinalize);
         lifecycle.UnregisterListener(AddonEvent.PostSetup, ActionAddons, OnActionSetup);
@@ -45,7 +49,7 @@ public sealed class AddonWatcher : IDisposable
     {
         if (!ContainerAddons.TryGetValue(args.AddonName, out var kind)) return;
         // Data (retainer pages, prism box) finishes loading a few frames after the window appears.
-        framework.RunOnTick(() => ContainerOpened?.Invoke(kind), delayTicks: 20);
+        framework.RunOnTick(() => { if (!disposed) ContainerOpened?.Invoke(kind); }, delayTicks: 20);
     }
 
     private void OnContainerFinalize(AddonEvent type, AddonArgs args)
@@ -54,5 +58,5 @@ public sealed class AddonWatcher : IDisposable
     }
 
     private void OnActionSetup(AddonEvent type, AddonArgs args) =>
-        framework.RunOnTick(() => ActionWindowOpened?.Invoke(args.AddonName), delayTicks: 5);
+        framework.RunOnTick(() => { if (!disposed) ActionWindowOpened?.Invoke(args.AddonName); }, delayTicks: 5);
 }

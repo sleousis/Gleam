@@ -131,8 +131,12 @@ public sealed class RunCoordinator : IDisposable
     public void Dispose()
     {
         // Cancelled, not disposed: work still unwinding reads the token, and a disposed one throws.
+        ShuttingDown = true;
         runCts?.Cancel();
     }
+
+    /// <summary>The plugin is unloading: work still unwinding must not start a scan, touch the game or write files.</summary>
+    public bool ShuttingDown { get; private set; }
 
     public Profile EffectiveProfile => config.Profiles.Effective(player.ContentId);
 
@@ -158,7 +162,9 @@ public sealed class RunCoordinator : IDisposable
     /// <returns>Whether a fresh plan came out of it. A skipped or failed scan leaves the old one in place.</returns>
     public async Task<bool> RefreshPlanAsync(bool openWindow, ContainerKind? focus = null, bool userAsked = false)
     {
-        if (IsRunning || !player.IsLoaded) return false;
+        if (ShuttingDown || IsRunning || !player.IsLoaded) return false;
+        // Off the game's thread before any of the work. The game memory reads inside hop back on their own.
+        if (framework.IsInFrameworkUpdateThread) await Core.Execution.OffGameThread.Hop();
         // Two overlapping scans would both run the stack-merge pass and race each other's moves.
         if (!await scanGate.WaitAsync(0).ConfigureAwait(false)) return false;
         IsScanning = true;
@@ -395,8 +401,10 @@ public sealed class RunCoordinator : IDisposable
             // whoever logs in next: matching is by item and quantity, so another character's stack would do.
             if (player.ContentId == runFor)
             {
-                PendingActions.AddRange(report.Pending);
-                PendingActions.AddRange(report.Moved);
+                // Only what is not waiting already: a trip and the after-ventures clean hand the same rows back more
+                // than once, and the "N waiting" count and the next run used to count them twice.
+                foreach (var waiting in report.Pending.Concat(report.Moved))
+                    if (!PendingActions.Contains(waiting)) PendingActions.Add(waiting);
             }
             if (config.SortAfterRun) await SortTouchedAsync(report).ConfigureAwait(false);
             Status = report.Summary();
@@ -464,7 +472,7 @@ public sealed class RunCoordinator : IDisposable
     /// <summary>A closed container just opened: re-evaluate it live and show its own confirmation.</summary>
     public async Task OnContainerOpenedAsync(ContainerKind kind)
     {
-        if (IsRunning || IsPilotRunning() || !player.IsLoaded || !config.UseClean) return;
+        if (ShuttingDown || IsRunning || IsPilotRunning() || !player.IsLoaded || !config.UseClean) return;
         var profile = EffectiveProfile;
         if (!profile.IsContainerEnabled(kind)) return;
 

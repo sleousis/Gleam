@@ -58,6 +58,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly Automation.AutoPilot pilot;
     private readonly AutoRetainerIpc autoRetainer;
     private readonly AutomationPause pause;
+    private readonly UniversalisClient universalis;
     private readonly VentureHook ventures;
     private readonly BagHighlighter highlighter;
     private readonly SelfTest selfTest;
@@ -92,6 +93,10 @@ public sealed class Plugin : IDalamudPlugin
         if (config.Migrate()) Save();
 
         db = new ItemDatabase(data, log) { Curated = LoadCurated(pi, log) };
+        // The whole-sheet lookups build in the background, not on the game's thread during the first scan.
+        var auto = config.Automation;
+        var menuTexts = new[] { auto.EntrustMenuText, auto.QuitMenuText, auto.SellFromBagsMenuText, auto.SellFromRetainerMenuText, auto.VendorMenuText, auto.GcSupplyMenuText };
+        Task.Run(() => db.WarmUp(menuTexts));
         // Headline numbers on the stats page come from a font built at their size, so they stay sharp.
         Windows.Charts.BigFont = Windows.Charts.CreateBigFont(pi.UiBuilder.FontAtlas);
         var scanner = new GameInventoryScanner(inventory, log, id => db.Get(id)?.IsEquipment == true);
@@ -104,7 +109,8 @@ public sealed class Plugin : IDalamudPlugin
         var merger = new StackMerger(mover, log);
         var runLog = new JsonLinesRunLog(new ReliableTextStorage(storage, pi.GetPluginConfigDirectory()), "gleam-history.jsonl");
         allagan = new AllaganToolsSource(pi, log) { Enabled = config.UseAllaganTools, RetainerNames = GameInventoryScanner.KnownRetainers, CanHoldMateria = id => db.Get(id)?.IsEquipment == true };
-        IMarketPriceSource market = new UniversalisClient();
+        universalis = new UniversalisClient();
+        IMarketPriceSource market = universalis;
 
         var snapshots = new InventorySnapshotService(framework, player, log, config, db, scanner, contextBuilder, allagan, market);
         coordinator = new RunCoordinator(framework, player, chat, toast, log, config, db, scanner, contextBuilder, actions, merger, runLog, allagan, market, snapshots, Save);
@@ -545,5 +551,6 @@ public sealed class Plugin : IDalamudPlugin
         contextMenu.Dispose();
         watcher.Dispose();
         dialogs.Dispose();
+        universalis.Dispose();
     }
 }
