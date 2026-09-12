@@ -200,20 +200,9 @@ public sealed class RunCoordinator : IDisposable
 
             if (focus is null && config.ShowAltSections) AddAltPreviews(plan, withMarket, profile);
 
-            // The player's own ticks survive a re-scan, matched by item rather than slot because a retainer's
-            // live slots differ from the cached ones. An item new since the list was last looked at starts
-            // unticked when nobody asked for this scan: loot landing while the window is open must never be
-            // waiting, ticked, behind a button the player is about to press.
-            if (CurrentPlan is { } before)
-            {
-                static (ContainerKind, ulong, uint, bool, int) Id(PlanRow r) => (r.Item.Slot.Kind, r.Item.Slot.OwnerId, r.Item.ItemId, r.Item.IsHq, r.Item.Quantity);
-                var was = before.AllRows.GroupBy(Id).ToDictionary(g => g.Key, g => g.First().Checked);
-                foreach (var row in plan.AllRows)
-                {
-                    if (was.TryGetValue(Id(row), out var ticked)) row.Checked = ticked && row.IsExecutable;
-                    else if (!userAsked) row.Checked = false;
-                }
-            }
+            // The player's own ticks survive a re-scan, and loot that lands while the window is open starts
+            // unticked unless the player asked for this scan.
+            RescanTicks.CarryOver(CurrentPlan, plan, userAsked);
 
             CurrentPlan = plan;
             if (focus is null)
@@ -343,16 +332,11 @@ public sealed class RunCoordinator : IDisposable
 
         // Rows accepted earlier for a container that was closed ride along, unless the player has since said
         // no to that item. An unticked row for the same item is a no, wherever the item now sits.
-        var declined = CurrentPlan.AllRows.Where(r => !r.Checked)
-            .Select(r => Identity(r.Item.Slot, r.Item.ItemId, r.Item.IsHq)).ToHashSet();
-        var carried = PendingActions.Where(p => !queue.Any(q => q.Slot == p.Slot) && !declined.Contains(Identity(p.Slot, p.ItemId, p.IsHq)));
-        var merged = carried.Concat(queue).ToList();
+        var merged = PendingMerge.Merge(PendingActions, queue, CurrentPlan.AllRows);
         PendingActions.Clear();
         NoteDecisions();
         await ExecuteQueueAsync(merged, refreshAfter: true, RunTrigger.ByHand).ConfigureAwait(false);
     }
-
-    private static (ContainerKind, ulong, uint, bool) Identity(SlotRef slot, uint itemId, bool hq) => (slot.Kind, slot.OwnerId, itemId, hq);
 
     /// <summary>Drops everything accepted earlier for a container that was closed. Those items return to the review.</summary>
     public void ForgetPending()
