@@ -1141,7 +1141,7 @@ public sealed class OrganizerPanel
             var stopTotal = organizer.IsRunning ? organizer.RunTotal : 0;
             Ui.ProgressBar("organize-stop", stopTotal > 0 ? (float)organizer.RunDone / stopTotal : null, width,
                 stopTotal > 0 ? Ui.ProgressLabel(organizer.RunDone, stopTotal) : null, organizer.IsRunning ? "At this stop" : "On the way", primary: false);
-            if (current is not null) { Ui.Gap(0.3f); ImGui.SetCursorPosX(left); Ui.Hint(current); }
+            if (current is not null) { Ui.Gap(0.3f); Ui.Centered(current, muted: true); }
         }
         Ui.Gap(1.2f);
         ImGui.SetCursorPosX((ImGui.GetWindowWidth() - 120 * Ui.Scale) / 2);
