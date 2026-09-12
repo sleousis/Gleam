@@ -96,13 +96,14 @@ public sealed partial class SettingsWindow
     {
         Ui.HintWrapped("Extras for plugins you may already have. Gleam works without every one of them.");
         Ui.Gap(0.3f);
-        using (ImRaii.Disabled(!allagan.IsInstalled))
+        var hasAllagan = Installed.Allagan;
+        using (ImRaii.Disabled(!hasAllagan))
         {
             var alts = config.ShowAltSections;
             if (Ui.Check("Show other characters in the review", ref alts)) { config.ShowAltSections = alts; dirty = true; }
         }
         ImGui.SameLine();
-        if (!allagan.IsInstalled) Ui.Pill("not installed", Ui.Warn, null, "req:Allagan");
+        if (!hasAllagan) Ui.Pill("not installed", Ui.Warn, null, "req:Allagan");
         else Ui.Pill("Allagan Tools", Ui.Ok, Dalamud.Interface.FontAwesomeIcon.Check, "req:Allagan");
 
         Ui.Gap(0.4f);

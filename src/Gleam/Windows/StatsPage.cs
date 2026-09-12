@@ -954,11 +954,6 @@ public sealed class StatsPage
         return $"on {at.LocalDateTime:d MMM}";
     }
 
-    private static string Clip(string text, float width)
-    {
-        if (Charts.TextWidth(text) <= width) return text;
-        var cut = text;
-        while (cut.Length > 1 && Charts.TextWidth(cut + "…") > width) cut = cut[..^1];
-        return cut + "…";
-    }
+    /// <summary>The same cut the header uses: found by halving, and remembered.</summary>
+    private static string Clip(string text, float width) => Ui.Clip(text, width);
 }

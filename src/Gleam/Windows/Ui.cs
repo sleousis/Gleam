@@ -550,13 +550,28 @@ internal static class Ui
     /// <summary>Width reserved for the title and subtitle, so anything pinned after them never moves.</summary>
     private const float TitleColumn = 300f;
 
-    /// <summary>Cuts text to fit, with an ellipsis, rather than letting it push its neighbours along.</summary>
-    private static string Clip(string text, float maxWidth)
+    private static readonly Dictionary<(string Text, int Width, float Font), string> clipped = new();
+
+    /// <summary>
+    /// Cuts text to fit, with an ellipsis, rather than letting it push its neighbours along. The cut is found by
+    /// halving rather than one character at a time, and remembered for this text, width and font size.
+    /// </summary>
+    internal static string Clip(string text, float maxWidth)
     {
         if (string.IsNullOrEmpty(text) || ImGui.CalcTextSize(text, false, 0).X <= maxWidth) return text;
-        var cut = text;
-        while (cut.Length > 1 && ImGui.CalcTextSize(cut + "…", false, 0).X > maxWidth) cut = cut[..^1];
-        return cut + "…";
+        var key = (text, BitConverter.SingleToInt32Bits(maxWidth), ImGui.GetFontSize());
+        if (clipped.TryGetValue(key, out var done)) return done;
+        // The longest start that still fits with the ellipsis after it, and never less than one character.
+        int lo = 1, hi = text.Length - 1;
+        while (lo < hi)
+        {
+            var mid = (lo + hi + 1) / 2;
+            if (ImGui.CalcTextSize(string.Concat(text.AsSpan(0, mid), "…"), false, 0).X <= maxWidth) lo = mid;
+            else hi = mid - 1;
+        }
+        // Status lines rewrite themselves, so the memory is kept small rather than kept tidy.
+        if (clipped.Count >= 256) clipped.Clear();
+        return clipped[key] = text[..lo] + "…";
     }
 
     public static void Header(ImTextureID logo, string title, string subtitle, float rightWidth = 0f, Action? right = null, string? rightNote = null, Action? afterTitle = null, float afterTitleWidth = 0f)
@@ -1248,10 +1263,17 @@ internal static class Ui
         return changed;
     }
 
+    /// <summary>An enum's values and plain names, worked out once per type.</summary>
+    private static class EnumChoices<T> where T : struct, Enum
+    {
+        public static readonly T[] Values = Enum.GetValues<T>();
+        public static readonly List<string> Names = Values.Select(v => v.ToString()).ToList();
+    }
+
     public static bool ComboEnum<T>(string label, ref T value, Func<T, string>? display = null) where T : struct, Enum
     {
-        var values = Enum.GetValues<T>();
-        var names = values.Select(v => display?.Invoke(v) ?? v.ToString()).ToList();
+        var values = EnumChoices<T>.Values;
+        var names = display is null ? EnumChoices<T>.Names : values.Select(v => display(v) ?? v.ToString()).ToList();
         var idx = Array.IndexOf(values, value);
         if (idx < 0) idx = 0;
         if (!Combo(label, ref idx, names)) return false;
@@ -1266,8 +1288,19 @@ internal static class Ui
         using var _ = ImRaii.PushId(id);
         var pad = ImGui.GetStyle().FramePadding;
         var h = ImGui.GetFrameHeight();
-        var widths = options.Select(o => ImGui.CalcTextSize(o.Label, false, 0).X + pad.X * 2 + 6f * Scale).ToList();
-        var total = widths.Sum() + 4f * Scale * 2;
+        // A handful of options, measured into the stack rather than into two fresh lists every frame.
+        var count = options.Count;
+        Span<float> textWidths = count <= 32 ? stackalloc float[count] : new float[count];
+        Span<float> widths = count <= 32 ? stackalloc float[count] : new float[count];
+        Span<float> offsets = count <= 32 ? stackalloc float[count] : new float[count];
+        var sum = 0f;
+        for (var i = 0; i < count; i++)
+        {
+            textWidths[i] = ImGui.CalcTextSize(options[i].Label, false, 0).X;
+            widths[i] = textWidths[i] + pad.X * 2 + 6f * Scale;
+            sum += widths[i];
+        }
+        var total = sum + 4f * Scale * 2;
         var pos = ImGui.GetCursorScreenPos();
         var dl = ImGui.GetWindowDrawList();
         dl.AddRectFilled(pos, pos + new Vector2(total, h), ImGui.GetColorU32(new Vector4(1, 1, 1, 0.05f)), h / 2);
@@ -1275,11 +1308,10 @@ internal static class Ui
 
         // Where the highlight should be, then where it is: it glides rather than jumps.
         var selectedIndex = -1;
-        var offsets = new List<float>();
         var run = 4f * Scale;
         for (var i = 0; i < options.Count; i++)
         {
-            offsets.Add(run);
+            offsets[i] = run;
             if (EqualityComparer<T>.Default.Equals(options[i].Value, value)) selectedIndex = i;
             run += widths[i];
         }
@@ -1309,7 +1341,7 @@ internal static class Ui
             if (!selected && hv > 0.01f)
                 dl.AddRectFilled(min, max, ImGui.GetColorU32(new Vector4(1, 1, 1, 0.07f * hv)), (h - 4f * Scale) / 2);
             var onText = Smooth(optKey + ":t", selected ? 1f : 0f, 18f);
-            var tw = ImGui.CalcTextSize(label, false, 0).X;
+            var tw = textWidths[i];
             var tp = new Vector2(x + (w - tw) / 2, pos.Y + (h - ImGui.GetTextLineHeight()) / 2);
             dl.AddText(tp, ImGui.GetColorU32(Mix(ImGui.GetStyle().Colors[(int)ImGuiCol.Text], OnAccent, onText)), label);
             x += w;
@@ -1322,7 +1354,9 @@ internal static class Ui
     public static float SegmentedWidth<T>(IReadOnlyList<(T Value, string Label)> options) where T : struct
     {
         var pad = ImGui.GetStyle().FramePadding;
-        return options.Sum(o => ImGui.CalcTextSize(o.Label, false, 0).X + pad.X * 2 + 6f * Scale) + 8f * Scale;
+        var sum = 0f;
+        for (var i = 0; i < options.Count; i++) sum += ImGui.CalcTextSize(options[i].Label, false, 0).X + pad.X * 2 + 6f * Scale;
+        return sum + 8f * Scale;
     }
 
     /// <summary>Whether the last item is under the cursor, asked the way tooltips ask. Check it before wording one.</summary>
