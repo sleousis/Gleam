@@ -1,5 +1,6 @@
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
+using Dalamud.Interface.ManagedFontAtlas;
 
 namespace Gleam.Windows;
 
@@ -75,9 +76,32 @@ public static class Charts
 
     public static float TextWidth(string text) => ImGui.CalcTextSize(text, false, 0).X;
 
-    /// <summary>The body font drawn larger, for the headline numbers.</summary>
-    public static void BigText(Vector2 pos, Vector4 color, string text, float scale) =>
-        ImGui.GetWindowDrawList().AddText(ImGui.GetFont(), ImGui.GetFontSize() * scale, pos, Col(color), text);
+    /// <summary>
+    /// A large font, built by the plugin at the size headline numbers are drawn (see <see cref="CreateBigFont"/>).
+    /// Drawing the body font larger stretches glyphs rasterised for 17 px and they come out blurred; a font
+    /// built big and drawn at or below its own size stays sharp.
+    /// </summary>
+    public static IFontHandle? BigFont { get; set; }
+
+    /// <summary>How much larger than the body font <see cref="BigFont"/> is built. Big text is never drawn larger than this.</summary>
+    public const float BigFontScale = 1.8f;
+
+    /// <summary>Call once from the plugin: <c>Charts.BigFont = Charts.CreateBigFont(pi.UiBuilder.FontAtlas);</c>. Dispose it on unload.</summary>
+    public static IFontHandle CreateBigFont(IFontAtlas atlas) =>
+        atlas.NewDelegateFontHandle(e => e.OnPreBuild(tk => tk.AddDalamudDefaultFont(Dalamud.Interface.UiBuilder.DefaultFontSizePx * BigFontScale)));
+
+    /// <summary>Headline text, <paramref name="scale"/> times the body font's size, from the big font when it is ready.</summary>
+    public static void BigText(Vector2 pos, Vector4 color, string text, float scale)
+    {
+        var size = ImGui.GetFontSize() * Math.Min(scale, BigFontScale);
+        if (BigFont is { Available: true } handle)
+        {
+            using var locked = handle.Lock();
+            ImGui.GetWindowDrawList().AddText(locked.ImFont, size, pos, Col(color), text);
+            return;
+        }
+        ImGui.GetWindowDrawList().AddText(ImGui.GetFont(), size, pos, Col(color), text);
+    }
 
     public static float BigTextWidth(string text, float scale) => TextWidth(text) * scale;
 

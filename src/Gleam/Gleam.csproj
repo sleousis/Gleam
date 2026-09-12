@@ -3,7 +3,7 @@
   <PropertyGroup>
     <!-- First public build. The cleaning half is exercised daily; the organizer half has not been through a
          full in-game pass yet, so this stays below 1.0 until it has. -->
-    <Version>0.11.1.0</Version>
+    <Version>0.11.2.0</Version>
     <Author>Raiden Shinryu</Author>
     <Name>Gleam</Name>
     <Punchline>Cleans and organizes your inventory, and walks there itself. Needs vnavmesh, plus Lifestream to travel.</Punchline>

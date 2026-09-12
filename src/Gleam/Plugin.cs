@@ -91,6 +91,8 @@ public sealed class Plugin : IDalamudPlugin
         if (config.Migrate()) Save();
 
         db = new ItemDatabase(data, log) { Curated = LoadCurated(pi, log) };
+        // Headline numbers on the stats page come from a font built at their size, so they stay sharp.
+        Windows.Charts.BigFont = Windows.Charts.CreateBigFont(pi.UiBuilder.FontAtlas);
         var scanner = new GameInventoryScanner(inventory, log, id => db.Get(id)?.IsEquipment == true);
         var contextBuilder = new ItemContextBuilder(player, data, db, config, log);
         dialogs = new AddonDriver(addonLifecycle, framework, log);
@@ -519,6 +521,8 @@ public sealed class Plugin : IDalamudPlugin
         dutyNudge.Dispose();
         dtr.Dispose();
         stats.Dispose();
+        Windows.Charts.BigFont?.Dispose();
+        Windows.Charts.BigFont = null;
         contextMenu.Dispose();
         watcher.Dispose();
         dialogs.Dispose();
