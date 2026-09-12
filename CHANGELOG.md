@@ -3,6 +3,11 @@
 Each release's section is shown in Dalamud's plugin installer and on the GitHub release page. The release
 workflow refuses a tag whose version has no section here.
 
+## 0.11.4
+
+- A Stop pressed while a retainer is still greeting you now dismisses that retainer too. After a trip Gleam clicks through the retainer's greeting (never a cutscene), chooses Quit, and keeps going until you have left the bell.
+- The bag window the game opens beside a retainer is closed after the trip, unless it was already open when the trip began.
+
 ## 0.11.3
 
 Safety fixes for hands-free trips.

@@ -302,8 +302,14 @@ public sealed partial class AutoPilot : IDisposable
     private Vector3? lastPosition;
     private DateTimeOffset tripStarted;
 
+    /// <summary>Whether a bag window was up when the trip began. The game opens one beside a retainer's inventory.</summary>
+    private bool bagsOpenAtStart;
+
+    private static bool BagWindowOpen() => GameUi.AnyVisible("Inventory", "InventoryLarge", "InventoryExpansion");
+
     private void BeginTrip()
     {
+        bagsOpenAtStart = Dalamud.Utility.ThreadSafety.IsMainThread ? BagWindowOpen() : framework.RunOnFrameworkThread(BagWindowOpen).GetAwaiter().GetResult();
         legs.Clear();
         legDepth = 0;
         teleports = 0;
@@ -701,28 +707,50 @@ public sealed partial class AutoPilot : IDisposable
         try
         {
             nav.Stop();
-            for (var attempt = 0; attempt < 3; attempt++)
+            // Until the character is off the bell: a Stop can land while a retainer is still greeting, with no
+            // window or menu up yet. Looking only for those left the retainer summoned behind its talk bubble.
+            for (var attempt = 0; attempt < 8; attempt++)
             {
                 var state = await OnFramework(() =>
-                    GameUi.AnyVisible("RetainerSell", "RetainerSellList", "InventoryRetainer", "InventoryRetainerLarge") ? "inventory"
+                    !condition[ConditionFlag.OccupiedSummoningBell] ? "done"
+                    : GameUi.AnyVisible("RetainerSell", "RetainerSellList", "InventoryRetainer", "InventoryRetainerLarge") ? "inventory"
+                    : GameUi.IsVisible("Talk") ? "talk"
                     : GameUi.SelectStringReady() && GameInventoryScanner.ActiveRetainer().Id != 0 ? "menu"
-                    : "other").ConfigureAwait(false);
-                if (state == "other") break;
-                if (state == "inventory")
+                    : GameInventoryScanner.ActiveRetainer().Id != 0 ? "between"
+                    : "list").ConfigureAwait(false);
+                if (state is "done" or "list") break;
+                switch (state)
                 {
-                    await framework.RunOnFrameworkThread(() =>
-                    {
-                        GameUi.Close("RetainerSell"); GameUi.Close("RetainerSellList");
-                        GameUi.Close("InventoryRetainer"); GameUi.Close("InventoryRetainerLarge");
-                    }).ConfigureAwait(false);
+                    case "inventory":
+                        await framework.RunOnFrameworkThread(() =>
+                        {
+                            GameUi.Close("RetainerSell"); GameUi.Close("RetainerSellList");
+                            GameUi.Close("InventoryRetainer"); GameUi.Close("InventoryRetainerLarge");
+                        }).ConfigureAwait(false);
+                        break;
+                    case "talk":
+                        // Never click through a cutscene: those use the same bubble.
+                        var clicked = await OnFramework(() =>
+                            !condition[ConditionFlag.WatchingCutscene] && !condition[ConditionFlag.WatchingCutscene78]
+                            && !condition[ConditionFlag.OccupiedInCutSceneEvent] && GameUi.AdvanceTalk()).ConfigureAwait(false);
+                        if (!clicked) attempt = 8;
+                        break;
+                    case "menu":
+                        if (await framework.RunOnFrameworkThread(() => GameUi.SelectStringChoose(db.MenuMatcher(S.QuitMenuText))).ConfigureAwait(false) >= 0)
+                            await AnswerLeavePromptAsync(none).ConfigureAwait(false);
+                        else
+                            await framework.RunOnFrameworkThread(() => GameUi.Close("SelectString")).ConfigureAwait(false);
+                        break;
+                    // "between": a retainer is out but nothing is on screen yet; give it a moment.
                 }
-                else if (await framework.RunOnFrameworkThread(() => GameUi.SelectStringChoose(db.MenuMatcher(S.QuitMenuText))).ConfigureAwait(false) >= 0)
-                {
-                    await AnswerLeavePromptAsync(none).ConfigureAwait(false);
-                }
-                else break;
                 await Task.Delay(800, none).ConfigureAwait(false);
             }
+            // The bag window the game opened beside a retainer's inventory stays up after the retainer has gone.
+            if (!bagsOpenAtStart)
+                await framework.RunOnFrameworkThread(() =>
+                {
+                    GameUi.Close("Inventory"); GameUi.Close("InventoryLarge"); GameUi.Close("InventoryExpansion");
+                }).ConfigureAwait(false);
             await RecoverUiAsync(none).ConfigureAwait(false);
         }
         catch (Exception ex)
