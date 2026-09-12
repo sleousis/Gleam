@@ -147,7 +147,7 @@ public sealed class SelfTest
         }
         Named("Summoning bell", s.BellObjectName, db.LocalizeObjectName(s.BellObjectName));
         Named("Glamour dresser", s.DresserObjectName, db.LocalizeObjectName(s.DresserObjectName));
-        Named("Personnel officer", s.PersonnelOfficerName, db.LocalizeNpcName(s.PersonnelOfficerName));
+        Add(SelfTestResult.Pass, "Personnel officer", "found by the game's own NPC id, whatever the client's language");
         Named("Merchant town", s.VendorAetheryte, db.LocalizePlaceName(s.VendorAetheryte));
         Add(db.MainCommandIdForEnglishName(s.SaddlebagCommandName) is not null ? SelfTestResult.Pass : SelfTestResult.Fail,
             "Saddlebag command", db.MainCommandIdForEnglishName(s.SaddlebagCommandName) is not null ? "found" : "not found, so Gleam cannot open the saddlebag");

@@ -82,6 +82,9 @@ public sealed partial class AutoPilot : IDisposable
         : null;
 
     /// <summary>True when the one thing holding hands-free back is a patch nobody has checked Gleam against yet.</summary>
+    /// <summary>Why another plugin's automation rules out a trip right now, or null. AutoRetainer's multi mode switches characters.</summary>
+    public Func<string?>? OtherAutomationBusy { get; set; }
+
     public bool HeldByPatch => nav.IsInstalled && !GameVersionGuard.AllowsUnattended(config);
 
     /// <summary>The player's go-ahead to run hands-free on this patch. The next patch asks again.</summary>
@@ -103,6 +106,32 @@ public sealed partial class AutoPilot : IDisposable
         nav.Stop();
         travel.Abort();
         coordinator.CancelRun();
+        if (IsRunning) _ = InterruptCastAsync();
+    }
+
+    /// <summary>
+    /// Lifestream stops its queue on Abort, but a Teleport already being cast still went through, and cost gil. Moving is
+    /// how the game interrupts a cast, so one short step does it. Only while this trip is running and still casting.
+    /// </summary>
+    private async Task InterruptCastAsync()
+    {
+        try
+        {
+            await Task.Delay(250).ConfigureAwait(false);
+            var stepped = await OnFramework(() =>
+            {
+                if (!condition[ConditionFlag.Casting] || objects.LocalPlayer is not { } me) return false;
+                var ahead = me.Position + new Vector3(MathF.Sin(me.Rotation), 0, MathF.Cos(me.Rotation)) * 0.8f;
+                return nav.MoveCloseTo(ahead, 0.3f);
+            }).ConfigureAwait(false);
+            if (!stepped) return;
+            await Task.Delay(400).ConfigureAwait(false);
+            nav.Stop();
+        }
+        catch (Exception ex)
+        {
+            log.Debug(ex, "Could not interrupt the cast after Stop");
+        }
     }
 
     public void Dispose()
@@ -117,6 +146,7 @@ public sealed partial class AutoPilot : IDisposable
         if (IsRunning || coordinator.CurrentPlan is null) return;
         if (MissingDependency() is { } missing) { Fail(missing); return; }
         if (condition[ConditionFlag.InCombat] || condition[ConditionFlag.BoundByDuty]) { Fail("not while in combat or in a duty"); return; }
+        if (OtherAutomationBusy?.Invoke() is { } busy) { Fail(busy); return; }
 
         var queue = coordinator.BuildQueueFromPlan(r => true);
         if (queue.Count == 0) { Nothing("Nothing is ticked"); return; }
@@ -151,13 +181,21 @@ public sealed partial class AutoPilot : IDisposable
             var sweep = Core.Planning.TripPartition.Sweeps(S.VisitContainersWithoutRows, S.UnseenRows);
             if (trip.GoesToSaddlebag(S.OpenSaddlebag, sweep)) await Leg("saddlebag", () => SaddlebagAsync(saddle, ct), ct);
 
-            var needsInn = trip.NeedsInn(S.VisitRetainers, S.VisitDresser, sweep);
+            // "It only ever opens the places ticked here": with Retainer unticked, no retainer is summoned, not even to
+            // list or sell bag items through one. Listings then wait, and sales go to a merchant instead.
+            var retainersOn = coordinator.EffectiveProfile.IsContainerEnabled(ContainerKind.Retainer);
+            if (!retainersOn && listings.Count > 0)
+            {
+                const string why = "retainers are unticked under Where should Gleam look, so nothing went up for sale";
+                tally.Pending[why] = tally.Pending.GetValueOrDefault(why) + listings.Count;
+            }
+            var needsInn = trip.NeedsInn(S.VisitRetainers && retainersOn, S.VisitDresser, sweep);
             if (needsInn)
             {
                 var inInn = await Leg("inn", () => TravelToInnAsync(ct), ct);
                 if (inInn)
                 {
-                    if (S.VisitRetainers) await Leg("retainers", () => RetainersAsync(retainers, listings, sells, ct), ct);
+                    if (S.VisitRetainers && retainersOn) await Leg("retainers", () => RetainersAsync(retainers, listings, sells, ct), ct);
                     if (S.VisitDresser) await Leg("dresser", () => DresserAsync(dresser, ct), ct);
                 }
             }
@@ -900,10 +938,11 @@ public sealed partial class AutoPilot : IDisposable
         var gc = await OnFramework(GrandCompanyId).ConfigureAwait(false);
         if (gc == 0) throw new AutoPilotException("this character has no Grand Company");
 
-        var officer = await OnFramework(() => FindNearest(db.LocalizeNpcName(S.PersonnelOfficerName))).ConfigureAwait(false);
+        IGameObject? FindOfficer() => FindById(OfficerIds.GetValueOrDefault(gc));
+        var officer = await OnFramework(FindOfficer).ConfigureAwait(false);
         if (officer is null)
         {
-            if (!S.TravelToInn) throw new AutoPilotException($"No '{db.LocalizeNpcName(S.PersonnelOfficerName)}' nearby and travel is off");
+            if (!S.TravelToInn) throw new AutoPilotException("no personnel officer nearby and travel is off");
             if (!travel.IsInstalled) throw new AutoPilotException($"no personnel officer nearby. {NoLifestream}");
             if (!S.GcCityAetheryte.TryGetValue(gc, out var city) || string.IsNullOrEmpty(city))
                 throw new AutoPilotException("no destination is set for your Grand Company's city");
@@ -935,7 +974,7 @@ public sealed partial class AutoPilot : IDisposable
             }
         }
 
-        await WalkToAndInteractAsync(db.LocalizeNpcName(S.PersonnelOfficerName), "SelectString", ct, orMenu: true).ConfigureAwait(false);
+        await WalkToAndInteractAsync("personnel officer", "SelectString", ct, orMenu: true, find: FindOfficer).ConfigureAwait(false);
         await Step("Opening supply missions", async () =>
         {
             await ChooseMenu(S.GcSupplyMenuText, ct).ConfigureAwait(false);
@@ -974,14 +1013,15 @@ public sealed partial class AutoPilot : IDisposable
 
     // ---------- movement & interaction ----------
 
-    private async Task WalkToAndInteractAsync(string objectName, string expectAddon, CancellationToken ct, bool orMenu = false)
+    private async Task WalkToAndInteractAsync(string objectName, string expectAddon, CancellationToken ct, bool orMenu = false, Func<IGameObject?>? find = null)
     {
-        var target = await OnFramework(() => FindNearest(objectName)).ConfigureAwait(false);
+        var lookup = find ?? (() => FindNearest(objectName));
+        var target = await OnFramework(lookup).ConfigureAwait(false);
         // Bells, dressers and NPCs stream in after a zone loads; one look used to fail for something a few steps away.
         for (var look = 0; target is null && look < 10; look++)
         {
             await Task.Delay(500, ct).ConfigureAwait(false);
-            target = await OnFramework(() => FindNearest(objectName)).ConfigureAwait(false);
+            target = await OnFramework(lookup).ConfigureAwait(false);
         }
         if (target is null)
         {
@@ -1050,6 +1090,24 @@ public sealed partial class AutoPilot : IDisposable
         var me = objects.LocalPlayer?.Position ?? Vector3.Zero;
         return objects
             .Where(o => o.Address != 0 && o.ObjectKind == Dalamud.Game.ClientState.Objects.Enums.ObjectKind.EventNpc && o.IsTargetable && db.IsVendorNpc(o.BaseId))
+            .OrderBy(o => Vector3.Distance(o.Position, me))
+            .FirstOrDefault();
+    }
+
+    /// <summary>
+    /// The personnel officer of each Grand Company by the game's own NPC id: Maelstrom (1), Twin Adder (2), Immortal
+    /// Flames (3). The game names them "storm personnel officer" and so on, in the client's language, so looking for
+    /// "Personnel Officer" by name never found one, on any client.
+    /// </summary>
+    private static readonly Dictionary<byte, uint> OfficerIds = new() { [1] = 1002388, [2] = 1002394, [3] = 1002391 };
+
+    /// <summary>The nearest NPC with this game id.</summary>
+    private IGameObject? FindById(uint baseId)
+    {
+        if (baseId == 0) return null;
+        var me = objects.LocalPlayer?.Position ?? Vector3.Zero;
+        return objects
+            .Where(o => o.Address != 0 && o.ObjectKind == Dalamud.Game.ClientState.Objects.Enums.ObjectKind.EventNpc && o.BaseId == baseId)
             .OrderBy(o => Vector3.Distance(o.Position, me))
             .FirstOrDefault();
     }

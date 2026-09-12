@@ -277,7 +277,14 @@ public sealed class RunCoordinator : IDisposable
 
     public async Task<int> StackMergeAsync()
     {
-        var items = await framework.RunOnFrameworkThread(() => scanner.ScanAll(true, true, false)).ConfigureAwait(false);
+        // Only the places the player lets Gleam open, and never a retainer they left alone: a merge moves items too.
+        var profile = EffectiveProfile;
+        var items = await framework.RunOnFrameworkThread(() =>
+        {
+            var retainerOk = profile.IsContainerEnabled(ContainerKind.Retainer)
+                             && !profile.ExcludedRetainerIds.Contains(GameInventoryScanner.ActiveRetainer().Id);
+            return scanner.ScanAll(profile.IsContainerEnabled(ContainerKind.Saddlebag), retainerOk, false);
+        }).ConfigureAwait(false);
         var moves = StackMergePlanner.Plan(items, db.Get);
         if (moves.Count == 0) return 0;
         var accepted = await merger.ExecuteAsync(moves, TimeSpan.FromMilliseconds(config.Callbacks.RateLimitMs), CancellationToken.None).ConfigureAwait(false);
@@ -472,7 +479,9 @@ public sealed class RunCoordinator : IDisposable
         // per-container confirmation is what the user sees. Nothing runs without that click.
         PendingActions.RemoveAll(Here);
         await RefreshPlanAsync(openWindow: false, focus: kind).ConfigureAwait(false);
-        if (CurrentPlan is not null && CurrentPlan.AllRows.Any(r => r.IsExecutable))
+        // Only for junk a rule found. Every discardable item is a row, so this used to open for any container that
+        // held anything at all.
+        if (CurrentPlan is not null && CurrentPlan.AllRows.Any(r => r.IsExecutable && r.IsSuggested))
             RequestOpenWindow?.Invoke();
     }
 

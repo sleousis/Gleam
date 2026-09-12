@@ -66,7 +66,10 @@ public class ActionPolicyApplierTests
         Assert.Same(keep, ActionPolicyApplier.Apply(keep, ActionPolicy.DiscardAll));
 
         var mine = Row(1, Inv(1), ActionKind.VendorSell, confidence: Confidence.User);
-        Assert.Same(mine, ActionPolicyApplier.Apply(mine, ActionPolicy.DiscardAll));
+        // The Always clean list follows the preset too: the list says what is junk, the preset what happens to it.
+        var followed = ActionPolicyApplier.Apply(mine, ActionPolicy.DiscardAll);
+        Assert.Equal(ActionKind.Discard, followed!.Action);
+        Assert.Equal(Confidence.User, followed.Confidence);
     }
 
     [Fact]

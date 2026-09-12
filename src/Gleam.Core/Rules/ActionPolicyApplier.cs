@@ -13,7 +13,8 @@ public static class ActionPolicyApplier
     {
         if (policy == ActionPolicy.RuleDecides) return p;
         if (p.Action == ActionKind.None) return p;                 // show-only rows stay informational
-        if (p.Confidence == Confidence.User) return p;            // the always-discard list is the user's own instruction
+        // The Always clean list says what is junk; the preset says what happens to it. It used to skip the preset, so
+        // under "Discard all" those items were still sold, and under "Market board" they went to a vendor.
 
         var kind = p.Item.Slot.Kind;
         var canSell = !p.Info.IsUntradable && p.Info.VendorPrice > 0 && ContainerConstraints.AllowsAction(kind, ActionKind.VendorSell);

@@ -93,22 +93,30 @@ public static class Presets
     public static Thresholds For(PresetName preset) => preset switch
     {
         PresetName.MarketBoard => new Thresholds { Policy = ActionPolicy.MarketListTradeable },
-        PresetName.DiscardAll => new Thresholds
-        {
-            Policy = ActionPolicy.DiscardAll,
-            ObsoleteGearLevelGap = 10,
-            IncludeGearForUnplayedJobs = true,
-            ConsumableItemLevelGap = 120,
-            CraftingMatMaxRecipeLevel = 70,
-            CraftingMatCrafterLeadLevels = 5,
-            VendorOnlyMaxUnitPrice = 2000,
-            MarketPremiumFactor = 2.0,
-            MarketMinStackValueGil = 10_000,
-            SoftCapItems = 100,
-            SoftCapGil = 150_000,
-        },
+        // The three presets differ only in what happens to junk, which is all their labels promise. "Discard all"
+        // used to widen what counted as junk and raise the big-run limits as well, without saying so.
+        PresetName.DiscardAll => new Thresholds { Policy = ActionPolicy.DiscardAll },
         _ => new Thresholds(),
     };
+
+    /// <summary>"Discard all" as saved before 0.12, when it also widened what counted as junk.</summary>
+    private static readonly Thresholds LegacyDiscardAll = new()
+    {
+        Policy = ActionPolicy.DiscardAll,
+        ObsoleteGearLevelGap = 10,
+        IncludeGearForUnplayedJobs = true,
+        ConsumableItemLevelGap = 120,
+        CraftingMatMaxRecipeLevel = 70,
+        CraftingMatCrafterLeadLevels = 5,
+        VendorOnlyMaxUnitPrice = 2000,
+        MarketPremiumFactor = 2.0,
+        MarketMinStackValueGil = 10_000,
+        SoftCapItems = 100,
+        SoftCapGil = 150_000,
+    };
+
+    /// <summary>Whether a saved profile is still on the old "Discard all" values, to be moved to the new ones.</summary>
+    public static bool IsLegacyDiscardAll(Thresholds t) => Equal(LegacyDiscardAll, t);
 
     /// <summary>Which preset a threshold set matches exactly, or Custom.</summary>
     public static PresetName Detect(Thresholds t)
