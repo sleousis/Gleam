@@ -962,8 +962,9 @@ public sealed partial class AutoPilot : IDisposable
 
         // Only items the player never saw, and only what a rule would tick on its own, never a tick carried over
         // from some other moment. The reasons are with UnattendedSelection.
-        var queue = coordinator.BuildQueueFromPlan(r => Core.Planning.UnattendedSelection.IsUnseenPick(r, coordinator.SessionSkips, reviewed),
-            requireChecked: false);
+        var pick = Core.Planning.UnattendedSelection.Capped(r => Core.Planning.UnattendedSelection.IsUnseenPick(r, coordinator.SessionSkips, reviewed),
+            coordinator.EffectiveProfile.Thresholds);
+        var queue = coordinator.BuildQueueFromPlan(pick, requireChecked: false);
         if (queue.Count == 0) return;
         await Step($"Cleaning {queue.Count} more item{(queue.Count == 1 ? "" : "s")} found in {what}", () => Execute(queue), ct).ConfigureAwait(false);
     }

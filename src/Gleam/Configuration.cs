@@ -55,8 +55,11 @@ public sealed class CallbackSettings
 /// <summary>Everything the hands-free mode needs. Off by default; it moves the character and drives NPC menus.</summary>
 public sealed class AutomationSettings : IMigratableAutomation
 {
-    /// <summary>Rows discovered only once a container opens. Clean means the run is truly hands-free.</summary>
-    public UnseenRowsMode UnseenRows { get; set; } = UnseenRowsMode.Clean;
+    /// <summary>
+    /// Rows discovered only once a container opens. New players start on Skip: rows nobody reviewed wait for the next
+    /// look. Clean makes a run fully hands-free. Existing settings keep whatever the player had.
+    /// </summary>
+    public UnseenRowsMode UnseenRows { get; set; } = UnseenRowsMode.Skip;
 
     /// <summary>
     /// Also travel to containers with nothing selected, to scan and clean them. Off: a run only goes

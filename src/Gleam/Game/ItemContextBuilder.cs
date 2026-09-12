@@ -84,6 +84,9 @@ public sealed unsafe class ItemContextBuilder
             known = false;
             log.Warning(ex, "Gear sets could not be read; Gleam leaves every piece of gear alone this time");
         }
+        // A character always has gear sets. None at all means the module was not filled in yet, right after login
+        // for one, and reading that as "in no gear set" left every set piece unprotected.
+        if (ids.Count == 0) known = false;
         return (ids, maxIlvl, known);
     }
 

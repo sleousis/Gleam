@@ -133,8 +133,7 @@ public class RescanAndPendingTests
         Assert.True(row.Checked);
     }
 
-    [Fact(Skip = "Known issue, reported, not fixed here: two identical stacks share one identity, so the first one's tick "
-                 + "is carried to both and a copy the player unticked comes back ticked after any re-scan.")]
+    [Fact]
     public void Unticking_one_of_two_identical_stacks_survives_a_rescan()
     {
         var before = Plan(Row(Inv(0), itemId: 4, ticked: true), Row(Inv(1), itemId: 4, ticked: false));

@@ -63,7 +63,8 @@ public sealed class RetiredCurrencyGearRule : IRule
     {
         if (!info.IsEquipment || !ctx.RetiredCurrencyGearIds.Contains(info.ItemId)) return null;
         if (ctx.GearsetItemIds.Contains(info.ItemId)) return null;
-        if (ctx.MaxGearsetItemLevel > 0 && info.ItemLevel >= ctx.MaxGearsetItemLevel) return null;
+        // No gear sets read means no yardstick. This rule used to pass everything then; it stays out instead.
+        if (ctx.MaxGearsetItemLevel <= 0 || info.ItemLevel >= ctx.MaxGearsetItemLevel) return null;
 
         var action = GearActions.Rank(item, info, ctx, out var alternatives, out var valueGil, out var valueLabel);
         var warnings = new List<string>();

@@ -71,8 +71,8 @@ public sealed class ContextMenuIntegration : IDisposable
                 PrefixChar = 'G',
                 OnClicked = _ =>
                 {
-                    if (isProtected) config.ProtectList.RemoveAll(baseId);
-                    else { config.ProtectList.Add(baseId); config.AlwaysDiscardList.RemoveAll(baseId); }
+                    if (isProtected) config.ProtectList.RemoveFor(baseId, cid);
+                    else { config.ProtectList.Add(baseId); config.AlwaysDiscardList.RemoveFor(baseId, cid); }
                     save();
                     chat.Print(isProtected ? $"{name} is back to normal. Gleam decides." : $"{name} will never be listed.", "Gleam");
                 },
@@ -85,8 +85,8 @@ public sealed class ContextMenuIntegration : IDisposable
                 PrefixChar = 'G',
                 OnClicked = _ =>
                 {
-                    if (isAlways) config.AlwaysDiscardList.RemoveAll(baseId);
-                    else { config.AlwaysDiscardList.Add(baseId); config.ProtectList.RemoveAll(baseId); }
+                    if (isAlways) config.AlwaysDiscardList.RemoveFor(baseId, cid);
+                    else { config.AlwaysDiscardList.Add(baseId); config.ProtectList.RemoveFor(baseId, cid); }
                     save();
                     chat.Print(isAlways ? $"{name} is back to normal. Gleam decides." : $"{name} will be listed every time.", "Gleam");
                 },

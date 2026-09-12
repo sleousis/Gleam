@@ -29,6 +29,9 @@ public sealed class RegisteredDuplicateRule : IRule
             Reason = "Already registered on this character",
             ValueGil = canSell ? vendor : 0,
             ValueLabel = Gil.Label(canSell ? vendor : 0),
+            // A spare that sells on the market board deserves a look first. With no listings to go by, it used to be
+            // sold for its vendor price, or discarded, ticked.
+            Warnings = info.IsMarketable ? ["Sellable on the market"] : [],
         };
     }
 }

@@ -1,5 +1,6 @@
 using Gleam.Core.Execution;
 using Gleam.Core.Model;
+using Gleam.Core.Rules;
 using Gleam.Core.Settings;
 
 namespace Gleam.Core.Planning;
@@ -31,7 +32,29 @@ public static class UnattendedSelection
     /// items the player had unticked once sorting or a retainer's real slot numbers moved them.
     /// </summary>
     public static bool IsUnseenPick(PlanRow r, IReadOnlySet<string> sessionSkips, IReadOnlySet<(ContainerKind, ulong, uint, bool)> reviewed) =>
-        RuleWouldTick(r, sessionSkips) && !reviewed.Contains(Identity(r));
+        RuleWouldTick(r, sessionSkips) && !reviewed.Contains(Identity(r))
+        // Nobody has seen these. Anything untradeable is never destroyed unseen: once gone, gil cannot bring it back.
+        && !(r.ChosenAction == ActionKind.Discard && r.Info.IsUntradable);
+
+    /// <summary>
+    /// A pick that stops at the limits of the Clean button's "that is a lot at once" check. Nobody is there to press
+    /// it a second time, so an unattended batch stops at the cap and the rest waits for the next review. Stateful:
+    /// make one per queue.
+    /// </summary>
+    public static Func<PlanRow, bool> Capped(Func<PlanRow, bool> pick, Thresholds t)
+    {
+        var items = 0;
+        long gil = 0;
+        return r =>
+        {
+            if (!pick(r)) return false;
+            var worth = Math.Max((long)r.Info.VendorPrice, r.Proposal.MarketUnitPrice) * r.Item.Quantity;
+            if (items + 1 > t.SoftCapItems || gil + worth > t.SoftCapGil) return false;
+            items++;
+            gil += worth;
+            return true;
+        };
+    }
 
     /// <summary>The queue the pilot cleans in a container that just opened; empty when the mode leaves such rows alone.</summary>
     public static List<QueuedAction> PickUnseen(IEnumerable<PlanRow> rows, UnseenRowsMode mode, IReadOnlySet<string> sessionSkips,

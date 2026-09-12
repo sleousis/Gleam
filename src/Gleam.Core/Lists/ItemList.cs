@@ -61,6 +61,14 @@ public sealed class ItemList
 
     public int RemoveAll(uint itemId) => Entries.RemoveAll(e => e.ItemId == itemId);
 
+    /// <summary>
+    /// Removes the entries that apply to this character: account-wide ones and its own. Another character's own
+    /// entries stay. The item menu used to remove every character's, so marking an item as junk on one character
+    /// silently dropped another's "keep it".
+    /// </summary>
+    public int RemoveFor(uint itemId, ulong characterId) =>
+        Entries.RemoveAll(e => e.ItemId == itemId && e.AppliesTo(characterId));
+
     /// <summary>A copy for work done off the game thread while the settings page may edit this list.</summary>
     public ItemList Snapshot() => new()
     {

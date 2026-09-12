@@ -5,7 +5,11 @@ public readonly record struct RecipeUse(uint CraftJobId, int RequiredLevel);
 
 public readonly record struct MarketPrice(uint ItemId, long MinNq, long MinHq, DateTimeOffset FetchedAt)
 {
-    public long MinFor(bool hq) => hq && MinHq > 0 ? MinHq : MinNq;
+    /// <summary>
+    /// The lowest listing for this quality, 0 when there is none. An HQ item used to fall back to the NQ price when no
+    /// HQ copy was listed, so it went up for sale, or was judged, at a fraction of what it is worth.
+    /// </summary>
+    public long MinFor(bool hq) => hq ? MinHq : MinNq;
 }
 
 /// <summary>
