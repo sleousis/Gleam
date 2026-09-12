@@ -24,6 +24,12 @@
     "IconUrl": "https://raw.githubusercontent.com/sleousis/Gleam/main/src/Gleam/images/icon.png",
     "Punchline": "Clears out your junk and puts the rest away.",
     "AcceptsFeedback": true,
+    "ImageUrls": [
+      "https://raw.githubusercontent.com/sleousis/Gleam/main/src/Gleam/images/screenshot-1.png",
+      "https://raw.githubusercontent.com/sleousis/Gleam/main/src/Gleam/images/screenshot-2.png",
+      "https://raw.githubusercontent.com/sleousis/Gleam/main/src/Gleam/images/screenshot-3.png",
+      "https://raw.githubusercontent.com/sleousis/Gleam/main/src/Gleam/images/screenshot-4.png"
+    ],
     "CategoryTags": [
       "inventory",
       "utility"
@@ -34,7 +40,7 @@
     "IsHide": false,
     "IsTestingExclusive": false,
     "DownloadCount": 0,
-    "LastUpdate": 1789217172,
+    "LastUpdate": 1789220243,
     "Changelog": "- Removing the copy of Gleam from before its rename no longer leaves /gleam and /gl answering nothing. Gleam now takes both commands over as soon as the old copy is gone, without a restart."
   }
 ]
