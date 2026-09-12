@@ -460,7 +460,11 @@ public sealed class ConfirmationWindow : StyledWindow
             used = width;
         }
 
-        public void End() => ImGui.NewLine();
+        /// <summary>
+        /// Ends the row. ImGui has already moved to a new line after the last chip; a NewLine here added a
+        /// whole empty line under each row, which is the gap that sat under Containers and under Types.
+        /// </summary>
+        public void End() { }
     }
 
     /// <summary>Item-type chips. Several can be on at once; none on means every type.</summary>
