@@ -92,7 +92,7 @@ public sealed class DebugWindow : StyledWindow
             var plates = GameInventoryScanner.PlateItemIds();
             if (plates is null) return "Plates not loaded. Open the dresser first.";
             var item = actions.ReadSlot(SlotRef.Dresser(dresserIndex));
-            return item is null ? $"{plates.Count} plate item ids loaded; that dresser index is empty" : $"{plates.Count} plate item ids loaded; {db.Get(item.ItemId)?.Name} referenced: {plates.Contains(item.ItemId)}";
+            return item is null ? $"{plates.Count} plate item ids loaded. That dresser index is empty." : $"{plates.Count} plate item ids loaded. {db.Get(item.ItemId)?.Name} referenced: {plates.Contains(item.ItemId)}";
         });
         ImGui.SameLine();
         if (Ui.Button("Context menu labels")) Run(() =>

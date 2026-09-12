@@ -120,7 +120,7 @@ public sealed class OrganizerPanel
     private void DrawPreviewNote()
     {
         if (config.SeenOrganizerPreviewNote) return;
-        if (Ui.Banner(Ui.Warn, "Preview.", "Organizing has not had a full test in game yet. It never discards; at worst an item stays in your bags or a run stops early.", dismissLabel: "Got it"))
+        if (Ui.Banner(Ui.Warn, "Preview.", "Organizing has not had a full test in game yet. It never discards. At worst an item stays in your bags or a run stops early.", dismissLabel: "Got it"))
         {
             config.SeenOrganizerPreviewNote = true;
             dirty = true;
@@ -940,7 +940,8 @@ public sealed class OrganizerPanel
 
         if (result.Moves.Count == 0)
         {
-            Ui.EmptyState(icons.LogoMedium, "Everything is already where this layout wants it.", result.Pinned.Count + result.NoRoom.Count > 0 ? "Some items were left alone. See below." : null);
+            // The left-alone line sits centred right under this, so the empty state does not point to it too.
+            Ui.EmptyState(icons.LogoMedium, "Everything is already where this layout wants it.", null);
         }
         else
         {
@@ -963,9 +964,16 @@ public sealed class OrganizerPanel
         var leftAlone = result.Pinned.Count + result.NoRoom.Count;
         if (leftAlone > 0)
         {
-            Ui.Gap(0.5f);
             var alone = (int)Ui.Count("leftAlone", leftAlone);
-            Ui.TextSwap("leftAlone", $"Left alone: {alone} item{(alone == 1 ? "" : "s")}. Hover for why.", Ui.Muted * new Vector4(1, 1, 1, 0.8f));
+            var aloneText = $"{alone} item{(alone == 1 ? " was" : "s were")} left alone. Hover for why.";
+            // Under the centred empty state it is centred too. Under the move lists it lines up with them.
+            if (result.Moves.Count == 0)
+            {
+                Ui.Gap(0.2f);
+                ImGui.SetCursorPosX(Math.Max(ImGui.GetCursorPosX(), (ImGui.GetWindowWidth() - ImGui.CalcTextSize(aloneText, false, 0).X) / 2));
+            }
+            else Ui.Gap(0.5f);
+            Ui.TextSwap("leftAlone", aloneText, Ui.Muted * new Vector4(1, 1, 1, 0.8f));
             if (ImGui.IsItemHovered())
             {
                 using var t = Ui.RichTooltip(360);

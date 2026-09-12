@@ -200,7 +200,9 @@ public sealed class RunCoordinator : IDisposable
                 AlwaysDiscardList = lists.Discard,
                 SessionSkips = lists.Skips,
                 IsAvailable = actions.IsContainerAvailable,
-                RetainerNames = snapshot.RetainerNames,
+                // The game only lists retainers once a bell has been used since logging in. The names Gleam
+                // remembered fill the gap, so a cached retainer's section is still titled with its name.
+                RetainerNames = RetainerNames,
                 IncludeUnproposed = true,
             });
 
