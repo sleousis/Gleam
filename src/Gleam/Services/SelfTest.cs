@@ -145,8 +145,12 @@ public sealed class SelfTest
             var ok = english || !string.Equals(en, local, StringComparison.OrdinalIgnoreCase);
             Add(ok ? SelfTestResult.Pass : SelfTestResult.Fail, what, ok ? $"'{local}'" : $"'{en}' has no translation Gleam can find");
         }
-        Named("Summoning bell", s.BellObjectName, db.LocalizeObjectName(s.BellObjectName));
-        Named("Glamour dresser", s.DresserObjectName, db.LocalizeObjectName(s.DresserObjectName));
+        foreach (var (what, name) in new[] { ("Summoning bell", s.BellObjectName), ("Glamour dresser", s.DresserObjectName) })
+        {
+            var ids = db.ObjectIdsForEnglishName(name).Count;
+            Add(ids > 0 ? SelfTestResult.Pass : SelfTestResult.Fail, what,
+                ids > 0 ? "found by the game's own object ids, whatever the client's language" : $"'{name}' is not a name the game uses");
+        }
         Add(SelfTestResult.Pass, "Personnel officer", "found by the game's own NPC id, whatever the client's language");
         Named("Merchant town", s.VendorAetheryte, db.LocalizePlaceName(s.VendorAetheryte));
         Add(db.MainCommandIdForEnglishName(s.SaddlebagCommandName) is not null ? SelfTestResult.Pass : SelfTestResult.Fail,

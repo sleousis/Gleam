@@ -605,7 +605,7 @@ public sealed partial class AutoPilot : IDisposable
                     await Task.Delay(800, ct).ConfigureAwait(false);
                     break;
                 default:
-                    await WalkToAndInteractAsync(db.LocalizeObjectName(S.BellObjectName), "RetainerList", ct).ConfigureAwait(false);
+                    await WalkToAndInteractAsync(db.LocalizeObjectName(S.BellObjectName), "RetainerList", ct, find: () => FindObject(S.BellObjectName)).ConfigureAwait(false);
                     return;
             }
         }
@@ -862,7 +862,7 @@ public sealed partial class AutoPilot : IDisposable
     {
         // The dresser is never cached, so its rows only exist if it was open during the scan.
         if (rows.Count == 0 && !Core.Planning.TripPartition.Sweeps(S.VisitContainersWithoutRows, S.UnseenRows)) return;
-        await WalkToAndInteractAsync(db.LocalizeObjectName(S.DresserObjectName), "MiragePrismPrismBox", ct).ConfigureAwait(false);
+        await WalkToAndInteractAsync(db.LocalizeObjectName(S.DresserObjectName), "MiragePrismPrismBox", ct, find: () => FindObject(S.DresserObjectName)).ConfigureAwait(false);
         await WaitUntil(GameInventoryScanner.IsDresserLoaded, StepTimeout, "the dresser to load", ct).ConfigureAwait(false);
         await Task.Delay(800, ct).ConfigureAwait(false);
         if (rows.Count > 0) await Step("Cleaning the glamour dresser", () => Execute(rows), ct);
@@ -916,7 +916,9 @@ public sealed partial class AutoPilot : IDisposable
         {
             await Step("Opening the shop", async () =>
             {
-                await ChooseMenu(S.VendorMenuText, ct).ConfigureAwait(false);
+                // The merchant's menu names its own shops; "Purchase" is only the English wording of one of them.
+                var shops = db.GilShopNames(npc.BaseId);
+                await ChooseMenu(S.VendorMenuText, ct, also: entry => shops.Any(s => entry.Contains(s, StringComparison.OrdinalIgnoreCase))).ConfigureAwait(false);
                 await WaitForMenu(() => GameUi.IsVisible("Shop"), StepTimeout, "the shop window", ct).ConfigureAwait(false);
             }, ct);
         }
@@ -1106,6 +1108,18 @@ public sealed partial class AutoPilot : IDisposable
     /// </summary>
     private static readonly Dictionary<byte, uint> OfficerIds = new() { [1] = 1002388, [2] = 1002394, [3] = 1002391 };
 
+    /// <summary>The nearest placed object (bell, dresser) by its game ids, or by its name where the ids find nothing (a house's own bell).</summary>
+    private IGameObject? FindObject(string englishName)
+    {
+        var ids = db.ObjectIdsForEnglishName(englishName);
+        var me = objects.LocalPlayer?.Position ?? Vector3.Zero;
+        var byId = ids.Count == 0 ? null : objects
+            .Where(o => o.Address != 0 && o.ObjectKind == Dalamud.Game.ClientState.Objects.Enums.ObjectKind.EventObj && ids.Contains(o.BaseId))
+            .OrderBy(o => Vector3.Distance(o.Position, me))
+            .FirstOrDefault();
+        return byId ?? FindNearest(db.LocalizeObjectName(englishName));
+    }
+
     /// <summary>The nearest NPC with this game id.</summary>
     private IGameObject? FindById(uint baseId)
     {
@@ -1145,7 +1159,7 @@ public sealed partial class AutoPilot : IDisposable
             if (data.GetExcelSheet<TerritoryType>()!.TryGetRow(t, out var row) && row.TerritoryIntendedUse.RowId == 2) return true;
         }
         catch { /* fall through */ }
-        return FindNearest(db.LocalizeObjectName(S.BellObjectName)) is not null && FindNearest(db.LocalizeObjectName(S.DresserObjectName)) is not null;
+        return FindObject(S.BellObjectName) is not null && FindObject(S.DresserObjectName) is not null;
     }
 
     private static unsafe byte GrandCompanyId()
@@ -1180,7 +1194,7 @@ public sealed partial class AutoPilot : IDisposable
     /// Chooses the menu entry an English fragment names ("Quit", "your inventory"). On other clients the entry
     /// is recognised by its translation, or by reading the entries back into English.
     /// </summary>
-    private async Task ChooseMenu(string englishFragment, CancellationToken ct)
+    private async Task ChooseMenu(string englishFragment, CancellationToken ct, Func<string, bool>? also = null)
     {
         IReadOnlyList<string> entries = Array.Empty<string>();
         for (var attempt = 0; attempt < 8; attempt++)
@@ -1189,7 +1203,8 @@ public sealed partial class AutoPilot : IDisposable
             if (entries.Count > 0) break;
             await Task.Delay(400, ct).ConfigureAwait(false);
         }
-        var matches = db.MenuMatcher(englishFragment);
+        var known = db.MenuMatcher(englishFragment);
+        Func<string, bool> matches = also is null ? known : entry => known(entry) || also(entry);
         var chosen = await framework.RunOnFrameworkThread(() => GameUi.SelectStringChoose(matches)).ConfigureAwait(false);
         if (chosen < 0)
         {

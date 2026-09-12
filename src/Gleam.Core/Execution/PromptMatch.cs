@@ -36,9 +36,17 @@ public static class PromptMatch
         return false;
     }
 
-    /// <summary>The same word, or its English plural.</summary>
+    /// <summary>Marks a word whose ending changes with the sentence, as German adjectives do ("fünfblättrige").</summary>
+    public const char InflectedEnding = '\u0001';
+
+    /// <summary>The same word, its English plural, or, for a word marked as inflected, its stem with a short ending.</summary>
     private static bool SameWord(string inPrompt, string inName)
     {
+        if (inName.Length > 1 && inName[^1] == InflectedEnding)
+        {
+            var stem = inName[..^1];
+            return inPrompt.StartsWith(stem, StringComparison.Ordinal) && inPrompt.Length <= stem.Length + 3;
+        }
         if (inPrompt == inName) return true;
         if (inPrompt == inName + "s" || inPrompt == inName + "es") return true;
         if (inName.EndsWith('y') && inPrompt == inName[..^1] + "ies") return true;
@@ -56,7 +64,7 @@ public static class PromptMatch
         foreach (var raw in StripPayloads(s) + " ")
         {
             var ch = raw == '\u2019' ? '\'' : raw;
-            if (char.IsLetterOrDigit(ch) || (sb.Length > 0 && ch is '-' or '\''))
+            if (char.IsLetterOrDigit(ch) || (sb.Length > 0 && ch is '-' or '\'' or InflectedEnding))
             {
                 sb.Append(char.ToLowerInvariant(ch));
                 continue;
