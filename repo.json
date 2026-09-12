@@ -3,7 +3,7 @@
     "Author": "Raiden Shinryu",
     "Name": "Gleam",
     "InternalName": "Gleam",
-    "AssemblyVersion": "0.12.1.0",
+    "AssemblyVersion": "0.12.2.0",
     "Description": "Gleam finds the junk in your bags, armoury chest, saddlebag, retainers and glamour dresser, and clears it out with one button. You choose whether it puts things up on the market board, sells them to vendors or discards them.\n\n- Shows you everything first. Nothing leaves your bags until you press Clean.\n- Layouts put the rest away, such as materia to the saddlebag and spare gear to a retainer.\n- Hands-free trips walk to your retainers, the dresser and a merchant for you.\n- Statistics show everything it has cleared.\n\nCommands\n\n/gleam\n    Opens or closes Gleam. /gl does the same.\n/gleam organize\n    Opens the layouts that put things away.\n/gleam stats\n    Shows your statistics.\n/gleam history\n    Lists everything Gleam has cleaned or moved.\n/gleam settings\n    Opens the settings.\n/gleam scan\n    Looks through your inventory again.\n/gleam merge\n    Merges split stacks.\n/gleam stop\n    Stops whatever Gleam is doing.\n/gleam selftest\n    Checks what Gleam can find in the game without touching anything.\n/gleam report\n    Copies a bug report to your clipboard.\n/gleam troubleshoot\n    Opens the troubleshooting window.\n\nRequires vnavmesh, and Lifestream to travel between towns. Gleam automates game actions, so use it at your own risk.",
     "ApplicableVersion": "any",
     "RepoUrl": "https://github.com/sleousis/Gleam",
@@ -28,13 +28,13 @@
       "inventory",
       "utility"
     ],
-    "DownloadLinkInstall": "https://github.com/sleousis/Gleam/releases/download/v0.12.1/Gleam.zip",
-    "DownloadLinkUpdate": "https://github.com/sleousis/Gleam/releases/download/v0.12.1/Gleam.zip",
-    "DownloadLinkTesting": "https://github.com/sleousis/Gleam/releases/download/v0.12.1/Gleam.zip",
+    "DownloadLinkInstall": "https://github.com/sleousis/Gleam/releases/download/v0.12.2/Gleam.zip",
+    "DownloadLinkUpdate": "https://github.com/sleousis/Gleam/releases/download/v0.12.2/Gleam.zip",
+    "DownloadLinkTesting": "https://github.com/sleousis/Gleam/releases/download/v0.12.2/Gleam.zip",
     "IsHide": false,
     "IsTestingExclusive": false,
     "DownloadCount": 0,
-    "LastUpdate": 1789215762,
-    "Changelog": "- Each retainer in the Clean list is titled with its name again. Before you had used a summoning bell since logging in, every retainer was shown only as Retainer.\n- On the Organize page, the line about items left alone is centred under the message when nothing needs to move, instead of sitting at the left edge.\n- The last semicolons are gone from on-screen text."
+    "LastUpdate": 1789217172,
+    "Changelog": "- Removing the copy of Gleam from before its rename no longer leaves /gleam and /gl answering nothing. Gleam now takes both commands over as soon as the old copy is gone, without a restart."
   }
 ]
