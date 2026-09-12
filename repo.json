@@ -3,7 +3,7 @@
     "Author": "Raiden Shinryu",
     "Name": "Gleam",
     "InternalName": "Gleam",
-    "AssemblyVersion": "0.11.7.0",
+    "AssemblyVersion": "0.11.8.0",
     "Description": "Gleam cleans and organizes your inventory, and does the walking itself.\n\nClean: it finds junk in your bags, armoury chest, saddlebag, retainers and glamour dresser and shows it in one list. You choose whether to sell on the market board, sell to vendors or discard, then press one button.\n\nOrganize: layouts move the items you keep to where you want them. For example, materia to the saddlebag, spare gear to a retainer and gear-set pieces to the armoury chest.\n\nNothing is changed until you press the button. Items that will be cleaned or moved are highlighted in the game's bag windows. Gleam then opens the saddlebag, travels to an inn for your retainers and the dresser, and visits your Grand Company when something is to be turned in.\n\nPlease note: Gleam moves your character and clicks through the game's menus for you. Square Enix's terms of service do not allow third-party tools, and automation is what they act against most. Use it at your own risk. Organizing is still a preview and has not had a full test in game.\n\nCommands: /gleam or /gl. Sub-commands: organize, history, settings, stop, selftest, report.\n\nPlugins Gleam needs:\nvnavmesh walks your character from place to place. Gleam needs it.\nLifestream teleports between aetherytes and into inns. Without it, start a run while you are already in an inn.\n\nOptional:\nAutoRetainer lets Gleam discard junk after each retainer's ventures.\nAllagan Tools shows retainer contents without summoning them.\nMarket prices come from Universalis and need an internet connection.",
     "ApplicableVersion": "any",
     "RepoUrl": "https://github.com/sleousis/Gleam",
@@ -27,13 +27,13 @@
     "IconUrl": "https://raw.githubusercontent.com/sleousis/Gleam/main/src/Gleam/images/icon.png",
     "Punchline": "Cleans and organizes your inventory, and walks there itself. Needs vnavmesh, plus Lifestream to travel.",
     "AcceptsFeedback": true,
-    "DownloadLinkInstall": "https://github.com/sleousis/Gleam/releases/download/v0.11.7/Gleam.zip",
-    "DownloadLinkUpdate": "https://github.com/sleousis/Gleam/releases/download/v0.11.7/Gleam.zip",
-    "DownloadLinkTesting": "https://github.com/sleousis/Gleam/releases/download/v0.11.7/Gleam.zip",
+    "DownloadLinkInstall": "https://github.com/sleousis/Gleam/releases/download/v0.11.8/Gleam.zip",
+    "DownloadLinkUpdate": "https://github.com/sleousis/Gleam/releases/download/v0.11.8/Gleam.zip",
+    "DownloadLinkTesting": "https://github.com/sleousis/Gleam/releases/download/v0.11.8/Gleam.zip",
     "IsHide": false,
     "IsTestingExclusive": false,
     "DownloadCount": 0,
-    "LastUpdate": 1789209268,
-    "Changelog": "- Another way of reading the retainer's \"no buyback once recalled\" question, which 0.11.5 still missed in game.\n- New `/gleam probe yesno` shows what Gleam reads from a yes/no question on screen, to help pin down problems like this one. `/gleam probe yesno answer` also presses Yes, but only on the buyback question."
+    "LastUpdate": 1789209953,
+    "Changelog": "- Gleam now answers the retainer's \"no buyback once recalled\" question itself. Since 0.11.7 it read the question correctly, but pressed Yes in a way the game ignored; it now presses it the way a click does.\n- In Settings, the sections under \"Fine detail\" are indented beneath it, so it is clear they belong to it."
   }
 ]
