@@ -50,7 +50,11 @@ public sealed class MarketPricePostProcessor : IProposalPostProcessor
         }
 
         // A marketable item whose price could not be fetched is not "worthless"; say so and start unchecked.
-        if (ctx.MarketLookupAttempted && p.Info.IsMarketable && !ctx.MarketPrices.ContainsKey(p.Info.ItemId)
+        // No entry, or an entry with no listings for this quality. Universalis answers 0 when nothing is for sale,
+        // and 0 used to read as "worth nothing": a rare spare with no listings on the home world was sold for its
+        // vendor price, or discarded.
+        if (ctx.MarketLookupAttempted && p.Info.IsMarketable
+            && (!ctx.MarketPrices.TryGetValue(p.Info.ItemId, out var known) || known.MinFor(p.Item.IsHq) <= 0)
             && !p.Warnings.Contains("Market price unavailable"))
         {
             p = p with { Warnings = [.. p.Warnings, "Market price unavailable"] };

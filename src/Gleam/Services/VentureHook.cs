@@ -60,7 +60,9 @@ public sealed class VentureHook : IDisposable
             // A fresh look or nothing at all. The plan already on screen may hold the player's own hand-ticks,
             // and those are never carried out while they are away.
             if (!await coordinator.RefreshPlanAsync(openWindow: false, focus: ContainerKind.Inventory).ConfigureAwait(false)) return;
-            var queue = coordinator.BuildQueueFromPlan(r => Core.Planning.UnattendedSelection.IsVenturePick(r, coordinator.SessionSkips), requireChecked: false);
+            var pick = Core.Planning.UnattendedSelection.Capped(r => Core.Planning.UnattendedSelection.IsVenturePick(r, coordinator.SessionSkips),
+                coordinator.EffectiveProfile.Thresholds);
+            var queue = coordinator.BuildQueueFromPlan(pick, requireChecked: false);
             if (queue.Count == 0) return;
             coordinator.SuppressChatSummary = true;
             var before = coordinator.LastReport;

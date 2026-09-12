@@ -63,7 +63,9 @@ public sealed class TripPartition
 
     /// <summary>Items a retainer handed back (for materia, a vendor, or seals): they finish from the bags once the retainer is closed.</summary>
     public static List<QueuedAction> BroughtBack(IEnumerable<QueuedAction> pending) =>
-        pending.Where(p => p.Kind.IsAlwaysLoaded() && p.BroughtHome).ToList();
+        // A listing needs a retainer's sell list, and the trip has left the bell by now, so it keeps waiting for the
+        // next run. It used to be taken off the waiting list here and routed nowhere, and silently disappeared.
+        pending.Where(p => p.Kind.IsAlwaysLoaded() && p.BroughtHome && p.Action != ActionKind.MarketList).ToList();
 
     /// <summary>Where the items brought back go: the merchant, the Grand Company, or straight from the bags.</summary>
     public static (List<QueuedAction> Sells, List<QueuedAction> Seals, List<QueuedAction> Here) SplitBroughtBack(IReadOnlyList<QueuedAction> broughtBack) => (

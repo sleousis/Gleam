@@ -357,6 +357,9 @@ public sealed class GameActions : IGameActions
         var before = Read(slot);
         if (before is null || before.ItemId != itemId) { LastFailure = "the item is no longer where it was"; return false; }
         var (retainer, retainerName) = OnGame(GameInventoryScanner.ActiveRetainer);
+        // Copies of this item the retainer already holds. The one to sell is the copy that arrives: a same-looking
+        // copy the retainer had before (with materia, or kept on purpose) used to be found first and sold instead.
+        var alreadyThere = OnGame(() => scanner.ScanKind(ContainerKind.Retainer).Where(i => i.ItemId == itemId).Select(i => i.Slot).ToHashSet());
 
         var handedOver = await RunAndAwaitRemoval(slot, itemId, ct,
             async () =>
@@ -375,10 +378,15 @@ public sealed class GameActions : IGameActions
         SlotRef? landed = null;
         for (var i = 0; i < 20 && landed is null; i++)
         {
-            landed = FindSlot(ContainerKind.Retainer, retainer, itemId, before.Quantity, before.IsHq, new HashSet<SlotRef>(), slot);
+            landed = FindSlot(ContainerKind.Retainer, retainer, itemId, before.Quantity, before.IsHq, alreadyThere, slot);
             if (landed is null) await Task.Delay(100, finish).ConfigureAwait(false);
         }
         if (landed is null) { LastFailure = $"the item went to {Who(retainerName)} but could not be found there to sell. It is with that retainer now"; return false; }
+        if (Read(landed.Value) is { HasMateria: true })
+        {
+            LastFailure = $"the copy with {Who(retainerName)} carries materia, so it was not sold. It is with that retainer now";
+            return false;
+        }
         await Task.Delay(config.Callbacks.RateLimitMs, finish).ConfigureAwait(false);
         var sold = await RetainerBuysAsync(landed.Value, itemId, finish).ConfigureAwait(false);
         if (!sold) LastFailure = $"{LastFailure ?? "the sale did not go through"}. The item is with {Who(retainerName)} now";

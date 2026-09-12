@@ -147,6 +147,18 @@ public sealed class RunPlanner
         foreach (var (item, info) in userForced)
         {
             var vendorTotal = (long)info.VendorPrice * item.Quantity;
+            var forcedWarnings = new List<string>();
+            if (item.HasMateria) forcedWarnings.Add($"Retrieve materia first ({item.MateriaCount} slotted)");
+            // The Always clean list is the player's word, given at an earlier price. Something that has since become
+            // worth a lot on the market board shows its value and waits for a look, rather than going out ticked,
+            // unattended after a venture included.
+            var forcedThresholds = profile.Thresholds;
+            if (info.IsMarketable && ctx.MarketPrices.TryGetValue(info.ItemId, out var forcedPrice) && forcedPrice.MinFor(item.IsHq) is var forcedUnit and > 0)
+            {
+                var marketTotal = (long)Math.Floor(forcedUnit * item.Quantity * (1 - forcedThresholds.MarketTaxRate));
+                if (marketTotal > vendorTotal * forcedThresholds.MarketPremiumFactor && marketTotal >= forcedThresholds.MarketMinStackValueGil)
+                    forcedWarnings.Add($"Worth about {marketTotal:N0}g on the market board");
+            }
             proposals.Add(new Proposal
             {
                 Item = item, Info = info,
@@ -157,7 +169,7 @@ public sealed class RunPlanner
                 Reason = "On your Always clean list",
                 ValueGil = vendorTotal,
                 ValueLabel = vendorTotal > 0 ? $"{vendorTotal:N0}g" : "—",
-                Warnings = item.HasMateria ? [$"Retrieve materia first ({item.MateriaCount} slotted)"] : [],
+                Warnings = forcedWarnings,
             });
         }
 

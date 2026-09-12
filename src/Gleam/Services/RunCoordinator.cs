@@ -203,6 +203,8 @@ public sealed class RunCoordinator : IDisposable
             // The player's own ticks survive a re-scan, and loot that lands while the window is open starts
             // unticked unless the player asked for this scan.
             RescanTicks.CarryOver(CurrentPlan, plan, userAsked);
+            // Unticks follow the item to its new slot, so the after-ventures clean and hands-free runs still see them.
+            foreach (var key in Core.Planning.RescanTicks.CarrySkips(CurrentPlan, plan, SessionSkips)) SessionSkips.Add(key);
 
             CurrentPlan = plan;
             if (focus is null)

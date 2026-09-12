@@ -199,18 +199,6 @@ public class HandsFreeSelectionTests
         Assert.Equal([900u], picked.Select(q => q.ItemId));
     }
 
-    [Fact(Skip = "Known issue, reported, not fixed here: an untick is remembered by slot, so once the sort after a clean "
-                 + "moves the stack, the after-ventures clean picks it again. Unseen rows are guarded by item; this path is not.")]
-    public void After_ventures_an_item_the_player_unticked_stays_left_after_the_bags_are_sorted()
-    {
-        var unticked = Row(Inv(0), ticked: false);
-        var skips = new HashSet<string> { unticked.Key };
-        // The same stack one slot along, as the next scan sees it. The re-scan carried the untick over to it.
-        var afterSort = Row(Inv(1), ticked: false);
-
-        Assert.Empty(UnattendedSelection.PickAfterVentures([afterSort], skips));
-    }
-
     // ---------- the stops of a trip ----------
 
     [Fact]

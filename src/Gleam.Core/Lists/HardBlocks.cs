@@ -20,6 +20,8 @@ public enum HardBlockReason
     GearsetsUnknown,
     /// <summary>The glamour plates have not been read yet, so any dresser item might be on one.</summary>
     PlatesUnknown,
+    /// <summary>Untradeable gear no vendor sells: event and reward pieces. Rarely unique, and gone for good once discarded.</summary>
+    UntradeableGear,
 }
 
 public static class HardBlocks
@@ -73,6 +75,14 @@ public static class HardBlocks
         if (item.Slot.Kind == ContainerKind.GlamourDresser && ctx.PlateItemIds.Contains(info.ItemId))
             return HardBlockReason.InGlamourPlate;
 
+        // Event and reward gear is untradeable, rarely unique, and no vendor sells it back. The obsolete-gear rule
+        // saw only its level (an all-class level 1 apron against a level 100 job) and ticked it for discard. It is
+        // checked after the gear set guards, so a set piece stays untouchable rather than becoming hand-pickable.
+        // Gear bought with a retired currency has a rule of its own and stays out of this.
+        if (info.IsEquipment && info.IsUntradable && !info.IsVendorBuyable && !registeredSpare
+            && !ctx.RetiredCurrencyGearIds.Contains(info.ItemId))
+            return HardBlockReason.UntradeableGear;
+
         return HardBlockReason.None;
     }
 
@@ -88,6 +98,7 @@ public static class HardBlocks
         HardBlockReason.Protected => "Can never be regained. Gleam never touches it",
         HardBlockReason.GearsetsUnknown => "Your gear sets could not be read, so Gleam leaves all gear alone this time",
         HardBlockReason.PlatesUnknown => "Open the glamour dresser once so Gleam can see which pieces your plates use",
+        HardBlockReason.UntradeableGear => "Untradeable gear that no vendor sells. Once discarded it may be gone for good",
         _ => string.Empty,
     };
 }
