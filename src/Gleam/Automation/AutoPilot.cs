@@ -5,6 +5,7 @@ using Dalamud.Plugin.Services;
 using Lumina.Excel.Sheets;
 using Gleam.Core.Execution;
 using Gleam.Core.Model;
+using Gleam.Core.Settings;
 using Gleam.Core.Stats;
 using Gleam.Game;
 using Gleam.Integrations;

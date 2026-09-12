@@ -5,6 +5,7 @@ using Dalamud.Plugin.Services;
 using Gleam.Core.Lists;
 using Gleam.Core.Model;
 using Gleam.Core.Rules;
+using Gleam.Core.Settings;
 using Gleam.Game;
 using Gleam.Integrations;
 using Gleam.Services;
