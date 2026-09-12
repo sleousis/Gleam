@@ -3,7 +3,7 @@
     "Author": "Raiden Shinryu",
     "Name": "Gleam",
     "InternalName": "Gleam",
-    "AssemblyVersion": "0.11.4.0",
+    "AssemblyVersion": "0.11.5.0",
     "Description": "Gleam cleans and organizes your inventory, and does the walking itself.\n\nClean: it finds junk in your bags, armoury chest, saddlebag, retainers and glamour dresser and shows it in one list. You choose whether to sell on the market board, sell to vendors or discard, then press one button.\n\nOrganize: layouts move the items you keep to where you want them. For example, materia to the saddlebag, spare gear to a retainer and gear-set pieces to the armoury chest.\n\nNothing is changed until you press the button. Items that will be cleaned or moved are highlighted in the game's bag windows. Gleam then opens the saddlebag, travels to an inn for your retainers and the dresser, and visits your Grand Company when something is to be turned in.\n\nPlease note: Gleam moves your character and clicks through the game's menus for you. Square Enix's terms of service do not allow third-party tools, and automation is what they act against most. Use it at your own risk. Organizing is still a preview and has not had a full test in game.\n\nCommands: /gleam or /gl. Sub-commands: organize, history, settings, stop, selftest, report.\n\nPlugins Gleam needs:\nvnavmesh walks your character from place to place. Gleam needs it.\nLifestream teleports between aetherytes and into inns. Without it, start a run while you are already in an inn.\n\nOptional:\nAutoRetainer lets Gleam discard junk after each retainer's ventures.\nAllagan Tools shows retainer contents without summoning them.\nMarket prices come from Universalis and need an internet connection.",
     "ApplicableVersion": "any",
     "RepoUrl": "https://github.com/sleousis/Gleam",
@@ -27,13 +27,13 @@
     "IconUrl": "https://raw.githubusercontent.com/sleousis/Gleam/main/src/Gleam/images/icon.png",
     "Punchline": "Cleans and organizes your inventory, and walks there itself. Needs vnavmesh, plus Lifestream to travel.",
     "AcceptsFeedback": true,
-    "DownloadLinkInstall": "https://github.com/sleousis/Gleam/releases/download/v0.11.4/Gleam.zip",
-    "DownloadLinkUpdate": "https://github.com/sleousis/Gleam/releases/download/v0.11.4/Gleam.zip",
-    "DownloadLinkTesting": "https://github.com/sleousis/Gleam/releases/download/v0.11.4/Gleam.zip",
+    "DownloadLinkInstall": "https://github.com/sleousis/Gleam/releases/download/v0.11.5/Gleam.zip",
+    "DownloadLinkUpdate": "https://github.com/sleousis/Gleam/releases/download/v0.11.5/Gleam.zip",
+    "DownloadLinkTesting": "https://github.com/sleousis/Gleam/releases/download/v0.11.5/Gleam.zip",
     "IsHide": false,
     "IsTestingExclusive": false,
     "DownloadCount": 0,
-    "LastUpdate": 1789207458,
-    "Changelog": "- A Stop pressed while a retainer is still greeting you now dismisses that retainer too. After a trip Gleam clicks through the retainer's greeting (never a cutscene), chooses Quit, and keeps going until you have left the bell.\n- The bag window the game opens beside a retainer is closed after the trip, unless it was already open when the trip began."
+    "LastUpdate": 1789207913,
+    "Changelog": "- The retainer's \"no buyback once recalled\" question is recognised again. 0.11.3 read it from a part of the window that was still empty when it appeared, so a trip stopped at the first retainer that had sold something and left the question open.\n- If that question is still open when a trip ends, Gleam answers it and dismisses the retainer. Any other question is left for you."
   }
 ]
