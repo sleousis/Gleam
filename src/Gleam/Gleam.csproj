@@ -6,32 +6,47 @@
     <Version>0.11.8.0</Version>
     <Author>Raiden Shinryu</Author>
     <Name>Gleam</Name>
-    <Punchline>Cleans and organizes your inventory, and walks there itself. Needs vnavmesh, plus Lifestream to travel.</Punchline>
-    <Description>Gleam cleans and organizes your inventory, and does the walking itself.
+    <!-- Written the way the most-installed plugins write theirs: what it does, how, the commands, then what it
+         needs. The installer shows this as plain text, so no markdown, and no semicolons, colons or dashes. -->
+    <Punchline>Clears out your junk and puts the rest away.</Punchline>
+    <Description>Gleam finds the junk in your bags, armoury chest, saddlebag, retainers and glamour dresser, and clears it out with one button. You choose whether it puts things up on the market board, sells them to vendors or discards them.
 
-Clean: it finds junk in your bags, armoury chest, saddlebag, retainers and glamour dresser and shows it in one list. You choose whether to sell on the market board, sell to vendors or discard, then press one button.
+- Shows you everything first. Nothing leaves your bags until you press Clean.
+- Layouts put the rest away, such as materia to the saddlebag and spare gear to a retainer.
+- Hands-free trips walk to your retainers, the dresser and a merchant for you.
+- Statistics show everything it has cleared.
 
-Organize: layouts move the items you keep to where you want them. For example, materia to the saddlebag, spare gear to a retainer and gear-set pieces to the armoury chest.
+Commands
 
-Nothing is changed until you press the button. Items that will be cleaned or moved are highlighted in the game's bag windows. Gleam then opens the saddlebag, travels to an inn for your retainers and the dresser, and visits your Grand Company when something is to be turned in.
+/gleam
+    Opens or closes Gleam. /gl does the same.
+/gleam organize
+    Opens the layouts that put things away.
+/gleam stats
+    Shows your statistics.
+/gleam history
+    Lists everything Gleam has cleaned or moved.
+/gleam settings
+    Opens the settings.
+/gleam scan
+    Looks through your inventory again.
+/gleam merge
+    Merges split stacks.
+/gleam stop
+    Stops whatever Gleam is doing.
+/gleam selftest
+    Checks what Gleam can find in the game without touching anything.
+/gleam report
+    Copies a bug report to your clipboard.
+/gleam troubleshoot
+    Opens the troubleshooting window.
 
-Please note: Gleam moves your character and clicks through the game's menus for you. Square Enix's terms of service do not allow third-party tools, and automation is what they act against most. Use it at your own risk. Organizing is still a preview and has not had a full test in game.
-
-Commands: /gleam or /gl. Sub-commands: organize, history, settings, stop, selftest, report.
-
-Plugins Gleam needs:
-vnavmesh walks your character from place to place. Gleam needs it.
-Lifestream teleports between aetherytes and into inns. Without it, start a run while you are already in an inn.
-
-Optional:
-AutoRetainer lets Gleam discard junk after each retainer's ventures.
-Allagan Tools shows retainer contents without summoning them.
-Market prices come from Universalis and need an internet connection.</Description>
+Requires vnavmesh, and Lifestream to travel between towns. Gleam automates game actions, so use it at your own risk.</Description>
     <RepoUrl>https://github.com/sleousis/Gleam</RepoUrl>
     <!-- Shown beside the plugin in Dalamud's installer. Served from the repository itself so there is no
          second place to keep it in step. -->
     <IconUrl>https://raw.githubusercontent.com/sleousis/Gleam/main/src/Gleam/images/icon.png</IconUrl>
-    <Tags>inventory;cleanup;discard;organize;sort;retainer;saddlebag;market board;glamour;qol</Tags>
+    <Tags>inventory;cleanup;retainer;saddlebag;marketboard;organize;qol</Tags>
     <RootNamespace>Gleam</RootNamespace>
     <AssemblyName>Gleam</AssemblyName>
     <LangVersion>14.0</LangVersion>

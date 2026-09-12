@@ -37,6 +37,8 @@ def main():
     download = f"{base}/releases/download/{args.tag}/{ASSET}"
 
     plugin["IconUrl"] = f"https://raw.githubusercontent.com/{args.repo}/{args.branch}/src/Gleam/images/icon.png"
+    # The installer files plugins under these; "inventory" and "utility" are two of its eight categories.
+    plugin["CategoryTags"] = ["inventory", "utility"]
     plugin["RepoUrl"] = base
     # Install, update and testing all point at the same build: there is one channel here, not three.
     plugin["DownloadLinkInstall"] = download
