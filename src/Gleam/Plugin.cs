@@ -365,6 +365,14 @@ public sealed class Plugin : IDalamudPlugin
         }
     }
 
+    /// <summary>"/gleam probe yesno": what Gleam reads from the yes/no on screen, to pin down a question it misses.</summary>
+    private void ProbeYesNo(bool answer)
+    {
+        var lines = Gleam.Game.AddonDriver.ProbeYesNo(answer, config.Callbacks.YesNoConfirm, p => db.PromptIsAbout(p, "buyback"));
+        foreach (var line in lines) chat.Print(line, "Gleam");
+        log.Information("Yes/no probe: {Lines}", string.Join(" | ", lines));
+    }
+
     private void OnCommand(string command, string args)
     {
         switch (args.Trim().ToLowerInvariant())
@@ -405,6 +413,10 @@ public sealed class Plugin : IDalamudPlugin
             case "stats":
             case "numbers":
                 confirmWindow.Show(Ui.AppMode.Stats);
+                break;
+            case "probe yesno":
+            case "probe yesno answer":
+                ProbeYesNo(answer: args.Trim().EndsWith("answer", StringComparison.OrdinalIgnoreCase));
                 break;
             case "selftest":
             case "self-test":
