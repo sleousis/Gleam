@@ -3,7 +3,7 @@
     "Author": "Raiden Shinryu",
     "Name": "Gleam",
     "InternalName": "Gleam",
-    "AssemblyVersion": "0.11.2.0",
+    "AssemblyVersion": "0.11.3.0",
     "Description": "Gleam cleans and organizes your inventory, and does the walking itself.\n\nClean: it finds junk in your bags, armoury chest, saddlebag, retainers and glamour dresser and shows it in one list. You choose whether to sell on the market board, sell to vendors or discard, then press one button.\n\nOrganize: layouts move the items you keep to where you want them. For example, materia to the saddlebag, spare gear to a retainer and gear-set pieces to the armoury chest.\n\nNothing is changed until you press the button. Items that will be cleaned or moved are highlighted in the game's bag windows. Gleam then opens the saddlebag, travels to an inn for your retainers and the dresser, and visits your Grand Company when something is to be turned in.\n\nPlease note: Gleam moves your character and clicks through the game's menus for you. Square Enix's terms of service do not allow third-party tools, and automation is what they act against most. Use it at your own risk. Organizing is still a preview and has not had a full test in game.\n\nCommands: /gleam or /gl. Sub-commands: organize, history, settings, stop, selftest, report.\n\nPlugins Gleam needs:\nvnavmesh walks your character from place to place. Gleam needs it.\nLifestream teleports between aetherytes and into inns. Without it, start a run while you are already in an inn.\n\nOptional:\nAutoRetainer lets Gleam discard junk after each retainer's ventures.\nAllagan Tools shows retainer contents without summoning them.\nMarket prices come from Universalis and need an internet connection.",
     "ApplicableVersion": "any",
     "RepoUrl": "https://github.com/sleousis/Gleam",
@@ -27,13 +27,13 @@
     "IconUrl": "https://raw.githubusercontent.com/sleousis/Gleam/main/src/Gleam/images/icon.png",
     "Punchline": "Cleans and organizes your inventory, and walks there itself. Needs vnavmesh, plus Lifestream to travel.",
     "AcceptsFeedback": true,
-    "DownloadLinkInstall": "https://github.com/sleousis/Gleam/releases/download/v0.11.2/Gleam.zip",
-    "DownloadLinkUpdate": "https://github.com/sleousis/Gleam/releases/download/v0.11.2/Gleam.zip",
-    "DownloadLinkTesting": "https://github.com/sleousis/Gleam/releases/download/v0.11.2/Gleam.zip",
+    "DownloadLinkInstall": "https://github.com/sleousis/Gleam/releases/download/v0.11.3/Gleam.zip",
+    "DownloadLinkUpdate": "https://github.com/sleousis/Gleam/releases/download/v0.11.3/Gleam.zip",
+    "DownloadLinkTesting": "https://github.com/sleousis/Gleam/releases/download/v0.11.3/Gleam.zip",
     "IsHide": false,
     "IsTestingExclusive": false,
     "DownloadCount": 0,
-    "LastUpdate": 1789204785,
-    "Changelog": "- The big numbers on the stats page are sharp now. They used to be the normal font stretched, which blurred them."
+    "LastUpdate": 1789206594,
+    "Changelog": "Safety fixes for hands-free trips.\n\n- Stopping a trip now leaves the game tidy: the retainer is dismissed, and the shop, dresser, saddlebag and retainer windows are closed. Before, Stop only stopped the walking.\n- Gleam reads a yes/no question before answering it. On its own it answers only the retainer's \"no buyback once recalled\" question. Anything else, such as a party invite at the bell, is left for you and the trip stops.\n- An item already handed to a retainer to be sold, or taken out of the glamour dresser, is finished even if you press Stop at that moment. If the sale still fails, the message says which retainer has the item.\n- In the simple view the Clean button now says \"everywhere\" when the run will travel, and \"Clean here only\" is offered there too. The button's tooltip mentions the teleports to a merchant or your Grand Company.\n- The gamepad no longer starts a run, and it only moves through the list while Dalamud's gamepad navigation has the window. The keyboard shortcut is now Ctrl+Enter instead of Enter.\n- During a run Gleam reads your bags and the game's windows only on the game's own thread, and it works from copies of your layout and lists, so editing them while it works cannot upset it."
   }
 ]
