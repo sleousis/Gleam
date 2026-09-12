@@ -137,8 +137,13 @@ public sealed partial class AutoPilot : IDisposable
     public void Dispose()
     {
         // Cancel only. The run may still be unwinding, and its finally reads the token.
+        disposed = true;
+        framework.Update -= SampleWalk;
         if (IsRunning) Stop();
     }
+
+    /// <summary>The plugin is unloading: a run still unwinding leaves the game alone.</summary>
+    private bool disposed;
 
     /// <summary>Runs the whole accepted plan, travelling as needed. Returns when done, stopped, or failed.</summary>
     public async Task RunAsync()
@@ -239,7 +244,7 @@ public sealed partial class AutoPilot : IDisposable
         }
         finally
         {
-            await LeaveGameTidyAsync().ConfigureAwait(false);
+            if (!disposed) await LeaveGameTidyAsync().ConfigureAwait(false);
             coordinator.SuppressChatSummary = false;
             EndTrip(RunTrigger.HandsFree, PlannedTotal, tally.Done, tally.Skipped, tally.Failed, tally.Pending.Values.Sum(), stopped, tally.LegFailures.Concat(tally.Reasons));
             IsRunning = false;

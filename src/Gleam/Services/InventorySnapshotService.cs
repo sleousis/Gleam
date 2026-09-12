@@ -127,7 +127,8 @@ public sealed class InventorySnapshotService
                 lookedUp = true;
                 try
                 {
-                    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(12));
+                    // Six seconds: a scan waits on this, and hands-free runs scan at every stop.
+                    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(6));
                     prices = await market.GetPricesAsync(ids, world, cts.Token).ConfigureAwait(false);
                 }
                 catch (Exception ex)

@@ -19,9 +19,15 @@ public sealed class NullMarketPriceSource : IMarketPriceSource
 /// Universalis v2 aggregated prices with a 15-minute cache and 100-id batches. Failures degrade to
 /// "market unknown" for the affected ids; they never block a run.
 /// </summary>
-public sealed class UniversalisClient : IMarketPriceSource
+public sealed class UniversalisClient : IMarketPriceSource, IDisposable
 {
     public const int BatchSize = 100;
+
+    /// <summary>After a failure, only cached prices for this long. Every scan used to wait out its timeout again during an outage.</summary>
+    public static readonly TimeSpan QuietAfterFailure = TimeSpan.FromMinutes(3);
+
+    private readonly bool ownsHttp;
+    private DateTimeOffset quietUntil = DateTimeOffset.MinValue;
 
     private readonly HttpClient http;
     private readonly TimeSpan cacheFor;
@@ -31,6 +37,7 @@ public sealed class UniversalisClient : IMarketPriceSource
 
     public UniversalisClient(HttpClient? http = null, TimeSpan? cacheFor = null, Func<DateTimeOffset>? clock = null)
     {
+        ownsHttp = http is null;
         this.http = http ?? new HttpClient { BaseAddress = new Uri("https://universalis.app/") };
         if (this.http.BaseAddress is null) this.http.BaseAddress = new Uri("https://universalis.app/");
         this.http.DefaultRequestHeaders.UserAgent.ParseAdd("Gleam/1.0 (Dalamud plugin)");
@@ -54,6 +61,8 @@ public sealed class UniversalisClient : IMarketPriceSource
             }
         }
 
+        if (missing.Count > 0 && t < quietUntil) return result;
+
         foreach (var batch in missing.Chunk(BatchSize))
         {
             try
@@ -64,7 +73,8 @@ public sealed class UniversalisClient : IMarketPriceSource
                 if (!resp.IsSuccessStatusCode)
                 {
                     LastError = $"Universalis {(int)resp.StatusCode}";
-                    continue;
+                    quietUntil = now() + QuietAfterFailure;
+                    break;
                 }
                 var json = await resp.Content.ReadFromJsonAsync<JsonElement>(cancellationToken: ct).ConfigureAwait(false);
                 foreach (var price in ParseResponse(json, batch, t))
@@ -76,10 +86,17 @@ public sealed class UniversalisClient : IMarketPriceSource
             catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException)
             {
                 LastError = ex.Message;
+                quietUntil = now() + QuietAfterFailure;
+                break;
             }
         }
 
         return result;
+    }
+
+    public void Dispose()
+    {
+        if (ownsHttp) http.Dispose();
     }
 
     /// <summary>Universalis returns a flat object for one id and <c>{ "items": { id: {...} } }</c> for several.</summary>
