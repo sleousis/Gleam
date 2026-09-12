@@ -93,11 +93,8 @@ public sealed partial class SettingsWindow
                 if (config.AdvancedMode)
                 {
                     Ui.Gap(0.3f);
-                    if (ImGui.CollapsingHeader("Fine detail", ImGuiTreeNodeFlags.None))
-                    {
-                        using var fade = Ui.FoldFade("fine-detail");
-                        DrawAdvancedFold();
-                    }
+                    // A fold like the ones inside it, so those sit indented under it rather than level with it.
+                    Ui.Fold("Fine detail", DrawAdvancedFold);
                 }
                 Ui.Gap(0.6f);
                 DrawPageFooter();

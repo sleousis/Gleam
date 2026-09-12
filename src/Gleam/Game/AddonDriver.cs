@@ -282,7 +282,7 @@ public sealed unsafe class AddonDriver : IDisposable
             {
                 var values = stackalloc AtkValue[1];
                 values[0].SetInt(yesCallback);
-                lines.Add($"Pressed Yes: the game's callback returned {addon->FireCallback(1, values, false)}.");
+                lines.Add($"Pressed Yes, updating the window's state as a click does: the callback returned {addon->FireCallback(1, values, true)}.");
             }
         }
         return lines;

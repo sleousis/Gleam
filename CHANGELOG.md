@@ -3,6 +3,11 @@
 Each release's section is shown in Dalamud's plugin installer and on the GitHub release page. The release
 workflow refuses a tag whose version has no section here.
 
+## 0.11.8
+
+- Gleam now answers the retainer's "no buyback once recalled" question itself. Since 0.11.7 it read the question correctly, but pressed Yes in a way the game ignored; it now presses it the way a click does.
+- In Settings, the sections under "Fine detail" are indented beneath it, so it is clear they belong to it.
+
 ## 0.11.7
 
 - Another way of reading the retainer's "no buyback once recalled" question, which 0.11.5 still missed in game.

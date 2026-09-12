@@ -694,7 +694,7 @@ public sealed partial class AutoPilot : IDisposable
     /// </summary>
     private Task<bool> AnswerBuybackPromptAsync() => OnFramework(() =>
         GameUi.YesNoPrompt() is { } prompt && db.PromptIsAbout(prompt, BuybackPromptFragment)
-        && GameUi.FireInts("SelectYesno", [config.Callbacks.YesNoConfirm]));
+        && GameUi.AnswerYesNo(config.Callbacks.YesNoConfirm));
 
     /// <summary>
     /// Leaves the game as a player would after a trip: the retainer dismissed, and the shop, dresser, saddlebag

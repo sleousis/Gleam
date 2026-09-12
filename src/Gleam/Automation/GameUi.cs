@@ -23,6 +23,22 @@ public static unsafe class GameUi
     /// <summary>The text of the yes/no question on screen, or null.</summary>
     public static string? YesNoPrompt() => AddonDriver.YesNoPromptText();
 
+    /// <summary>
+    /// Presses a button on the yes/no on screen, updating the addon's state as a click does. Firing the callback
+    /// without that update (<see cref="FireInts"/>) was ignored by the retainer's buyback question in game; the same
+    /// callback with the update closed it. The callback's return value is no verdict, so this only reports that
+    /// the button was pressed; callers watch the window close.
+    /// </summary>
+    public static bool AnswerYesNo(int value)
+    {
+        var a = AddonDriver.GetAddon("SelectYesno");
+        if (a == null || !a->IsVisible) return false;
+        var values = stackalloc AtkValue[1];
+        values[0].SetInt(value);
+        a->FireCallback(1, values, true);
+        return true;
+    }
+
     public static bool Close(string addon)
     {
         var a = AddonDriver.GetAddon(addon);
