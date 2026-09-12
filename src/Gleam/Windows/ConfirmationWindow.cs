@@ -79,6 +79,9 @@ public sealed class ConfirmationWindow : StyledWindow
     private readonly Dictionary<string, (SortKey Key, int Dir)> sectionSort = new();
 
     private readonly record struct HeaderColumn(float X, float Width, string Label, SortKey? Key, bool Numeric);
+    private readonly List<HeaderColumn> headerCols = new();
+    private static readonly (string, SortKey?, bool)[] SimpleTitles = [("Item", SortKey.Name, false), ("What happens", SortKey.Action, false), ("Market", SortKey.Market, true)];
+    private static readonly (string, SortKey?, bool)[] AdvancedTitles = [("Item", SortKey.Name, false), ("Action", SortKey.Action, false), ("Market", SortKey.Market, true), ("Attributes", null, false)];
     private readonly Dictionary<string, double> rowFlash = new();
     private double flashSweptAt;
     private object? staggerPlan;
@@ -86,7 +89,7 @@ public sealed class ConfirmationWindow : StyledWindow
     private string? hoveredRow;
 
     /// <summary>How far the item picture is lifted under the cursor, 0 to 1. The row's height never changes.</summary>
-    private float IconLift(PlanRow row) => Ui.Smooth($"rowicon:{row.Key}", hoveredRow == row.Key ? 1f : 0f, 16f);
+    private float IconLift(RowView row) => Ui.Smooth(row.LiftKey, hoveredRow == row.Key ? 1f : 0f, 16f);
 
     private const float RowIcon = 26f;
 
@@ -105,18 +108,20 @@ public sealed class ConfirmationWindow : StyledWindow
     private bool Simple => !config.AdvancedMode;
 
     /// <summary>The one way a row gets ticked or unticked: keeps the session skip in step and gives the row a brief glow.</summary>
-    private void SetChecked(PlanRow row, bool on)
+    private void SetChecked(RowView view, bool on)
     {
+        var row = view.Row;
         if (row.Checked == on) return;
         row.Checked = on;
-        if (on) coordinator.SessionSkips.Remove(row.Key); else coordinator.SessionSkips.Add(row.Key);
-        if (!Ui.Reduced) rowFlash[row.Key] = ImGui.GetTime();
+        if (on) coordinator.SessionSkips.Remove(view.Key); else coordinator.SessionSkips.Add(view.Key);
+        if (!Ui.Reduced) rowFlash[view.Key] = ImGui.GetTime();
+        viewVersion++;
     }
     private bool capArmed;
     /// <summary>The exact run the cap warning described; ticking anything else disarms it.</summary>
     private (int Items, long Gil) capArmedAt;
     private int cursor = -1;
-    private readonly List<PlanRow> visibleRows = new();
+    private readonly List<RowView> visibleRows = new();
     private readonly Dictionary<string, bool> sectionOpen = new();
 
     public ConfirmationWindow(RunCoordinator coordinator, IconCache icons, ItemDatabase db, Configuration config, IGamepadState gamepad)
@@ -195,7 +200,8 @@ public sealed class ConfirmationWindow : StyledWindow
             Ui.ProgressBar("scan", null, w);
             return;
         }
-        DrawTopBar(plan);
+        var view = View(plan);
+        DrawTopBar(plan, view);
         WhatsNew?.Draw();
         if (!config.SeenCleanIntro && !Simple)
         {
@@ -218,11 +224,11 @@ public sealed class ConfirmationWindow : StyledWindow
             {
                 visibleRows.Clear();
                 if (!ReferenceEquals(staggerPlan, plan)) { staggerPlan = plan; staggerAt = ImGui.GetTime(); }
-                var drewAny = Simple ? DrawSimpleGroups(plan) : DrawContainerSections(plan);
+                var drewAny = Simple ? DrawSimpleGroups(view) : DrawContainerSections(view);
                 if (!Simple && coordinator.FocusContainer is null && plan.Alts.Count > 0) DrawAlts(plan);
                 if (!drewAny)
                 {
-                    if (plan.AllRows.Any()) Ui.EmptyState(icons.LogoMedium, "Nothing matches your search.", Simple ? "Clear the search box to see everything." : "Clear a chip or the search box to see more.");
+                    if (view.TotalRows > 0) Ui.EmptyState(icons.LogoMedium, "Nothing matches your search.", Simple ? "Clear the search box to see everything." : "Clear a chip or the search box to see more.");
                     else
                     {
                         Ui.EmptyState(icons.LogoMedium, "Nothing to clean.", "Everything looks tidy.");
@@ -235,12 +241,12 @@ public sealed class ConfirmationWindow : StyledWindow
                         }
                     }
                 }
-                if (Simple) DrawOutOfReachNote(plan); else DrawExcludedNote(plan);
+                if (Simple) DrawOutOfReachNote(view); else DrawExcludedNote(view);
             }
         }
 
         HandleKeyboard(plan);
-        DrawFooter(plan);
+        DrawFooter(plan, view);
     }
 
     private bool bannerDismissed;
@@ -305,25 +311,25 @@ public sealed class ConfirmationWindow : StyledWindow
         (Core.Rules.PresetName.DiscardAll, Core.Rules.PresetName.DiscardAll.Label()),
     ];
 
-    private void DrawTopBar(RunPlan plan)
+    private void DrawTopBar(RunPlan plan, ReviewView view)
     {
         // Header: who we are and how much is on the table; the preset sits on the same row because what
         // this list will do is the most important thing on the screen.
         var profile = coordinator.EffectiveProfile;
         var preset = Core.Rules.Presets.Detect(profile.Thresholds);
-        var checkedCount = plan.AllRows.Count(r => r.Checked && r.IsExecutable);
-        var total = plan.AllRows.Count(r => r.IsExecutable);
-        var containers = plan.Sections.Count(s => s.Rows.Count > 0);
+        var checkedCount = view.CheckedExecutable;
+        var total = view.Executable;
+        var containers = view.Containers;
         var shownChecked = (int)Ui.Count("subChecked", checkedCount);
         var shownTotal = (int)Ui.Count("subTotal", total);
         var subtitle = coordinator.FocusContainer is { } fc
             ? $"Only the {FocusName(plan, fc)} · {shownChecked} of {shownTotal} selected"
             : $"{shownTotal} item{(shownTotal == 1 ? "" : "s")} in {containers} container{(containers == 1 ? "" : "s")} · {shownChecked} selected";
         // Every item is listed so it can be picked by hand, but only what a rule suggested is junk.
-        var suggestedTotal = plan.AllRows.Count(r => r.IsExecutable && r.IsSuggested);
+        var suggestedTotal = view.SuggestedExecutable;
         if (Simple)
         {
-            var summary = plan.Summarize();
+            var summary = view.Summary;
             var freed = (int)Ui.Count("freed", summary.SlotsFreedByContainer.Values.Sum());
             var worth = Ui.Count("worth", summary.GilRecovered + summary.MarketGil);
             var found = (int)Ui.Count("found", suggestedTotal);
@@ -343,7 +349,7 @@ public sealed class ConfirmationWindow : StyledWindow
                 if (Ui.LinkButton("Show all containers")) _ = coordinator.RefreshPlanAsync(openWindow: false);
             }
             Ui.Gap(0.4f);
-            DrawSimpleToolbar(plan, checkedCount);
+            DrawSimpleToolbar(view);
             return;
         }
         Ui.Header(icons.LogoSmall, "Gleam", subtitle, Ui.SegmentedWidth(PresetOptions), () =>
@@ -369,8 +375,8 @@ public sealed class ConfirmationWindow : StyledWindow
 
         Ui.Gap(0.4f);
 
-        DrawContainerChips(plan);
-        DrawTypeChips(plan);
+        DrawContainerChips(view);
+        DrawTypeChips(view);
 
         Ui.SearchBox("##search", ref search, 260 * Ui.Scale);
 
@@ -387,18 +393,20 @@ public sealed class ConfirmationWindow : StyledWindow
         Ui.RightAlign(90 * Ui.Scale);
         // All means all of what is on screen: with a type, container or search filter on, it ticks just
         // those rows. The soft cap still asks for a second click on a big run.
-        var narrowed = filterContainer is not null || filterRule is not null || filterAction is not null || filterTags.Count > 0 || filterTradeable is not null || !string.IsNullOrWhiteSpace(search);
-        var executable = (narrowed ? Filter(plan.AllRows) : plan.AllRows).Where(r => r.IsExecutable).ToList();
-        var allChecked = executable.Count > 0 && executable.All(r => r.Checked);
+        var narrowed = view.Narrowed;
+        var allChecked = view.AllShownChecked;
         if (Ui.LinkButton(allChecked ? "Clear" : narrowed ? "Select shown" : "Select all"))
         {
-            foreach (var r in executable) SetChecked(r, !allChecked);
+            foreach (var r in view.Shown) SetChecked(r, !allChecked);
         }
-        var warned = executable.Count(r => r.Proposal.Warnings.Count > 0);
-        var scope = narrowed ? "every row that matches the current filters" : "every row";
-        Ui.Tooltip(allChecked ? "Unticks every row." : warned > 0
-            ? $"Ticks {scope}, including {warned} with a warning. Glance at those first."
-            : $"Ticks {scope}.");
+        if (Ui.ItemHovered())
+        {
+            var warned = view.ShownWarned;
+            var scope = narrowed ? "every row that matches the current filters" : "every row";
+            Ui.Tooltip(allChecked ? "Unticks every row." : warned > 0
+                ? $"Ticks {scope}, including {warned} with a warning. Glance at those first."
+                : $"Ticks {scope}.");
+        }
     }
 
     /// <summary>One chip per container with its row count. Click to show only that container; click again for all.</summary>
@@ -406,30 +414,25 @@ public sealed class ConfirmationWindow : StyledWindow
     private const int ChipsFromRows = 12;
 
     /// <summary>Simple layer: search only when the list is long, a Look again button, and Select all.</summary>
-    private void DrawSimpleToolbar(RunPlan plan, int checkedCount)
+    private void DrawSimpleToolbar(ReviewView view)
     {
-        var total = plan.AllRows.Count();
+        var total = view.TotalRows;
         if (total > 40) { Ui.SearchBox("##search", ref search, 260 * Ui.Scale); ImGui.SameLine(); }
         if (Ui.IconButton(FontAwesomeIcon.Sync, "Look again", busy: coordinator.IsScanning)) _ = coordinator.RefreshPlanAsync(openWindow: false, coordinator.FocusContainer, userAsked: true);
         Ui.Tooltip("Looks through your containers again.");
         ImGui.SameLine();
         Ui.RightAlign(90 * Ui.Scale);
         // Only what Gleam suggested. The items listed under "More you could" are the player's to pick one by one.
-        var executable = Filter(plan.AllRows).Where(r => r.IsExecutable && r.IsSuggested).ToList();
-        var allChecked = executable.Count > 0 && executable.All(r => r.Checked);
+        var allChecked = view.AllSuggestedChecked;
         if (Ui.LinkButton(allChecked ? "Clear" : "Select all"))
-            foreach (var r in executable) SetChecked(r, !allChecked);
+            foreach (var r in view.ShownSuggested) SetChecked(r, !allChecked);
         Ui.Tooltip(allChecked ? "Unticks everything Gleam suggested." : "Ticks everything Gleam suggested, including the ones it was unsure about. The lists under More are left as they are.");
     }
 
-    private void DrawContainerChips(RunPlan plan)
+    private void DrawContainerChips(ReviewView view)
     {
-        if (coordinator.FocusContainer is not null || plan.AllRows.Count() < ChipsFromRows) return;
-        var groups = plan.Sections
-            .GroupBy(s => s.Kind)
-            .OrderBy(g => g.Key.ExecutionOrder())
-            .Select(g => (Kind: g.Key, Rows: g.Sum(s => s.Rows.Count), Checked: g.Sum(s => s.CheckedCount)))
-            .ToList();
+        if (coordinator.FocusContainer is not null || view.TotalRows < ChipsFromRows) return;
+        var groups = view.ContainerChips;
         if (groups.Count == 0) return;
 
         var row = new ChipRow("Containers");
@@ -442,7 +445,7 @@ public sealed class ConfirmationWindow : StyledWindow
             var glyph = Ui.ContainerIcon(kind);
             row.Place(Ui.ChipWidth(label, glyph));
             if (Ui.Chip(label, active, glyph)) filterContainer = active ? null : kind;
-            Ui.Tooltip(active ? "Showing only this container. Click to show all." : $"Show only the {kind.DisplayName().ToLowerInvariant()}.");
+            if (Ui.ItemHovered()) Ui.Tooltip(active ? "Showing only this container. Click to show all." : $"Show only the {kind.DisplayName().ToLowerInvariant()}.");
         }
         row.End();
         Ui.Gap(0.2f);
@@ -484,18 +487,13 @@ public sealed class ConfirmationWindow : StyledWindow
     }
 
     /// <summary>Item-type chips. Several can be on at once; none on means every type.</summary>
-    private void DrawTypeChips(RunPlan plan)
+    private void DrawTypeChips(ReviewView view)
     {
-        if (plan.AllRows.Count() < ChipsFromRows) return;
-        var rows = plan.AllRows;
-        if (coordinator.FocusContainer is { } focus) rows = rows.Where(r => r.Item.Slot.Kind == focus);
-        var groups = rows
-            .GroupBy(r => ItemTags.Of(r.Info))
-            .OrderBy(g => g.Key)
-            .Select(g => (Tag: g.Key, Rows: g.Count(), Checked: g.Count(r => r.Checked)))
-            .ToList();
-        var rowList = rows.ToList();
-        var hasTradeSplit = rowList.Any(r => r.Info.IsUntradable) && rowList.Any(r => !r.Info.IsUntradable);
+        if (view.TotalRows < ChipsFromRows) return;
+        var groups = view.TypeChips;
+        var tradeable = view.Tradeable;
+        var untradeable = view.Untradeable;
+        var hasTradeSplit = tradeable > 0 && untradeable > 0;
         if (groups.Count < 2 && !hasTradeSplit) return;
 
         var row = new ChipRow("Types");
@@ -511,11 +509,9 @@ public sealed class ConfirmationWindow : StyledWindow
             {
                 if (!filterTags.Remove(tag)) filterTags.Add(tag);
             }
-            Ui.Tooltip(active ? "Click to stop filtering by this type." : $"Show {tag.Label().ToLowerInvariant()} only. Click more types to add them.");
+            if (Ui.ItemHovered()) Ui.Tooltip(active ? "Click to stop filtering by this type." : $"Show {tag.Label().ToLowerInvariant()} only. Click more types to add them.");
         }
-        var tradeable = rowList.Count(r => !r.Info.IsUntradable);
-        var untradeable = rowList.Count(r => r.Info.IsUntradable);
-        if (tradeable > 0 && untradeable > 0)
+        if (hasTradeSplit)
         {
             var tradeLabel = $"Tradeable {(int)Ui.Count("chipTrade", tradeable)}";
             var untradeLabel = $"Untradeable {(int)Ui.Count("chipUntrade", untradeable)}";
@@ -572,33 +568,309 @@ public sealed class ConfirmationWindow : StyledWindow
             if (ImGui.MenuItem($"{g.Key.Label()}  ({g.Count()})", string.Empty, filterAction == g.Key, true)) filterAction = g.Key;
 
         ImGui.Separator();
-        if (ImGui.MenuItem("Clear all filters", string.Empty, false, true)) { filterContainer = null; filterRule = null; filterAction = null; filterTags.Clear(); filterTradeable = null; sortKey = SortKey.Name; sortDir = 1; sectionSort.Clear(); }
+        if (ImGui.MenuItem("Clear all filters", string.Empty, false, true)) { filterContainer = null; filterRule = null; filterAction = null; filterTags.Clear(); filterTradeable = null; sortKey = SortKey.Name; sortDir = 1; sectionSort.Clear(); sortVersion++; }
     }
 
-    private IEnumerable<PlanRow> Filter(IEnumerable<PlanRow> rows, string? sectionKey = null)
+    // ---------- the list, worked out once ----------
+    // Filtering, sorting, grouping and every total on the screen used to be worked out again from the whole
+    // plan on every frame, several times over. They are worked out here once and kept until something they
+    // depend on changes: the plan, a tick or a chosen action, the filters, the search, a sort or the focus.
+    // What the window cannot see change (a price landing, a container coming into reach) is picked up within
+    // a second, because the view is also rebuilt once a second regardless.
+
+    /// <summary>One row as the list draws it, with the strings the draw would otherwise build again every frame.</summary>
+    private sealed class RowView
+    {
+        public readonly PlanRow Row;
+        /// <summary>PlanRow.Key formats a new string on every read, and a row reads it several times a frame.</summary>
+        public readonly string Key;
+        public readonly string Name;
+        public readonly string? Quantity;
+        public readonly string LiftKey;
+        public readonly string CursorKey;
+        public readonly string IconKey;
+        public readonly string PriceKey;
+        /// <summary>What the item is does not change while it is listed, so its pills are made the first time they are drawn.</summary>
+        public (string Text, Vector4 Color, string Key)[]? Pills;
+        /// <summary>The action picker's choices, made again only when the chosen action changes.</summary>
+        public List<ActionKind>? Options;
+        public List<string>? OptionLabels;
+        public ActionKind OptionsFor;
+
+        public RowView(PlanRow row)
+        {
+            Row = row;
+            Key = row.Key;
+            Name = row.Info.Name + (row.Item.IsHq ? " " : "");
+            Quantity = row.Item.Quantity > 1 ? $"× {row.Item.Quantity}" : null;
+            LiftKey = "rowicon:" + Key;
+            CursorKey = "cur:" + Key;
+            IconKey = $"icon:{row.Info.IconId}";
+            PriceKey = $"px:{row.Info.ItemId}";
+        }
+    }
+
+    /// <summary>One container section of the advanced list: its rows filtered and sorted, and its ids.</summary>
+    private sealed class SectionView
+    {
+        public readonly PlanSection Section;
+        public readonly string Key;
+        public readonly List<RowView> Rows;
+        public readonly int Checked;
+        public readonly string Title, HeaderId, SectKey, CountOnKey, CountAllKey, TableId;
+
+        public SectionView(PlanSection section, string key, List<RowView> rows)
+        {
+            Section = section;
+            Key = key;
+            Rows = rows;
+            foreach (var r in rows) if (r.Row.Checked) Checked++;
+            Title = $"    {section.Title}";
+            HeaderId = $"{Title}###{key}";
+            SectKey = $"sect:{key}";
+            CountOnKey = $"{SectKey}:on";
+            CountAllKey = $"{SectKey}:all";
+            TableId = $"##t{key}";
+        }
+    }
+
+    /// <summary>One outcome card of the simple list: its rows in name order, what is ticked and what that is worth.</summary>
+    private sealed class GroupView
+    {
+        public readonly ActionKind Action;
+        public readonly bool Suggested;
+        public readonly List<RowView> Rows;
+        public readonly int Checked;
+        public readonly long Value;
+        public readonly string Key, AllId, CountKey, ValueKey, AppearKey, TableId;
+
+        public GroupView(ActionKind action, bool suggested, List<RowView> rows)
+        {
+            Action = action;
+            Suggested = suggested;
+            Rows = rows;
+            foreach (var r in rows)
+            {
+                if (!r.Row.Checked) continue;
+                Checked++;
+                Value += r.Row.Proposal.ValueGil;
+            }
+            Key = suggested ? $"grp:{action}" : $"more:{action}";
+            AllId = $"##all{Key}";
+            CountKey = $"grpn:{Key}";
+            ValueKey = $"grpval:{Key}";
+            AppearKey = $"open:{Key}";
+            TableId = $"##t{Key}";
+        }
+    }
+
+    /// <summary>One read-only row of another character's list.</summary>
+    private sealed class AltRow(Proposal p)
+    {
+        public readonly Proposal P = p;
+        public readonly string? Quantity = p.Item.Quantity > 1 ? $"× {p.Item.Quantity}" : null;
+        public readonly string Where = $"{p.Item.Slot.Kind.DisplayName()} · {p.Reason}";
+        public readonly string IconKey = $"icon:{p.Info.IconId}";
+    }
+
+    /// <summary>Everything the view was built from. A view is reused for as long as this stays equal.</summary>
+    private readonly record struct ViewStamp(
+        RunPlan Plan, int Version, int Rows, int Second, ContainerKind? Focus, bool Simple, bool HandsFree,
+        ContainerKind? Container, string? Rule, ActionKind? Action, long Tags, bool? Tradeable, string Search,
+        SortKey Sort, int Dir, int SortVersion);
+
+    private sealed class ReviewView
+    {
+        public required ViewStamp Stamp { get; init; }
+        public required RunSummary Summary { get; init; }
+        public required SoftCapResult Cap { get; init; }
+        public int TotalRows, Executable, CheckedExecutable, SuggestedExecutable, Containers, Discards, Sales;
+        public bool NeedsTravel, Narrowed;
+        /// <summary>What Select all acts on: advanced ticks what is shown, simple ticks what Gleam suggested.</summary>
+        public List<RowView> Shown = new(), ShownSuggested = new();
+        public bool AllShownChecked, AllSuggestedChecked;
+        public int ShownWarned;
+        public List<(ContainerKind Kind, int Rows, int Checked)> ContainerChips = new();
+        public List<(ItemTag Tag, int Rows, int Checked)> TypeChips = new();
+        public int Tradeable, Untradeable;
+        public List<SectionView> Sections = new();
+        public List<GroupView> Groups = new();
+        public int AwayTotal;
+        public string AwayWhere = string.Empty;
+        public string ExcludedLine = string.Empty;
+    }
+
+    private ReviewView? cachedView;
+    /// <summary>Bumped by anything that changes a row's tick or chosen action, so the view knows to rebuild.</summary>
+    private int viewVersion;
+    /// <summary>Bumped when a section's own sort changes, which the stamp cannot see from the fields alone.</summary>
+    private int sortVersion;
+    private readonly Dictionary<PlanRow, RowView> rowViews = new();
+    private readonly Dictionary<AltPreview, List<AltRow>> altRows = new();
+
+    /// <summary>The list as it should be drawn now, rebuilt only when something it depends on has changed.</summary>
+    private ReviewView View(RunPlan plan)
+    {
+        var rows = 0;
+        foreach (var s in plan.Sections) rows += s.Rows.Count;
+        var tags = 0L;
+        foreach (var t in filterTags) tags |= 1L << ((int)t & 63);
+        var stamp = new ViewStamp(plan, viewVersion, rows, (int)ImGui.GetTime(), coordinator.FocusContainer, Simple, Pilot is not null && config.Automation.Enabled,
+            filterContainer, filterRule, filterAction, tags, filterTradeable, search, sortKey, sortDir, sortVersion);
+        if (cachedView is { } cached && cached.Stamp == stamp) return cached;
+        if (cachedView is null || !ReferenceEquals(cachedView.Stamp.Plan, plan))
+        {
+            rowViews.Clear();
+            altRows.Clear();
+        }
+        return cachedView = BuildView(plan, stamp);
+    }
+
+    private RowView ViewOf(PlanRow row)
+    {
+        if (!rowViews.TryGetValue(row, out var view)) rowViews[row] = view = new RowView(row);
+        return view;
+    }
+
+    private ReviewView BuildView(RunPlan plan, ViewStamp stamp)
+    {
+        var focus = stamp.Focus;
+        var all = new List<RowView>(stamp.Rows);
+        foreach (var s in plan.Sections)
+            foreach (var r in s.Rows) all.Add(ViewOf(r));
+
+        int executable = 0, ticked = 0, suggested = 0, discards = 0, sales = 0;
+        var needsTravel = false;
+        foreach (var view in all)
+        {
+            var r = view.Row;
+            if (!r.IsExecutable) continue;
+            executable++;
+            if (r.IsSuggested) suggested++;
+            if (!r.Checked) continue;
+            ticked++;
+            if (r.ChosenAction == ActionKind.Discard) discards++;
+            if (r.ChosenAction is ActionKind.VendorSell or ActionKind.MarketList) sales++;
+            if (!r.Item.Slot.Kind.IsAlwaysLoaded() || r.ChosenAction is ActionKind.VendorSell or ActionKind.MarketList) needsTravel = true;
+        }
+
+        var rowsForCap = focus is { } f ? plan.Sections.Where(s => s.Kind == f).SelectMany(s => s.Rows) : plan.AllRows;
+        var v = new ReviewView
+        {
+            Stamp = stamp,
+            Summary = plan.Summarize(),
+            Cap = SoftCap.Evaluate(rowsForCap, coordinator.EffectiveProfile.Thresholds),
+            TotalRows = all.Count,
+            Executable = executable,
+            CheckedExecutable = ticked,
+            SuggestedExecutable = suggested,
+            Containers = plan.Sections.Count(s => s.Rows.Count > 0),
+            Discards = discards,
+            Sales = sales,
+            NeedsTravel = needsTravel,
+            Narrowed = filterContainer is not null || filterRule is not null || filterAction is not null || filterTags.Count > 0 || filterTradeable is not null || !string.IsNullOrWhiteSpace(search),
+        };
+
+        // With no filter on, every row passes, so one list serves "Select all" and "Select shown" alike.
+        v.Shown = all.Where(r => r.Row.IsExecutable && Passes(r.Row)).ToList();
+        v.AllShownChecked = v.Shown.Count > 0 && v.Shown.All(r => r.Row.Checked);
+        v.ShownWarned = v.Shown.Count(r => r.Row.Proposal.Warnings.Count > 0);
+        v.ShownSuggested = v.Shown.Where(r => r.Row.IsSuggested).ToList();
+        v.AllSuggestedChecked = v.ShownSuggested.Count > 0 && v.ShownSuggested.All(r => r.Row.Checked);
+
+        if (all.Count >= ChipsFromRows)
+        {
+            if (focus is null)
+                v.ContainerChips = plan.Sections
+                    .GroupBy(s => s.Kind)
+                    .OrderBy(g => g.Key.ExecutionOrder())
+                    .Select(g => (g.Key, g.Sum(s => s.Rows.Count), g.Sum(s => s.CheckedCount)))
+                    .ToList();
+            var typed = focus is { } tf ? all.Where(r => r.Row.Item.Slot.Kind == tf).ToList() : all;
+            v.TypeChips = typed
+                .GroupBy(r => ItemTags.Of(r.Row.Info))
+                .OrderBy(g => g.Key)
+                .Select(g => (g.Key, g.Count(), g.Count(r => r.Row.Checked)))
+                .ToList();
+            foreach (var r in typed)
+                if (r.Row.Info.IsUntradable) v.Untradeable++; else v.Tradeable++;
+        }
+
+        if (!stamp.Simple)
+        {
+            var sections = focus is { } sf ? plan.Sections.Where(s => s.Kind == sf) : plan.Sections;
+            foreach (var section in sections.OrderBy(s => s.Kind.ExecutionOrder()).ThenBy(s => s.OwnerName))
+            {
+                var key = $"{section.Kind}:{section.OwnerId}";
+                var rows = Sorted(section.Rows.Select(ViewOf).Where(r => Passes(r.Row)), key);
+                if (rows.Count > 0) v.Sections.Add(new SectionView(section, key, rows));
+            }
+        }
+        else
+        {
+            // What Gleam suggests comes first, one card per outcome, then what it could also touch.
+            var handsFree = stamp.HandsFree;
+            var reachable = plan.Sections.Where(s => handsFree || s.IsAvailableNow).SelectMany(s => s.Rows);
+            if (focus is { } gf) reachable = plan.Sections.Where(s => s.Kind == gf).SelectMany(s => s.Rows);
+            var shown = Sorted(reachable.Select(ViewOf).Where(r => Passes(r.Row)), null);
+            foreach (var isSuggested in new[] { true, false })
+            {
+                var groups = shown.Where(r => r.Row.IsSuggested == isSuggested)
+                    .GroupBy(r => r.Row.ChosenAction)
+                    .OrderBy(g => g.Key == ActionKind.Discard ? 1 : 0)
+                    .ThenBy(g => g.Key.Label(), StringComparer.OrdinalIgnoreCase);
+                foreach (var group in groups)
+                    v.Groups.Add(new GroupView(group.Key, isSuggested, group.OrderBy(r => r.Row.Info.Name, StringComparer.OrdinalIgnoreCase).ToList()));
+            }
+            var away = plan.Sections.Where(s => !s.IsAvailableNow && s.Rows.Count > 0).ToList();
+            v.AwayTotal = away.Sum(s => s.Rows.Count);
+            v.AwayWhere = string.Join(" and ", away.Select(s => s.Kind.DisplayName().ToLowerInvariant()).Distinct());
+        }
+
+        if (plan.Excluded.Count > 0)
+        {
+            var hard = plan.Excluded.Count(e => e.IsHardBlock);
+            var prot = plan.Excluded.Count - hard;
+            var parts = new List<string>();
+            if (hard > 0) parts.Add($"{hard} that can never be touched");
+            if (prot > 0) parts.Add($"{prot} on your never-touch list");
+            v.ExcludedLine = $"Not listed: {string.Join(", ", parts)}. Hover for why.";
+        }
+        return v;
+    }
+
+    /// <summary>Whether a row gets past the chips, the filter menu and the search box.</summary>
+    private bool Passes(PlanRow r)
+    {
+        if (filterContainer is { } c && r.Item.Slot.Kind != c) return false;
+        if (filterRule is { } rule && r.Proposal.RuleId != rule) return false;
+        if (filterAction is { } a && r.ChosenAction != a) return false;
+        if (filterTags.Count > 0 && !filterTags.Contains(ItemTags.Of(r.Info))) return false;
+        if (filterTradeable is { } tradeOnly && r.Info.IsUntradable == tradeOnly) return false;
+        if (!string.IsNullOrWhiteSpace(search)
+            && !r.Info.Name.Contains(search, StringComparison.OrdinalIgnoreCase)
+            && !r.Proposal.Reason.Contains(search, StringComparison.OrdinalIgnoreCase)) return false;
+        return true;
+    }
+
+    /// <summary>Rows in the order the Filter menu asks for, or the section's own order when its column title was clicked.</summary>
+    private List<RowView> Sorted(IEnumerable<RowView> rows, string? sectionKey)
     {
         var (key, dir) = sectionKey is not null && sectionSort.TryGetValue(sectionKey, out var own) ? own : (sortKey, sortDir);
-        var q = rows;
-        if (filterContainer is { } c) q = q.Where(r => r.Item.Slot.Kind == c);
-        if (filterRule is { } rule) q = q.Where(r => r.Proposal.RuleId == rule);
-        if (filterAction is { } a) q = q.Where(r => r.ChosenAction == a);
-        if (filterTags.Count > 0) q = q.Where(r => filterTags.Contains(ItemTags.Of(r.Info)));
-        if (filterTradeable is { } tradeOnly) q = q.Where(r => r.Info.IsUntradable != tradeOnly);
-        if (!string.IsNullOrWhiteSpace(search))
-            q = q.Where(r => r.Info.Name.Contains(search, StringComparison.OrdinalIgnoreCase) || r.Proposal.Reason.Contains(search, StringComparison.OrdinalIgnoreCase));
-        IOrderedEnumerable<PlanRow> ordered = key switch
+        IOrderedEnumerable<RowView> ordered = key switch
         {
-            SortKey.Quantity => dir > 0 ? q.OrderBy(r => r.Item.Quantity) : q.OrderByDescending(r => r.Item.Quantity),
-            SortKey.Action => dir > 0 ? q.OrderBy(r => r.ChosenAction.Label()) : q.OrderByDescending(r => r.ChosenAction.Label()),
-            SortKey.Market => dir > 0 ? q.OrderBy(r => r.Proposal.MarketUnitPrice) : q.OrderByDescending(r => r.Proposal.MarketUnitPrice),
-            _ => dir > 0 ? q.OrderBy(r => r.Info.Name, StringComparer.OrdinalIgnoreCase) : q.OrderByDescending(r => r.Info.Name, StringComparer.OrdinalIgnoreCase),
+            SortKey.Quantity => dir > 0 ? rows.OrderBy(r => r.Row.Item.Quantity) : rows.OrderByDescending(r => r.Row.Item.Quantity),
+            SortKey.Action => dir > 0 ? rows.OrderBy(r => r.Row.ChosenAction.Label()) : rows.OrderByDescending(r => r.Row.ChosenAction.Label()),
+            SortKey.Market => dir > 0 ? rows.OrderBy(r => r.Row.Proposal.MarketUnitPrice) : rows.OrderByDescending(r => r.Row.Proposal.MarketUnitPrice),
+            _ => dir > 0 ? rows.OrderBy(r => r.Row.Info.Name, StringComparer.OrdinalIgnoreCase) : rows.OrderByDescending(r => r.Row.Info.Name, StringComparer.OrdinalIgnoreCase),
         };
-        return key == SortKey.Name ? ordered : ordered.ThenBy(r => r.Info.Name, StringComparer.OrdinalIgnoreCase);
+        return (key == SortKey.Name ? ordered : ordered.ThenBy(r => r.Row.Info.Name, StringComparer.OrdinalIgnoreCase)).ToList();
     }
 
     /// <summary>Click cycles ascending, descending, then back to the natural order, for this section only.</summary>
     private void ClickSort(string sectionKey, SortKey key, bool numeric)
     {
+        sortVersion++;
         var (curKey, curDir) = sectionSort.TryGetValue(sectionKey, out var own) ? own : (SortKey.Name, 1);
         if (curKey != key || !sectionSort.ContainsKey(sectionKey)) { sectionSort[sectionKey] = (key, numeric ? -1 : 1); return; }
         var second = numeric ? 1 : -1;
@@ -619,9 +891,10 @@ public sealed class ConfirmationWindow : StyledWindow
             if (ImGui.Selectable($"{col.Label}##hdr{col.Key}{idSuffix}", false, ImGuiSelectableFlags.None, new Vector2(col.Width, 0)))
                 ClickSort(sectionKey, col.Key.Value, col.Numeric);
         }
-        Ui.Tooltip(isSorted
-            ? (curDir > 0 ? "Sorted ascending. Click for descending." : "Sorted descending. Click to clear.")
-            : $"Sort this section by {col.Label.ToLowerInvariant()}.");
+        if (Ui.ItemHovered())
+            Ui.Tooltip(isSorted
+                ? (curDir > 0 ? "Sorted ascending. Click for descending." : "Sorted descending. Click to clear.")
+                : $"Sort this section by {col.Label.ToLowerInvariant()}.");
         if (!isSorted) return;
 
         // Arrow right after the title, inside the same cell.
@@ -671,57 +944,32 @@ public sealed class ConfirmationWindow : StyledWindow
     // ---------- sections ----------
 
     /// <summary>Advanced: one collapsing section per container, as the run itself is organised.</summary>
-    private bool DrawContainerSections(RunPlan plan)
+    private bool DrawContainerSections(ReviewView view)
     {
-        var sections = coordinator.FocusContainer is { } f ? plan.Sections.Where(s => s.Kind == f) : plan.Sections;
-        var drewAny = false;
-        foreach (var section in sections.OrderBy(s => s.Kind.ExecutionOrder()).ThenBy(s => s.OwnerName))
-        {
-            var rows = Filter(section.Rows, $"{section.Kind}:{section.OwnerId}").ToList();
-            if (rows.Count == 0) continue;
-            drewAny = true;
-            DrawSection(section, rows);
-        }
-        return drewAny;
+        foreach (var section in view.Sections) DrawSection(section);
+        return view.Sections.Count > 0;
     }
 
     /// <summary>
     /// Simple: one card per outcome, so the screen reads "sell these, throw these away" instead of listing
     /// seven containers. Only what can be reached now is listed; the rest is one line underneath.
     /// </summary>
-    private bool DrawSimpleGroups(RunPlan plan)
+    private bool DrawSimpleGroups(ReviewView view)
     {
-        var handsFree = Pilot is not null && config.Automation.Enabled;
-        var reachable = plan.Sections.Where(s => handsFree || s.IsAvailableNow).SelectMany(s => s.Rows);
-        if (coordinator.FocusContainer is { } f) reachable = plan.Sections.Where(s => s.Kind == f).SelectMany(s => s.Rows);
-        var shown = Filter(reachable).ToList();
-
         // What Gleam suggests comes first, one card per outcome. Everything else it could touch follows in
         // cards of its own with no tick for the whole group: listing an item is not the same as calling it
         // junk, and one tick used to select the whole inventory.
-        var drew = false;
-        foreach (var suggested in new[] { true, false })
-        {
-            var groups = shown.Where(r => r.IsSuggested == suggested)
-                .GroupBy(r => r.ChosenAction)
-                .OrderBy(g => g.Key == ActionKind.Discard ? 1 : 0)
-                .ThenBy(g => g.Key.Label(), StringComparer.OrdinalIgnoreCase);
-            foreach (var group in groups)
-            {
-                DrawOutcomeGroup(group.Key, group.ToList(), suggested);
-                drew = true;
-            }
-        }
-        return drew;
+        foreach (var group in view.Groups) DrawOutcomeGroup(group);
+        return view.Groups.Count > 0;
     }
 
     /// <summary>One outcome card: a tick for the whole group, what it does, what it is worth, and the items inside.</summary>
-    private void DrawOutcomeGroup(ActionKind action, List<PlanRow> rows, bool suggested = true)
+    private void DrawOutcomeGroup(GroupView group)
     {
-        var key = suggested ? $"grp:{action}" : $"more:{action}";
+        var (action, rows, suggested, key) = (group.Action, group.Rows, group.Suggested, group.Key);
         if (!sectionOpen.TryGetValue(key, out var open)) open = false;
-        var checkedHere = rows.Count(r => r.Checked);
-        var value = rows.Where(r => r.Checked).Sum(r => r.Proposal.ValueGil);
+        var checkedHere = group.Checked;
+        var value = group.Value;
         var word = action switch
         {
             ActionKind.Discard => "Throw away",
@@ -744,7 +992,7 @@ public sealed class ConfirmationWindow : StyledWindow
                 var box = all;
                 using (ImRaii.PushStyle(ImGuiStyleVar.Alpha, ImGui.GetStyle().Alpha * (some ? 0.7f : 1f)))
                 {
-                    if (Ui.Check($"##all{key}", ref box))
+                    if (Ui.Check(group.AllId, ref box))
                         foreach (var r in rows) SetChecked(r, box);
                 }
                 ImGui.SameLine();
@@ -752,9 +1000,9 @@ public sealed class ConfirmationWindow : StyledWindow
             ImGui.AlignTextToFramePadding();
             Ui.ActionLabel(action, word);
             ImGui.SameLine();
-            var shownRows = (int)Ui.Count($"grpn:{key}", rows.Count);
+            var shownRows = (int)Ui.Count(group.CountKey, rows.Count);
             Ui.Text($"{shownRows} item{(shownRows == 1 ? "" : "s")}");
-            var shown = Ui.Count($"grpval:{key}", value);
+            var shown = Ui.Count(group.ValueKey, value);
             // The worth is the first thing to go when the card is narrow; the link and the count are not.
             var linkLabel = open ? "Hide the list" : "See the list";
             var linkW = ImGui.CalcTextSize(linkLabel, false, 0).X + ImGui.GetStyle().FramePadding.X * 2 + 8 * Ui.Scale;
@@ -774,62 +1022,61 @@ public sealed class ConfirmationWindow : StyledWindow
                 Ui.HintWrapped("Gleam did not pick these. Nothing here is ticked for you; tick any you want gone.");
                 Ui.Gap(0.2f);
             }
-            using var fade = ImRaii.PushStyle(ImGuiStyleVar.Alpha, ImGui.GetStyle().Alpha * Ui.Appear($"open:{key}", 0.18f));
-            using var table = ImRaii.Table($"##t{key}", 4, ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingFixedFit | ImGuiTableFlags.NoSavedSettings | ImGuiTableFlags.PadOuterX);
+            using var fade = ImRaii.PushStyle(ImGuiStyleVar.Alpha, ImGui.GetStyle().Alpha * Ui.Appear(group.AppearKey, 0.18f));
+            using var table = ImRaii.Table(group.TableId, 4, ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingFixedFit | ImGuiTableFlags.NoSavedSettings | ImGuiTableFlags.PadOuterX);
             if (!table) return;
             ImGui.TableSetupColumn("##chk", ImGuiTableColumnFlags.WidthFixed, 24 * Ui.Scale, 0);
             ImGui.TableSetupColumn("##icon", ImGuiTableColumnFlags.WidthFixed, 30 * Ui.Scale, 0);
             ImGui.TableSetupColumn("##item", ImGuiTableColumnFlags.WidthStretch, 5f, 0);
             ImGui.TableSetupColumn("##market", ImGuiTableColumnFlags.WidthFixed, 96 * Ui.Scale, 0);
-            foreach (var row in rows.OrderBy(r => r.Info.Name, StringComparer.OrdinalIgnoreCase))
-            {
-                var index = visibleRows.Count;
-                visibleRows.Add(row);
-                DrawGroupRow(row, index);
-            }
+            // Every row counts for the keyboard; only the ones on screen are drawn.
+            var first = visibleRows.Count;
+            visibleRows.AddRange(rows);
+            using var clip = new Ui.RowClipper(rows.Count);
+            while (clip.Step())
+                for (var i = clip.Start; i < clip.End; i++) DrawGroupRow(rows[i], first + i);
         }
     }
 
-    private void DrawGroupRow(PlanRow row, int index)
+    private void DrawGroupRow(RowView view, int index)
     {
-        using var id = ImRaii.PushId(row.Key);
+        var row = view.Row;
+        using var id = ImRaii.PushId(view.Key);
         using var fade = ImRaii.PushStyle(ImGuiStyleVar.Alpha, ImGui.GetStyle().Alpha * RowAlpha(index));
         ImGui.TableNextRow(ImGuiTableRowFlags.None, 30 * Ui.Scale);
-        var glow = rowFlash.TryGetValue(row.Key, out var at) ? (float)Math.Clamp(1 - (ImGui.GetTime() - at) / 0.7, 0, 1) : 0f;
+        var glow = rowFlash.TryGetValue(view.Key, out var at) ? (float)Math.Clamp(1 - (ImGui.GetTime() - at) / 0.7, 0, 1) : 0f;
         if (glow > 0f) ImGui.TableSetBgColor(ImGuiTableBgTarget.RowBg0, ImGui.GetColorU32(Ui.Accent * new Vector4(1, 1, 1, 0.22f * glow * glow)));
 
         ImGui.TableNextColumn();
         ImGui.AlignTextToFramePadding();
         var chk = row.Checked;
-        if (Ui.Check("##c", ref chk, !row.IsExecutable)) SetChecked(row, chk);
+        if (Ui.Check("##c", ref chk, !row.IsExecutable)) SetChecked(view, chk);
 
         ImGui.TableNextColumn();
-        Ui.ImageLifted(icons.Get(row.Info.IconId, row.Item.IsHq), RowIcon * Ui.Scale, IconLift(row), 4 * Ui.Scale, $"icon:{row.Info.IconId}");
+        Ui.ImageLifted(icons.Get(row.Info.IconId, row.Item.IsHq), RowIcon * Ui.Scale, IconLift(view), 4 * Ui.Scale, view.IconKey);
 
         ImGui.TableNextColumn();
         ImGui.AlignTextToFramePadding();
-        if (ImGui.Selectable(row.Info.Name + (row.Item.IsHq ? " " : ""), false, ImGuiSelectableFlags.AllowItemOverlap, Vector2.Zero) && row.IsExecutable)
-            SetChecked(row, !row.Checked);
-        if (ImGui.IsItemHovered()) { hoveredRow = row.Key; DrawRowTooltip(row); }
+        if (ImGui.Selectable(view.Name, false, ImGuiSelectableFlags.AllowItemOverlap, Vector2.Zero) && row.IsExecutable)
+            SetChecked(view, !row.Checked);
+        if (ImGui.IsItemHovered()) { hoveredRow = view.Key; DrawRowTooltip(row); }
         DrawRowContextMenu(row);
-        if (row.Item.Quantity > 1) { ImGui.SameLine(); Ui.Hint($"× {row.Item.Quantity}"); }
+        if (view.Quantity is { } quantity) { ImGui.SameLine(); Ui.Hint(quantity); }
 
         ImGui.TableNextColumn();
-        DrawMarketPrice(row);
-        _ = index;
+        DrawMarketPrice(view);
     }
 
     /// <summary>Simple: everything that cannot be reached from here, in one line rather than dead sections.</summary>
-    private void DrawOutOfReachNote(RunPlan plan)
+    private void DrawOutOfReachNote(ReviewView view)
     {
         var handsFree = Pilot is not null && config.Automation.Enabled;
         if (handsFree || coordinator.FocusContainer is not null) return;
-        var away = plan.Sections.Where(s => !s.IsAvailableNow && s.Rows.Count > 0).ToList();
-        if (away.Count == 0) return;
-        var total = (int)Ui.Count("awayN", away.Sum(s => s.Rows.Count));
-        var where = string.Join(" and ", away.Select(s => s.Kind.DisplayName().ToLowerInvariant()).Distinct());
+        if (view.AwayTotal == 0) return;
+        var total = (int)Ui.Count("awayN", view.AwayTotal);
+        var where = view.AwayWhere;
         Ui.Gap(0.6f);
-        var missing = Pilot?.MissingDependency();
+        var missing = MissingDependencyCached();
         if (missing is null) Ui.TextSwap("away", $"{total} more item{(total == 1 ? "" : "s")} in your {where}. Gleam goes there for you when you press Clean.", Ui.Muted * new Vector4(1, 1, 1, 0.8f));
         else
         {
@@ -839,25 +1086,25 @@ public sealed class ConfirmationWindow : StyledWindow
         }
     }
 
-    private void DrawSection(PlanSection section, List<PlanRow> rows)
+    private void DrawSection(SectionView sv)
     {
-        var key = $"{section.Kind}:{section.OwnerId}";
+        var (section, rows, key) = (sv.Section, sv.Rows, sv.Key);
         if (!sectionOpen.TryGetValue(key, out var open)) open = true;
 
         ImGui.SetNextItemOpen(open, ImGuiCond.Always);
-        var checkedHere = rows.Count(r => r.Checked);
+        var checkedHere = sv.Checked;
         var x0 = ImGui.GetCursorPosX();
         bool expanded;
         float labelStart;
         // The header text is padded to leave a gap, and the container's glyph is drawn into it afterwards:
         // a collapsing header draws its label in the body font, where an icon codepoint has no glyph.
         var glyph = Ui.ContainerIcon(section.Kind);
-        var title = $"    {section.Title}";
+        var title = sv.Title;
         var headerPos = ImGui.GetCursorScreenPos();
         using (ImRaii.PushStyle(ImGuiStyleVar.FramePadding, new Vector2(10 * Ui.Scale, 6 * Ui.Scale)))
         {
             labelStart = ImGui.GetTreeNodeToLabelSpacing();
-            expanded = ImGui.CollapsingHeader($"{title}###{key}", ImGuiTreeNodeFlags.None);
+            expanded = ImGui.CollapsingHeader(sv.HeaderId, ImGuiTreeNodeFlags.None);
         }
         var headerHeight = ImGui.GetItemRectSize().Y;
         using (ImRaii.PushFont(UiBuilder.IconFont))
@@ -870,9 +1117,9 @@ public sealed class ConfirmationWindow : StyledWindow
         ImGui.SameLine();
         ImGui.SetCursorPosX(x0 + labelStart + ImGui.CalcTextSize(title, false, 0).X + 22 * Ui.Scale);
         ImGui.SetCursorPosY(ImGui.GetCursorPosY() + pillDrop);
-        var pillKey = $"sect:{section.Kind}:{section.OwnerId}";
-        var pickedHere = (int)Ui.Count($"{pillKey}:on", checkedHere);
-        var hereTotal = (int)Ui.Count($"{pillKey}:all", rows.Count);
+        var pillKey = sv.SectKey;
+        var pickedHere = (int)Ui.Count(sv.CountOnKey, checkedHere);
+        var hereTotal = (int)Ui.Count(sv.CountAllKey, rows.Count);
         Ui.Pill(pickedHere > 0 ? $"{pickedHere} / {hereTotal}" : $"{hereTotal}", pickedHere > 0 ? Ui.AccentSoft : Ui.Muted, null, pillKey);
 
         // A closed container only gets a marker when the player has to go there themselves; with
@@ -880,20 +1127,25 @@ public sealed class ConfirmationWindow : StyledWindow
         var handsFree = Pilot is not null && config.Automation.Enabled;
         if (!section.IsAvailableNow && !handsFree)
         {
-            var why = section.Requirement;
-            if (section.Kind == ContainerKind.GlamourDresser) why += $" · {section.FreeSlotsNeeded} free bag slots";
             ImGui.SameLine();
             Ui.RightAlign(30 * Ui.Scale);
             ImGui.SetCursorPosY(ImGui.GetCursorPosY() + pillDrop + 2 * Ui.Scale);
             Ui.Icon(FontAwesomeIcon.MapMarkerAlt, Ui.Muted);
-            Ui.Tooltip($"Not open right now: {why}. Clean anyway and these rows wait until it is.");
+            if (Ui.ItemHovered())
+            {
+                // Counting the dresser's ticked rows is only worth doing for someone reading the answer.
+                var why = section.Requirement;
+                if (section.Kind == ContainerKind.GlamourDresser) why += $" · {section.FreeSlotsNeeded} free bag slots";
+                Ui.Tooltip($"Not open right now: {why}. Clean anyway and these rows wait until it is.");
+            }
         }
         if (!expanded) { Ui.Gap(0.2f); return; }
 
-        var cols = new List<HeaderColumn>();
+        var cols = headerCols;
+        cols.Clear();
         Vector2 tableMin, tableMax;
-        using var opened = ImRaii.PushStyle(ImGuiStyleVar.Alpha, ImGui.GetStyle().Alpha * Ui.Appear($"sect:{key}", 0.16f));
-        using (var table = ImRaii.Table($"##t{key}", Simple ? 5 : 6, ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingFixedFit | ImGuiTableFlags.NoSavedSettings | ImGuiTableFlags.PadOuterX))
+        using var opened = ImRaii.PushStyle(ImGuiStyleVar.Alpha, ImGui.GetStyle().Alpha * Ui.Appear(sv.SectKey, 0.16f));
+        using (var table = ImRaii.Table(sv.TableId, Simple ? 5 : 6, ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingFixedFit | ImGuiTableFlags.NoSavedSettings | ImGuiTableFlags.PadOuterX))
         {
         if (!table) return;
         ImGui.TableSetupColumn("##chk", ImGuiTableColumnFlags.WidthFixed, 24 * Ui.Scale, 0);
@@ -907,9 +1159,7 @@ public sealed class ConfirmationWindow : StyledWindow
         ImGui.TableNextRow(ImGuiTableRowFlags.None, 24 * Ui.Scale);
         ImGui.TableNextColumn();
         ImGui.TableNextColumn();
-        var titles = Simple
-            ? new (string, SortKey?, bool)[] { ("Item", SortKey.Name, false), ("What happens", SortKey.Action, false), ("Market", SortKey.Market, true) }
-            : new (string, SortKey?, bool)[] { ("Item", SortKey.Name, false), ("Action", SortKey.Action, false), ("Market", SortKey.Market, true), ("Attributes", null, false) };
+        var titles = Simple ? SimpleTitles : AdvancedTitles;
         foreach (var (label, sortBy, numeric) in titles)
         {
             ImGui.TableNextColumn();
@@ -918,12 +1168,12 @@ public sealed class ConfirmationWindow : StyledWindow
             DrawHeaderTitle(key, col, string.Empty);
         }
 
-        foreach (var row in rows)
-        {
-            var index = visibleRows.Count;
-            visibleRows.Add(row);
-            DrawRow(row, index);
-        }
+        // Every row counts for the keyboard; only the ones on screen are drawn.
+        var first = visibleRows.Count;
+        visibleRows.AddRange(rows);
+        using (var clip = new Ui.RowClipper(rows.Count))
+            while (clip.Step())
+                for (var i = clip.Start; i < clip.End; i++) DrawRow(rows[i], first + i);
         }
         tableMin = ImGui.GetItemRectMin();
         tableMax = ImGui.GetItemRectMax();
@@ -931,39 +1181,39 @@ public sealed class ConfirmationWindow : StyledWindow
         Ui.Gap(0.5f);
     }
 
-    private void DrawRow(PlanRow row, int index)
+    private void DrawRow(RowView view, int index)
     {
-        using var id = ImRaii.PushId(row.Key);
+        var row = view.Row;
+        using var id = ImRaii.PushId(view.Key);
         using var fade = ImRaii.PushStyle(ImGuiStyleVar.Alpha, ImGui.GetStyle().Alpha * RowAlpha(index));
         ImGui.TableNextRow(ImGuiTableRowFlags.None, 30 * Ui.Scale);
         // A just-toggled row glows gold for a moment; the keyboard cursor row is lifted.
-        var glow = rowFlash.TryGetValue(row.Key, out var at) ? (float)Math.Clamp(1 - (ImGui.GetTime() - at) / 0.7, 0, 1) : 0f;
+        var glow = rowFlash.TryGetValue(view.Key, out var at) ? (float)Math.Clamp(1 - (ImGui.GetTime() - at) / 0.7, 0, 1) : 0f;
         // The keyboard cursor fades out of the row it leaves and into the one it lands on, so arrow keys
         // read as the highlight moving rather than as it teleporting.
-        var onCursor = Ui.Smooth($"cur:{row.Key}", index == cursor ? 1f : 0f, 18f);
+        var onCursor = Ui.Smooth(view.CursorKey, index == cursor ? 1f : 0f, 18f);
         if (glow > 0f) ImGui.TableSetBgColor(ImGuiTableBgTarget.RowBg0, ImGui.GetColorU32(Ui.Accent * new Vector4(1, 1, 1, 0.22f * glow * glow)));
         else if (onCursor > 0.01f) ImGui.TableSetBgColor(ImGuiTableBgTarget.RowBg0, ImGui.GetColorU32(Ui.Accent * new Vector4(1, 1, 1, 0.20f * onCursor)));
 
         ImGui.TableNextColumn();
         ImGui.AlignTextToFramePadding();
         var chk = row.Checked;
-        if (Ui.Check("##c", ref chk, !row.IsExecutable)) SetChecked(row, chk);
+        if (Ui.Check("##c", ref chk, !row.IsExecutable)) SetChecked(view, chk);
 
         ImGui.TableNextColumn();
-        Ui.ImageLifted(icons.Get(row.Info.IconId, row.Item.IsHq), RowIcon * Ui.Scale, IconLift(row), 4 * Ui.Scale, $"icon:{row.Info.IconId}");
+        Ui.ImageLifted(icons.Get(row.Info.IconId, row.Item.IsHq), RowIcon * Ui.Scale, IconLift(view), 4 * Ui.Scale, view.IconKey);
 
         ImGui.TableNextColumn();
         ImGui.AlignTextToFramePadding();
-        var name = row.Info.Name + (row.Item.IsHq ? " " : "");
         // Clicking the name ticks the row, so the whole line is a target, not just the small box.
-        if (ImGui.Selectable(name, index == cursor, ImGuiSelectableFlags.AllowItemOverlap, Vector2.Zero) && row.IsExecutable)
+        if (ImGui.Selectable(view.Name, index == cursor, ImGuiSelectableFlags.AllowItemOverlap, Vector2.Zero) && row.IsExecutable)
         {
-            SetChecked(row, !row.Checked);
+            SetChecked(view, !row.Checked);
             cursor = index;
         }
-        if (ImGui.IsItemHovered()) { hoveredRow = row.Key; DrawRowTooltip(row); }
+        if (ImGui.IsItemHovered()) { hoveredRow = view.Key; DrawRowTooltip(row); }
         DrawRowContextMenu(row);
-        if (row.Item.Quantity > 1) { ImGui.SameLine(); Ui.Hint($"× {row.Item.Quantity}"); }
+        if (view.Quantity is { } quantity) { ImGui.SameLine(); Ui.Hint(quantity); }
 
         ImGui.TableNextColumn();
         if (Simple)
@@ -972,19 +1222,20 @@ public sealed class ConfirmationWindow : StyledWindow
             ImGui.AlignTextToFramePadding();
             Ui.ActionLabel(row.ChosenAction);
         }
-        else DrawActionPicker(row);
+        else DrawActionPicker(view);
 
         ImGui.TableNextColumn();
-        DrawMarketPrice(row);
+        DrawMarketPrice(view);
 
         if (Simple) return;
         ImGui.TableNextColumn();
-        DrawAttributePills(row);
+        DrawAttributePills(view);
     }
 
     /// <summary>Lowest market-board listing on the home world, per unit. Blank for unmarketable items.</summary>
-    private void DrawMarketPrice(PlanRow row)
+    private void DrawMarketPrice(RowView view)
     {
+        var row = view.Row;
         ImGui.AlignTextToFramePadding();
         if (!row.Info.IsMarketable) return;
         var unit = row.Proposal.MarketUnitPrice;
@@ -1002,8 +1253,10 @@ public sealed class ConfirmationWindow : StyledWindow
             return;
         }
         // A price lands whenever the lookup answers, which is rarely the frame the row first drew.
-        using (ImRaii.PushStyle(ImGuiStyleVar.Alpha, ImGui.GetStyle().Alpha * Ui.Appear($"px:{row.Info.ItemId}", 0.25f)))
+        using (ImRaii.PushStyle(ImGuiStyleVar.Alpha, ImGui.GetStyle().Alpha * Ui.Appear(view.PriceKey, 0.25f)))
             Ui.GilLabel(Simple ? unit * row.Item.Quantity : unit);
+        // Worded only for the one row someone is actually pointing at.
+        if (!Ui.ItemHovered()) return;
         var scope = string.IsNullOrEmpty(coordinator.MarketScope) ? "your home world" : coordinator.MarketScope;
         Ui.Tooltip($"Lowest listing on {scope} ({(row.Item.IsHq ? "HQ" : "NQ")}): {unit:N0}g each · {unit * row.Item.Quantity:N0}g for the stack of {row.Item.Quantity}.");
     }
@@ -1029,28 +1282,37 @@ public sealed class ConfirmationWindow : StyledWindow
     }
 
     /// <summary>What the item *is*, as small pills. The why (rule, warnings) lives in the name tooltip.</summary>
-    private void DrawAttributePills(PlanRow row)
+    private void DrawAttributePills(RowView view)
     {
-        var pills = AttributePills(row, includeType: false);
+        view.Pills ??= AttributePills(view.Row, includeType: false).Select(p => (p.Text, p.Color, $"pill:{view.Key}:{p.Text}")).ToArray();
+        var pills = view.Pills;
         ImGui.SetCursorPosY(ImGui.GetCursorPosY() + 3 * Ui.Scale);
         using var sp = ImRaii.PushStyle(ImGuiStyleVar.ItemSpacing, new Vector2(4 * Ui.Scale, 0));
-        for (var i = 0; i < pills.Count; i++)
+        for (var i = 0; i < pills.Length; i++)
         {
-            // Changing a row's action changes which pills apply, so each one fades in on its own key.
+            // Each pill fades in on its own key.
             using var appear = ImRaii.PushStyle(ImGuiStyleVar.Alpha,
-                ImGui.GetStyle().Alpha * Ui.Appear($"pill:{row.Key}:{pills[i].Text}", 0.18f));
+                ImGui.GetStyle().Alpha * Ui.Appear(pills[i].Key, 0.18f));
             Ui.Pill(pills[i].Text, pills[i].Color);
-            if (i < pills.Count - 1) ImGui.SameLine();
+            if (i < pills.Length - 1) ImGui.SameLine();
         }
     }
 
-    private void DrawActionPicker(PlanRow row)
+    private void DrawActionPicker(RowView view)
     {
-        var options = new List<ActionKind> { row.Proposal.Action };
-        options.AddRange(row.Proposal.Alternatives.Where(a => a != row.Proposal.Action));
-        if (!options.Contains(row.ChosenAction)) options.Insert(0, row.ChosenAction);
-        // Just the verb; prices live in the market column and the tooltip.
-        var labels = options.Select(a => a.Label()).ToList();
+        var row = view.Row;
+        if (view.Options is null || view.OptionsFor != row.ChosenAction)
+        {
+            var built = new List<ActionKind> { row.Proposal.Action };
+            built.AddRange(row.Proposal.Alternatives.Where(a => a != row.Proposal.Action));
+            if (!built.Contains(row.ChosenAction)) built.Insert(0, row.ChosenAction);
+            view.Options = built;
+            // Just the verb; prices live in the market column and the tooltip.
+            view.OptionLabels = built.Select(a => a.Label()).ToList();
+            view.OptionsFor = row.ChosenAction;
+        }
+        var options = view.Options;
+        var labels = view.OptionLabels!;
         var idx = options.IndexOf(row.ChosenAction);
         // The glyph leads the cell on every row, so the column reads as one thing whether or not the row
         // offers a choice, and so the outcome is legible without relying on the colour.
@@ -1065,7 +1327,8 @@ public sealed class ConfirmationWindow : StyledWindow
             Ui.TextColored(Ui.ActionColor(row.ChosenAction), labels[0]);
             return;
         }
-        var widest = labels.Max(l => ImGui.CalcTextSize(l, false, 0).X);
+        var widest = 0f;
+        foreach (var l in labels) widest = Math.Max(widest, ImGui.CalcTextSize(l, false, 0).X);
         ImGui.SetNextItemWidth(Math.Min(ImGui.GetContentRegionAvail().X, widest + ImGui.GetFrameHeight() + ImGui.GetStyle().FramePadding.X * 2));
         using var bg = ImRaii.PushColor(ImGuiCol.FrameBg, Vector4.Zero);
         var preview = ImRaii.PushColor(ImGuiCol.Text, Ui.ActionColor(row.ChosenAction));
@@ -1081,6 +1344,7 @@ public sealed class ConfirmationWindow : StyledWindow
                 {
                     row.ChosenAction = options[i];
                     if (!row.IsExecutable) row.Checked = false;
+                    viewVersion++;
                 }
             }
         }
@@ -1162,9 +1426,9 @@ public sealed class ConfirmationWindow : StyledWindow
         if (!popup) return;
         Ui.TextColored(Ui.Accent, row.Info.Name);
         ImGui.Separator();
-        if (ImGui.MenuItem("Skip this time", string.Empty, false, true)) coordinator.SkipRow(row);
-        if (ImGui.MenuItem("Keep this, always", string.Empty, false, true)) coordinator.Protect(row.Info.ItemId, row.Info.Name);
-        if (ImGui.MenuItem("Treat as junk, always", string.Empty, false, true)) coordinator.AlwaysDiscard(row.Info.ItemId, row.Info.Name);
+        if (ImGui.MenuItem("Skip this time", string.Empty, false, true)) { coordinator.SkipRow(row); viewVersion++; }
+        if (ImGui.MenuItem("Keep this, always", string.Empty, false, true)) { coordinator.Protect(row.Info.ItemId, row.Info.Name); viewVersion++; }
+        if (ImGui.MenuItem("Treat as junk, always", string.Empty, false, true)) { coordinator.AlwaysDiscard(row.Info.ItemId, row.Info.Name); viewVersion++; }
         ImGui.Separator();
         if (ImGui.MenuItem("Garland Tools", string.Empty, false, true)) Ui.OpenLink(Ui.GarlandUrl(row.Info.ItemId));
         if (ImGui.MenuItem("Market history (Universalis)", string.Empty, false, true)) Ui.OpenLink(Ui.UniversalisUrl(row.Info.ItemId));
@@ -1192,27 +1456,30 @@ public sealed class ConfirmationWindow : StyledWindow
             ImGui.TableSetupColumn("##icon", ImGuiTableColumnFlags.WidthFixed, 30 * Ui.Scale, 0);
             ImGui.TableSetupColumn("##item", ImGuiTableColumnFlags.WidthStretch, 5f, 0);
             ImGui.TableSetupColumn("##why", ImGuiTableColumnFlags.WidthStretch, 5f, 0);
-            foreach (var p in alt.Proposals.OrderBy(p => p.Info.Name))
-            {
-                ImGui.TableNextRow(ImGuiTableRowFlags.None, 30 * Ui.Scale);
-                ImGui.TableNextColumn();
-                Ui.ImageRounded(icons.Get(p.Info.IconId, p.Item.IsHq), new Vector2(26 * Ui.Scale, 26 * Ui.Scale), 4 * Ui.Scale, $"icon:{p.Info.IconId}");
-                ImGui.TableNextColumn(); ImGui.AlignTextToFramePadding(); Ui.Text(p.Info.Name); if (p.Item.Quantity > 1) { ImGui.SameLine(); Ui.Hint($"× {p.Item.Quantity}"); }
-                ImGui.TableNextColumn(); ImGui.AlignTextToFramePadding(); Ui.Hint($"{p.Item.Slot.Kind.DisplayName()} · {p.Reason}");
-            }
+            // Another character's list does not change while this plan is up, so it is sorted once.
+            if (!altRows.TryGetValue(alt, out var list))
+                altRows[alt] = list = alt.Proposals.OrderBy(p => p.Info.Name).Select(p => new AltRow(p)).ToList();
+            using var clip = new Ui.RowClipper(list.Count);
+            while (clip.Step())
+                for (var i = clip.Start; i < clip.End; i++)
+                {
+                    var a = list[i];
+                    var p = a.P;
+                    ImGui.TableNextRow(ImGuiTableRowFlags.None, 30 * Ui.Scale);
+                    ImGui.TableNextColumn();
+                    Ui.ImageRounded(icons.Get(p.Info.IconId, p.Item.IsHq), new Vector2(26 * Ui.Scale, 26 * Ui.Scale), 4 * Ui.Scale, a.IconKey);
+                    ImGui.TableNextColumn(); ImGui.AlignTextToFramePadding(); Ui.Text(p.Info.Name); if (a.Quantity is { } q) { ImGui.SameLine(); Ui.Hint(q); }
+                    ImGui.TableNextColumn(); ImGui.AlignTextToFramePadding(); Ui.Hint(a.Where);
+                }
         }
     }
 
-    private static void DrawExcludedNote(RunPlan plan)
+    private static void DrawExcludedNote(ReviewView view)
     {
+        var plan = view.Stamp.Plan;
         if (plan.Excluded.Count == 0) return;
         Ui.Gap();
-        var hard = plan.Excluded.Count(e => e.IsHardBlock);
-        var prot = plan.Excluded.Count - hard;
-        var parts = new List<string>();
-        if (hard > 0) parts.Add($"{hard} that can never be touched");
-        if (prot > 0) parts.Add($"{prot} on your never-touch list");
-        Ui.TextSwap("excluded", $"Not listed: {string.Join(", ", parts)}. Hover for why.", Ui.Muted * new Vector4(1, 1, 1, 0.8f));
+        Ui.TextSwap("excluded", view.ExcludedLine, Ui.Muted * new Vector4(1, 1, 1, 0.8f));
         if (ImGui.IsItemHovered())
         {
             // The only tooltip in the plugin that used to pop rather than fade.
@@ -1224,14 +1491,12 @@ public sealed class ConfirmationWindow : StyledWindow
 
     // ---------- footer ----------
 
-    private void DrawFooter(RunPlan plan)
+    private void DrawFooter(RunPlan plan, ReviewView view)
     {
         Ui.Rule();
         Ui.Gap(0.3f);
-        var summary = plan.Summarize();
-        var t = coordinator.EffectiveProfile.Thresholds;
-        var rowsForCap = coordinator.FocusContainer is { } f ? plan.Sections.Where(s => s.Kind == f).SelectMany(s => s.Rows) : plan.AllRows;
-        var cap = SoftCap.Evaluate(rowsForCap, t);
+        var summary = view.Summary;
+        var cap = view.Cap;
 
         var freed = (int)Ui.Count("ftFreed", summary.SlotsFreedByContainer.Values.Sum());
         var got = Ui.Count("ftGot", summary.GilRecovered);
@@ -1254,12 +1519,13 @@ public sealed class ConfirmationWindow : StyledWindow
         if (coordinator.PendingActions.Count > 0 && !coordinator.IsRunning)
         {
             ImGui.SameLine();
-            if (Ui.LinkButton("Forget them")) coordinator.ForgetPending();
+            if (Ui.LinkButton("Forget them")) { coordinator.ForgetPending(); viewVersion++; }
             Ui.Tooltip("Items you accepted earlier for a container that was closed. They go with your next clean unless you forget them here, and forgotten items simply come back to the list.");
         }
 
-        var (handsFree, needsTravel) = RunShape(plan);
-        var blocked = RunBlocked(plan);
+        var (handsFree, needsTravel) = RunShape(view);
+        // What the screen shows may lag a second behind a plugin being installed; Accept asks afresh.
+        var blocked = handsFree && needsTravel ? MissingDependencyCached() : null;
         if (blocked is not null)
         {
             Ui.Gap(0.2f);
@@ -1314,8 +1580,10 @@ public sealed class ConfirmationWindow : StyledWindow
         {
             if (Ui.PrimaryButton(verb, buttonWidth, danger: cap.Exceeded && armed)) Accept(plan);
         }
-        var discards = plan.AllRows.Count(r => r.Checked && r.IsExecutable && r.ChosenAction == ActionKind.Discard);
-        var sales = plan.AllRows.Count(r => r.Checked && r.IsExecutable && r.ChosenAction is ActionKind.VendorSell or ActionKind.MarketList);
+        // The button's tooltip is worded only while someone is pointing at the button.
+        if (!Ui.ItemHovered()) return;
+        var discards = view.Discards;
+        var sales = view.Sales;
         // It used to promise that sold items can be bought back. A hands-free run answers the retainer's
         // "no buyback once recalled" prompt and teleports away from merchants, so that was not true.
         var finality = new List<string>();
@@ -1439,6 +1707,29 @@ public sealed class ConfirmationWindow : StyledWindow
             dl.AddText(pos + new Vector2(width - pad - ImGui.GetTextLineHeight(), (h - ImGui.GetTextLineHeight()) / 2), ImGui.GetColorU32(Ui.AccentSoft * new Vector4(1, 1, 1, on)), FontAwesomeIcon.Check.ToIconString());
         }
         return clicked;
+    }
+
+    /// <summary>The same as <see cref="RunShape(RunPlan)"/>, from the counts the view already holds.</summary>
+    private (bool HandsFree, bool NeedsTravel) RunShape(ReviewView view) =>
+        (Pilot is not null && config.Automation.Enabled && coordinator.FocusContainer is null && !Pilot.IsRunning, view.NeedsTravel);
+
+    private string? missingDependency;
+    private double missingCheckedAt = double.MinValue;
+
+    /// <summary>
+    /// What hands-free is missing, asked at most once a second. The question walks Dalamud's list of installed
+    /// plugins, which is too much to do several times a frame for a line of text.
+    /// </summary>
+    private string? MissingDependencyCached()
+    {
+        if (Pilot is null) return null;
+        var now = ImGui.GetTime();
+        if (now - missingCheckedAt >= 1.0)
+        {
+            missingDependency = Pilot.MissingDependency();
+            missingCheckedAt = now;
+        }
+        return missingDependency;
     }
 
     /// <summary>Whether this run would go hands-free, and whether anything ticked needs travel to reach.</summary>
@@ -1568,7 +1859,7 @@ public sealed class ConfirmationWindow : StyledWindow
         if (toggle && cursor >= 0 && cursor < count)
         {
             var row = visibleRows[cursor];
-            if (row.IsExecutable) SetChecked(row, !row.Checked);
+            if (row.Row.IsExecutable) SetChecked(row, !row.Row.Checked);
         }
         if (accept) Accept(plan);
         if (cancel) IsOpen = false;
