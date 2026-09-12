@@ -946,9 +946,10 @@ internal static class Ui
         var h = (primary ? 12f : 6f) * Scale;
         if (!primary)
         {
+            // Inset on both sides, so the slimmer bar stays centred under the primary one and the Stop button.
             var indent = 16f * Scale;
             ImGui.SetCursorPosX(ImGui.GetCursorPosX() + indent);
-            width -= indent;
+            width -= indent * 2;
         }
 
         if (caption is not null)
