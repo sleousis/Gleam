@@ -3,7 +3,7 @@
   <PropertyGroup>
     <!-- Below 1.0 until every automated flow has completed in game at least once. The Grand Company turn-in
          has not yet. -->
-    <Version>0.12.3.0</Version>
+    <Version>0.12.4.0</Version>
     <Author>Raiden Shinryu</Author>
     <Name>Gleam</Name>
     <!-- Written the way the most-installed plugins write theirs: what it does, how, the commands, then what it

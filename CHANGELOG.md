@@ -3,6 +3,10 @@
 Each release's section is shown in Dalamud's plugin installer and on the GitHub release page. The release
 workflow refuses a tag whose version has no section here.
 
+## 0.12.4
+
+- A new logo, drawn to the same rules as Dawntrail Ready's and Soundswap's so the three plugins look like one family. The check mark now sits in the middle of its ring. Nothing else changes.
+
 ## 0.12.3
 
 - Your retainers show up in Organize and in Settings as soon as you log in, once Gleam has seen them at a summoning bell one time. Before, Gleam only knew them after a bell visit in the same session, and a layout that sent things to one of your own retainers said it was not on this character.
