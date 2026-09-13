@@ -82,15 +82,16 @@ def hull_points(mask):
 def draw_symbol(d, prims, w, s, ox, oy, fill):
     T = lambda p: (ox + s * p[0], oy + s * p[1])
     for kind, *a in prims:
-        if kind == "line":                          # polyline, stroke w, round joins and caps
+        sw = a[1] if len(a) > 1 else w              # a stroke is as wide as the ring's unless the symbol says so
+        if kind == "line":                          # polyline, round joins and caps
             pts = [T(p) for p in a[0]]
-            if len(pts) > 1: d.line(pts, fill=fill, width=int(w), joint="curve")
+            if len(pts) > 1: d.line(pts, fill=fill, width=int(sw), joint="curve")
             for x, y in (pts[0], pts[-1]):
-                d.ellipse((x - w / 2, y - w / 2, x + w / 2, y + w / 2), fill=fill)
+                d.ellipse((x - sw / 2, y - sw / 2, x + sw / 2, y + sw / 2), fill=fill)
         elif kind == "curve":                       # a smooth path: PIL's joints break on many short segments,
             pts = [T(p) for p in a[0]]              # so each piece is drawn straight with a round joint
-            for p, q in zip(pts, pts[1:]): d.line([p, q], fill=fill, width=int(w))
-            for x, y in pts: d.ellipse((x - w / 2, y - w / 2, x + w / 2, y + w / 2), fill=fill)
+            for p, q in zip(pts, pts[1:]): d.line([p, q], fill=fill, width=int(sw))
+            for x, y in pts: d.ellipse((x - sw / 2, y - sw / 2, x + sw / 2, y + sw / 2), fill=fill)
         elif kind == "poly":                        # a filled outline
             d.polygon([T(p) for p in a[0]], fill=fill)
 
@@ -137,11 +138,20 @@ def SUN(w):
 
 
 def NOTE(w):
-    """Soundswap: an eighth note, its flag kept clear of the stem at every stroke width."""
+    """
+    Soundswap: an eighth note. A note's stem and flag are thin by nature, so they are the one exception to the
+    ring's stroke width: 0.55 of it (the ring's full width turned the note into a blob). The head is filled and
+    large, its right edge meeting the stem's.
+    """
+    sw = 0.55 * w
+    a, b, tilt = 190, 140, -22
+    reach = math.sqrt((a * math.cos(math.radians(tilt)))**2 + (b * math.sin(math.radians(tilt)))**2)
+    hx = sw / 2 - reach
+    top = -360
     return [
-        ("poly", ellipse_pts(-110, 230, 165, 122, -22)),
-        ("line", [(0, 215), (0, -300)]),
-        ("curve", bezier((0, -300), (1.3 * w, -250), (1.6 * w, -20))),
+        ("poly", ellipse_pts(hx, 240, a, b, tilt)),
+        ("line", [(0, 240), (0, top)], sw),
+        ("curve", bezier((0, top), (sw / 2 + 230, top + 90), (sw / 2 + 215, top + 330)), sw),
     ]
 
 
