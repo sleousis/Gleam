@@ -12,7 +12,7 @@ public static class GameVersionGuard
     /// The game version this build was last checked on in game. Move it forward after checking a new patch;
     /// until then players on that patch are asked before anything runs hands-free.
     /// </summary>
-    public const string CheckedAgainst = "2026.09.01.0000.0000";
+    public const string CheckedAgainst = "2026.09.15.0000.0000";
 
     public const string HeldReason = "the game has been patched since this version of Gleam was checked";
 

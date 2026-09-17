@@ -3,6 +3,10 @@
 Each release's section is shown in Dalamud's plugin installer and on the GitHub release page. The release
 workflow refuses a tag whose version has no section here.
 
+## 0.12.5
+
+- Checked on the game patch of 15 September (2026.09.15). Hands-free runs are no longer paused on it. Every menu, NPC and place Gleam uses was found on the new patch.
+
 ## 0.12.4
 
 - A new logo, drawn to the same rules as Dawntrail Ready's and Soundswap's so the three plugins look like one family. The check mark now sits in the middle of its ring. Nothing else changes.
